@@ -56,19 +56,30 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
     config_setting_lookup_int(mgr_ele,"stat_log",&cur_node->stat_log);
     config_setting_lookup_int(mgr_ele,"req_log",&cur_node->req_log);
 
+    const char* peer_macaddr=NULL;
     const char* peer_ipaddr=NULL;
-    int peer_port=-1;
+    int peer_port=0;
 
     if(!config_setting_lookup_string(mgr_ele,"ip_address",&peer_ipaddr)){
         err_log("EVENT MANAGER : Cannot Find Current Node's IP Address.\n")
         goto goto_config_error;
     }
 
+    if(!config_setting_lookup_string(mgr_ele,"mac_address",&peer_macaddr)){
+        err_log("EVENT MANAGER : Cannot Find Current Node's MAC Address.\n")
+        goto goto_config_error;
+    }
+//The port is no longer needed now, and mac addr is added
+/*
     if(!config_setting_lookup_int(mgr_ele,"port",&peer_port)){
         err_log("EVENT MANAGER : Cannot Find Current Node's Port.\n")
         goto goto_config_error;
     }
-
+*/
+    sscanf(peer_macaddr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &cur_node->sys_addr.mac_addr[0], 
+        &cur_node->sys_addr.mac_addr[1], &cur_node->sys_addr.mac_addr[2], 
+        &cur_node->sys_addr.mac_addr[3], &cur_node->sys_addr.mac_addr[4], 
+        &cur_node->sys_addr.mac_addr[5]);
     cur_node->sys_addr.s_addr.sin_port = htons(peer_port);
     cur_node->sys_addr.s_addr.sin_family = AF_INET;
     inet_pton(AF_INET,peer_ipaddr,&cur_node->sys_addr.s_addr.sin_addr);
