@@ -6,6 +6,8 @@
 #include "../replica-sys/replica.h"
 #include "uthash.h"
 
+#define MAX_APP_COUNT 10
+
 typedef uint8_t nid_t;
 
 struct event_manager_t;
@@ -31,9 +33,15 @@ typedef struct replica_tcp_pair_t{
 }replica_tcp_pair;
 
 typedef struct mgr_address_t{
+    unsigned char mac_addr[6];
     struct sockaddr_in s_addr;
     size_t s_sock_len;
 }mgr_address;
+
+typedef struct crc_app_t{
+    char* app_name;
+    int app_port;
+}crc_app_info;
 
 typedef struct event_manager_t{
     nid_t node_id;
@@ -41,6 +49,7 @@ typedef struct event_manager_t{
     replica_tcp_pair* replica_tcp_map;
     leader_udp_pair* leader_udp_map;
     mgr_address sys_addr;
+    crc_app_info crc_app[MAX_APP_COUNT];
 
     // log option
     int ts_log;
