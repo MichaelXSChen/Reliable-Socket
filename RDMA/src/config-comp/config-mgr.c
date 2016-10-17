@@ -70,16 +70,17 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
         goto goto_config_error;
     }
 //The port is no longer needed now, and mac addr is added
-/*
+
     if(!config_setting_lookup_int(mgr_ele,"port",&peer_port)){
         err_log("EVENT MANAGER : Cannot Find Current Node's Port.\n")
         goto goto_config_error;
     }
-*/
+/*
     sscanf(peer_macaddr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &cur_node->sys_addr.mac_addr[0],
         &cur_node->sys_addr.mac_addr[1], &cur_node->sys_addr.mac_addr[2],
         &cur_node->sys_addr.mac_addr[3], &cur_node->sys_addr.mac_addr[4],
         &cur_node->sys_addr.mac_addr[5]);
+*/
     cur_node->sys_addr.s_addr.sin_port = htons(peer_port);
     cur_node->sys_addr.s_addr.sin_family = AF_INET;
     inet_pton(AF_INET,peer_ipaddr,&cur_node->sys_addr.s_addr.sin_addr);
@@ -100,7 +101,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
     }
     cur_node->db_name[db_name_len] = '\0';
 
-
+/*
     config_setting_t *app_config = NULL;
     app_config = config_lookup(&config_file,"app_config");
 
@@ -136,6 +137,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
 
       config_setting_lookup_int(app_ele,"app_port",&cur_node->crc_app[i].app_port);
     }
+*/
 
     config_destroy(&config_file);
     return 0;
