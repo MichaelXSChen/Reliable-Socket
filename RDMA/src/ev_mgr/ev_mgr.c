@@ -789,7 +789,7 @@ tcp_info* tcp_handle(struct tcphdr* tcp_header) {
         printf("This message is invalid, drop\n");
 #endif
         //todo, close the connection
-        type = INV;
+        tcp_info_ret->type = INV;
         goto tcp_handle_exit;       
     }
 
@@ -860,10 +860,9 @@ int msg_handle(uint8_t* msg,int size) {
             //todo, forward to backup
             server_side_on_read(real_data,size - all_header_size,tcp_msg_info->src_port);
             printf("%s\n",real_data);
+            free(tcp_msg_info);
         }
     }
-
-
     return ret;
 
 
