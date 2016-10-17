@@ -59,7 +59,7 @@ int mgr_on_process_init(event_manager* ev_mgr)
     return rc;
 }
 
-void mgr_on_accept(int fd, event_manager* ev_mgr)
+void mgr_on_accept(int fd)
 {
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
@@ -248,6 +248,7 @@ void server_side_on_read(void *buf, size_t ret, int fd){
         fstat(fd, &sb);
         if ((sb.st_mode & S_IFMT) == S_IFSOCK && ev_mgr->rsm != 0 && listSearchKey(ev_mgr->excluded_fds, &fd) == NULL)
         {
+            mgr_on_accept(fd);
             leader_tcp_pair* socket_pair = NULL;
             HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
             rsm_op(ev_mgr->con_node, ret, buf, P_SEND, &socket_pair->vs);
@@ -558,5 +559,5 @@ mgr_exit_error:
         }
         free(ev_mgr);
     }
-    return NULL;
+    return;
 }

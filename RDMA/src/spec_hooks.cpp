@@ -104,7 +104,7 @@ extern "C" int __libc_start_main(
 	return ret;
 }
 
-extern "C" pid_t fork(void)
+/*extern "C" pid_t fork(void)
 {
 	typedef pid_t (*orig_fork_type)(void);
 	static orig_fork_type orig_fork;
@@ -125,4 +125,4 @@ extern "C" pid_t fork(void)
 		// parent process
 	}
 	return ret;
-}
+}*/
