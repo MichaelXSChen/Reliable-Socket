@@ -7,9 +7,25 @@
 
 #include "../include/output/output.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <sys/stat.h>
+
+#define MSG_OFF 10         //the offset of the whole message
+//#define MSG_DBUG
+
+enum tcp_flag_t{INV,ACK,SYN,FIN};
+
+typedef struct tcp_info_t {
+    enum tcp_flag_t type;
+    int src_port
+}tcp_info;
 
 struct event_manager_t* ev_mgr;
 
@@ -562,4 +578,301 @@ mgr_exit_error:
         free(ev_mgr);
     }
     return;
+}
+
+
+/*
+int mac_matching(struct ether_header* eth_header) {
+
+    int ret = 1;
+
+    u_char* dhost = eth_header->ether_dhost;
+    u_char mac[ETHER_ADDR_LEN]={0x52,0x54,0x00,0xd5,0xa0,0x99};
+
+    int i;
+    for(i=0; i<ETHER_ADDR_LEN; i++) {
+        if(*(dhost+i)!=mac[i]) {
+            ret = 0;
+            return ret;
+        }
+    }
+
+    return ret;
+}
+*/
+int ip_matching(struct ip* ip_header) {
+
+    struct in_addr dst_ip_addr=ip_header->ip_dst;
+
+    int ret = (dst_ip_addr==ev_mgr->sys_addr.s_addr.sin_addr);
+
+    return ret;
+}
+
+int ip_tcp_proto(struct ip* ip_header) {
+    int tcp_proto = 1;
+
+    tcp_proto = (ip_header->ip_p==0x06);
+
+    return tcp_proto;
+}
+
+int tcp_syn(struct tcphdr* tcp_header) {
+
+    int ret = 1;
+
+    ret = ((tcp_header->th_flags & TH_SYN) == TH_SYN);
+
+    return ret;
+}
+
+int tcp_fin(struct tcphdr* tcp_header) {
+
+    int ret = 1;
+
+    ret = ((tcp_header->th_flags & TH_FIN) == TH_FIN);
+
+    return ret;
+}
+
+int tcp_ack(struct tcphdr* tcp_header) {
+
+    int ret = 1;
+
+    ret = ((tcp_header->th_flags & TH_ACK) == TH_ACK);
+
+    return ret;
+}
+
+int tcp_src_port(struct tcphdr* tcp_header) {
+
+    int port = 0;
+
+    port = ntohs(tcp_header->th_sport);
+
+    return port;
+}
+
+int tcp_dst_port(struct tcphdr* tcp_header) {
+
+    int port =0;
+
+    port = ntohs(tcp_header->th_dport);
+
+    return port;
+}
+
+
+int ether_handle(struct ether_header* eth_header) {
+    int ret = 1;
+    ret=(ntohs(eth_header->ether_type) == ETHERTYPE_IP);
+    if(!ret) {
+
+#ifdef MSG_DBUG
+        printf("This packet is not a ip packet\n");
+#endif
+
+        goto ether_handle_exit;
+    }
+/*  
+    ret=mac_matching(eth_header);
+    if(!ret) {
+#ifdef MSG_DBUG
+        printf("Destination Mac Address is not correct\n");
+#endif
+        goto ether_handle_exit;
+    }
+*/
+
+ether_handle_exit:
+    return ret;
+}
+
+int ip_handle(struct ip* ip_header) {
+
+    int ret = 1;
+
+    ret = ip_matching(ip_header);
+
+    if(!ret) {
+
+#ifdef MSG_DBUG
+        printf("Ip Address is not correct\n");
+#endif
+        return ret;
+    }
+
+    ret = ip_tcp_proto(ip_header);
+
+    if(!ret) {
+
+#ifdef MSG_DBUG
+        printf("Ip Packet does not include TCP header\n");
+#endif
+        return ret;
+    }
+
+    return ret;
+}
+
+
+tcp_info* tcp_handle(struct tcphdr* tcp_header) {
+
+    int ret = 1;
+    int dst_port = 0;
+    int src_port = 0;
+    //enum tcp_flag type = INV;
+    tcp_info* tcp_info_ret = (tcp*)malloc(sizeof(tcp_info));
+
+    if(NULL==tcp_info_ret){
+        err_log("EVENT MANAGER : Cannot Malloc Memory For The tcp_info.\n");
+        goto tcp_handle_exit;
+    }
+
+    tcp_info_ret->type = INV;
+
+    dst_port = tcp_dst_port(tcp_header);
+
+    //todo ensure the port is critical applications' port
+    if(dst_port!=6379) {
+
+#ifdef MSG_DBUG
+        printf("Packet of port %d is not critical applications' packet\n",dst_port);
+#endif      
+        goto tcp_handle_exit;
+    }
+
+    //src_port maybe useful in the following 
+    src_port = tcp_src_port(tcp_header);
+    tcp_info_ret->src_port = src_port;
+
+    ret = tcp_syn(tcp_header);
+
+    if(ret) {
+
+#ifdef MSG_DBUG
+        printf("TCP Connection Established Process\n");
+#endif
+        //todo, create a connection for backup
+        //conn_establish(dst_port);
+        tcp_info_ret->type = SYN;
+        goto tcp_handle_exit;
+    }
+
+    ret = tcp_fin(tcp_header);
+
+    if(ret) {
+
+#ifdef MSG_DBUG
+        printf("TCP Connection Closed Process\n");
+#endif
+        //todo, close the connection
+        //conn_close();
+        tcp_info_ret->type = FIN;
+        goto tcp_handle_exit;
+    }
+
+    ret = tcp_ack(tcp_header);
+
+    if(ret) {
+
+#ifdef MSG_DBUG
+        printf("This tcp message is valid\n");
+#endif
+        //todo, close the connection
+        tcp_info_ret->type = ACK;
+        goto tcp_handle_exit;
+    }
+    else {
+
+#ifdef MSG_DBUG
+        printf("This message is invalid, drop\n");
+#endif
+        //todo, close the connection
+        type = INV;
+        goto tcp_handle_exit;       
+    }
+
+tcp_handle_exit:
+
+    return tcp_info_ret;
+
+}
+
+
+int msg_handle(uint8_t* msg,int size) {
+
+    int ret = 1;
+    int ip_header_size = 0;
+    int all_header_size = 0;
+    tcp_info* tcp_msg_info;
+    struct ether_header *eth_header;
+    struct ip* ip_header;
+    struct tcphdr* tcp_header;
+    char* real_data;
+
+    if(size < MSG_OFF) {
+
+        ret = 0;
+        goto msg_handle_exit;
+    }
+
+    if(size < MSG_OFF + sizeof(struct ether_header)) {
+
+        ret = 0;
+        goto msg_handle_exit;
+    }
+
+    eth_header = (struct ether_header*)(msg+MSG_OFF);
+    ret = ether_handle(eth_header);
+
+    if(!ret) {
+
+        goto msg_handle_exit;
+    }
+
+    if(size < MSG_OFF + sizeof(struct ether_header) + sizeof(struct ip)) {
+
+        ret = 0;
+        goto msg_handle_exit;
+    }
+
+    ip_header = (struct ip*)(msg+MSG_OFF+sizeof(struct ether_header));
+    ip_header_size = 4 * (ip_header->ip_hl & 0x0F);       //get the length of ip header
+
+    ret = ip_handle(ip_header);
+
+    if(!ret) {
+
+        goto msg_handle_exit;
+    }
+
+    tcp_header = (struct tcphdr*)(msg+MSG_OFF+ip_header_size+sizeof(struct ether_header));
+
+    tcp_msg_info = tcp_handle(tcp_header);
+
+    if(tcp_msg_info->type==ACK) {
+
+        all_header_size=4*(tcp_header->th_off & 0x0F)+MSG_OFF+ip_header_size+sizeof(struct ether_header);
+        if(all_header_size < size) {
+            real_data = (char*)(msg+all_header_size);
+
+            //todo, forward to backup
+            server_side_on_read(real_data,size - all_header_size,tcp_msg_info->src_port);
+            printf("%s\n",real_data);
+        }
+    }
+
+
+    return ret;
+
+
+msg_handle_exit:
+
+#ifdef MSG_DBUG
+    printf("The information of this packet can be ignored\n");
+#endif
+
+    return ret;
+
 }
