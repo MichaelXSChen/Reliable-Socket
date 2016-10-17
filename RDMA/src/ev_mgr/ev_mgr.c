@@ -604,7 +604,7 @@ int ip_matching(struct ip* ip_header) {
 
     struct in_addr dst_ip_addr=ip_header->ip_dst;
 
-    int ret = (dst_ip_addr.a_addr==ev_mgr->sys_addr.s_addr.sin_addr.a_addr);
+    int ret = (dst_ip_addr.s_addr==ev_mgr->sys_addr.s_addr.sin_addr.s_addr);
 
     return ret;
 }
