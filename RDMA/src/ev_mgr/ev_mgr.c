@@ -604,7 +604,7 @@ int ip_matching(struct ip* ip_header) {
 
     struct in_addr dst_ip_addr=ip_header->ip_dst;
 
-    int ret = (dst_ip_addr==ev_mgr->sys_addr.s_addr.sin_addr);
+    int ret = (dst_ip_addr.a_addr==ev_mgr->sys_addr.s_addr.sin_addr.a_addr);
 
     return ret;
 }
@@ -722,7 +722,7 @@ tcp_info* tcp_handle(struct tcphdr* tcp_header) {
     int dst_port = 0;
     int src_port = 0;
     //enum tcp_flag type = INV;
-    tcp_info* tcp_info_ret = (tcp*)malloc(sizeof(tcp_info));
+    tcp_info* tcp_info_ret = (tcp_info*)malloc(sizeof(tcp_info));
 
     if(NULL==tcp_info_ret){
         err_log("EVENT MANAGER : Cannot Malloc Memory For The tcp_info.\n");
