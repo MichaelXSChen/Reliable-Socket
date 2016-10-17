@@ -9,7 +9,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
     if(!config_read_file(&config_file,config_path)){
         goto goto_config_error;
     }
-    
+
     uint32_t group_size;
     if(!config_lookup_int(&config_file,"group_size",(int*)&group_size)){
         goto goto_config_error;
@@ -22,7 +22,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
 
     config_setting_t *mgr_global_config = NULL;
     mgr_global_config = config_lookup(&config_file,"mgr_global_config");
-    
+
     if(NULL!=mgr_global_config){
         int rsm;
         if(config_setting_lookup_int(mgr_global_config,"rsm",&rsm)){
@@ -40,7 +40,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
     if(NULL==mgr_config){
         err_log("EVENT MANAGER : Cannot Find Nodes Settings.\n");
         goto goto_config_error;
-    }    
+    }
 
     config_setting_t *mgr_ele = config_setting_get_elem(mgr_config,cur_node->node_id);
 
@@ -50,7 +50,7 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
     }
 
 // read the option for log, if it has some sections
-    
+
     config_setting_lookup_int(mgr_ele,"time_stamp_log",&cur_node->ts_log);
     config_setting_lookup_int(mgr_ele,"sys_log",&cur_node->sys_log);
     config_setting_lookup_int(mgr_ele,"stat_log",&cur_node->stat_log);
@@ -76,9 +76,9 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
         goto goto_config_error;
     }
 */
-    sscanf(peer_macaddr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &cur_node->sys_addr.mac_addr[0], 
-        &cur_node->sys_addr.mac_addr[1], &cur_node->sys_addr.mac_addr[2], 
-        &cur_node->sys_addr.mac_addr[3], &cur_node->sys_addr.mac_addr[4], 
+    sscanf(peer_macaddr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &cur_node->sys_addr.mac_addr[0],
+        &cur_node->sys_addr.mac_addr[1], &cur_node->sys_addr.mac_addr[2],
+        &cur_node->sys_addr.mac_addr[3], &cur_node->sys_addr.mac_addr[4],
         &cur_node->sys_addr.mac_addr[5]);
     cur_node->sys_addr.s_addr.sin_port = htons(peer_port);
     cur_node->sys_addr.s_addr.sin_family = AF_INET;
@@ -99,6 +99,43 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
         goto goto_config_error;
     }
     cur_node->db_name[db_name_len] = '\0';
+
+
+    config_setting_t *app_config = NULL;
+    app_config = config_lookup(&config_file,"app_config");
+
+    if(NULL==app_config){
+        err_log("EVENT MANAGER : Cannot Find Apps Settings.\n");
+        goto goto_config_error;
+    }
+
+    int app_count = config_setting_length(app_config);
+    int i = 0;
+    for(i = 0; i < app_count; ++i) {
+      config_setting_t *app_ele = config_setting_get_elem(app_config, i);
+
+      if(NULL==app_ele){
+          err_log("EVENT MANAGER : Cannot Find Current App's Port Section.\n");
+          goto goto_config_error;
+      }
+
+      const char* app_name;
+      if(!config_setting_lookup_string(app_ele,"app_name",&app_name)){
+          goto goto_config_error;
+      }
+      size_t app_name_len = strlen(app_name);
+      cur_node->crc_app[i].app_name = (char*)malloc(sizeof(char)*(app_name_len+1));
+      if(cur_node->crc_app[i].app_name==NULL){
+          goto goto_config_error;
+      }
+      if(NULL==strncpy(cur_node->crc_app[i].app_name,app_name,app_name_len)){
+          free(cur_node->crc_app[i].app_name);
+          goto goto_config_error;
+      }
+      cur_node->crc_app[i].app_name[app_name_len] = '\0';
+
+      config_setting_lookup_int(app_ele,"app_port",&cur_node->crc_app[i].app_port);
+    }
 
     config_destroy(&config_file);
     return 0;

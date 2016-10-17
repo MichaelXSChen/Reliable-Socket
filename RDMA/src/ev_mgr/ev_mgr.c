@@ -11,6 +11,8 @@
 #include <netinet/tcp.h>
 #include <sys/stat.h>
 
+struct event_manager_t* ev_mgr;
+
 volatile int g_checkpoint_flag = NO_DISCONNECTED;
 
 static int fdcomp(void *ptr, void *key)
@@ -29,7 +31,7 @@ static int internal_threads(list *excluded_threads, pthread_t pid)
 }
 
 int mgr_on_process_init(event_manager* ev_mgr)
-{   
+{
     if (ev_mgr->excluded_fds != NULL)
         listRelease(ev_mgr->excluded_fds);
     ev_mgr->excluded_fds = NULL;
@@ -45,9 +47,9 @@ int mgr_on_process_init(event_manager* ev_mgr)
     int rc = launch_replica_thread(ev_mgr->con_node, ev_mgr->excluded_fds, ev_mgr->excluded_threads);
     if (rc != 0 )
         fprintf(stderr, "EVENT MANAGER : Cannot create replica thread\n");
-    
+
     pthread_t check_point_thread;
-    if (pthread_create(&check_point_thread, NULL, &check_point_thread_start, NULL) != 0) 
+    if (pthread_create(&check_point_thread, NULL, &check_point_thread_start, NULL) != 0)
         fprintf(stderr, "EVENT MANAGER : Cannot create check point thread\n");
 
     pthread_t *ck_thread = (pthread_t*)malloc(sizeof(pthread_t));
@@ -75,7 +77,7 @@ void mgr_on_accept(int fd, event_manager* ev_mgr)
     } else {
         request_record* retrieve_data = NULL;
         size_t data_size;
-    
+
         while (retrieve_data == NULL){
             retrieve_record(ev_mgr->db_ptr, sizeof(db_key_type), &ev_mgr->cur_rec, &data_size, (void**)&retrieve_data);
         }
@@ -117,7 +119,7 @@ void mgr_on_close(int fd, event_manager* ev_mgr)
 {
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
-    
+
     del_output(fd);
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
@@ -141,14 +143,14 @@ mgr_on_close_exit:
 // This function will malloc space for output_peer array.
 // please remember free it after use.
 output_peer_t* prepare_peer_array(int fd, dare_log_entry_t *log_entry_ptr, uint32_t leader_id, long hash_index, int group_size){
-    
+
     // because rsm_op() returns when it reaches quorum
-    
+
     struct timespec wait_for_reply;
     wait_for_reply.tv_sec = 0;
     wait_for_reply.tv_nsec = 1000 * 5;
     nanosleep(&wait_for_reply, NULL);
-    
+
     output_peer_t* peer_array = (output_peer_t*)malloc(group_size*sizeof(output_peer_t));
     for (int i=0;i<group_size;i++){
         peer_array[i].leader_id = leader_id;
@@ -169,7 +171,7 @@ void mgr_on_check(int fd, const void* buf, size_t ret, event_manager* ev_mgr)
 {
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
-    
+
     if (ev_mgr->check_output && listSearchKey(ev_mgr->excluded_fds, (void*)&fd) == NULL)
     {
         int store_output_rc = 0;
@@ -183,7 +185,7 @@ void mgr_on_check(int fd, const void* buf, size_t ret, event_manager* ev_mgr)
         // leader logic
         if (leader_id == ev_mgr->node_id)
         {
-            long hash_index = determine_output(fd); 
+            long hash_index = determine_output(fd);
             if (-1 != hash_index){
                 // to do output proposal with hash value at this hash_index
 
@@ -235,10 +237,10 @@ static int keep_alive(int fd) {
     return 0;
 }
 
-void server_side_on_read(event_manager* ev_mgr, void *buf, size_t ret, int fd){
+void server_side_on_read(void *buf, size_t ret, int fd){
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
-    
+
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
     {
@@ -357,12 +359,12 @@ int reconnect_inner(){
 // 0 is ok
 // 1 is rejected
 // -1 is error
-int disconnct_inner(){ 
-    if (NO_DISCONNECTED == g_checkpoint_flag){ // safe to modify 
+int disconnct_inner(){
+    if (NO_DISCONNECTED == g_checkpoint_flag){ // safe to modify
         g_checkpoint_flag = DISCONNECTED_REQUEST;
         // wait for approve
         while (DISCONNECTED_REQUEST == g_checkpoint_flag){ // until the state will be changed.
-            // do thing.  
+            // do thing.
         }
         if (DISCONNECTED_APPROVE == g_checkpoint_flag){ // safe to disconnect
 	    fprintf(stderr,"disconnect is approved\n");
@@ -474,9 +476,9 @@ static void update_state(db_key_type index,void* arg){
     return;
 }
 
-event_manager* mgr_init(node_id_t node_id, const char* config_path, const char* log_path){
-    
-    event_manager* ev_mgr = (event_manager*)malloc(sizeof(event_manager));
+void mgr_init(node_id_t node_id, const char* config_path, const char* log_path){
+
+    ev_mgr = (event_manager*)malloc(sizeof(event_manager));
 
     if(NULL==ev_mgr){
         err_log("EVENT MANAGER : Cannot Malloc Memory For The ev_mgr.\n");
@@ -548,7 +550,7 @@ event_manager* mgr_init(node_id_t node_id, const char* config_path, const char* 
 
     mgr_on_process_init(ev_mgr);
 
-	return ev_mgr;
+	return;
 
 mgr_exit_error:
     if(NULL!=ev_mgr){
