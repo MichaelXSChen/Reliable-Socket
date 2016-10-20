@@ -83,7 +83,7 @@ int initialize_node(node* my_node, const char* log_path, void (*user_cb)(db_key_
     if(NULL==my_node->consensus_comp){
         goto initialize_node_exit;
     }
-    
+
     flag = 0;
 initialize_node_exit:
 
@@ -134,4 +134,8 @@ exit_error:
     }
 
     return NULL;
+}
+
+int disconnect_zookeeper() {
+  return 0;
 }
