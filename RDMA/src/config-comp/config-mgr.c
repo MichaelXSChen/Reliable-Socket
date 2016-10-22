@@ -65,10 +65,10 @@ int mgr_read_config(struct event_manager_t* cur_node,const char* config_path){
         goto goto_config_error;
     }
 
-    if(!config_setting_lookup_string(mgr_ele,"mac_address",&peer_macaddr)){
-        err_log("EVENT MANAGER : Cannot Find Current Node's MAC Address.\n")
-        goto goto_config_error;
-    }
+//    if(!config_setting_lookup_string(mgr_ele,"mac_address",&peer_macaddr)){
+//        err_log("EVENT MANAGER : Cannot Find Current Node's MAC Address.\n")
+//        goto goto_config_error;
+//    }
 //The port is no longer needed now, and mac addr is added
 
     if(!config_setting_lookup_int(mgr_ele,"port",&peer_port)){
