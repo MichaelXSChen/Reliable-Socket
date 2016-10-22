@@ -129,7 +129,8 @@ __thread int has_set_affinity = 0;
 int core_id = 1;
 
 dare_log_entry_t* leader_handle_submit_req(struct consensus_component_t* comp, size_t data_size, void* data, uint8_t type, view_stamp* clt_id)
-{	
+{
+fprintf(stderr,"leader_handle_req start\n");	
 #ifdef LEADER_MEASURE_LATENCY                                                                                                                                           
         clock_handler c_k;
         clock_init(&c_k);
@@ -184,6 +185,8 @@ dare_log_entry_t* leader_handle_submit_req(struct consensus_component_t* comp, s
         entry->data_size = data_size + 1;
         SRV_DATA->log->end += log_entry_len(entry);
         uint32_t offset = (uint32_t)(offsetof(dare_log_t, entries) + SRV_DATA->log->tail);
+
+fprintf(stderr,"handle_submit main -1\n");
 
         dare_ib_ep_t *ep;
         uint8_t i, *send_count_ptr;

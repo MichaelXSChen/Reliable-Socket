@@ -23,20 +23,20 @@ RM := rm -rf
 # Add inputs and outputs from these tool invocations to the build variables 
 
 # All Target
-all: interpose.so
+all: libfalcon.so
 
 # Tool invocations
-interpose.so: $(OBJS)
+libfalcon.so: $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	gcc-4.8  -shared -Wl,-soname,interpose.so $(OBJS) -Wall -o interpose.so $(LIBS)
+	gcc-4.8  -shared -Wl,-soname,libfalcon.so $(OBJS) -Wall -o libfalcon.so $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 	@file ./$@
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(C_DEPS) interpose.so
+	-$(RM) $(OBJS)$(C_DEPS) libfalcon.so
 	-@echo ' '
 
 .PHONY: all clean dependents
