@@ -257,17 +257,27 @@ void server_side_on_read(void *buf, size_t ret, int fd){
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
 
+    fprintf(stderr,"go to server side on read\n");
+
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
     {
-	if (ev_mgr->rsm != 0)
+        fprintf(stderr,"This is a leader\n");
+        //struct stat sb;
+        //fstat(fd, &sb);
+        if (ev_mgr->rsm != 0)
         {
+            fprintf(stderr,"find tcp pair\n");
             leader_tcp_pair* socket_pair = NULL;
             HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
             if (socket_pair == NULL) {
+              fprintf(stderr,"socket pair is null\n");
               mgr_on_accept(fd);
+              fprintf(stderr,"mgr_on_accept called\n");
+              HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
             }
             rsm_op(ev_mgr->con_node, ret, buf, P_SEND, &socket_pair->vs);
+            fprintf(stderr,"rsm op called\n");
         }
     }
     return;
@@ -303,7 +313,8 @@ static void do_action_tcp_connect(view_stamp clt_id,void* arg){
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 
-    connect(fd, (struct sockaddr*)&ev_mgr->sys_addr.s_addr,ev_mgr->sys_addr.s_sock_len);
+    if(connect(fd, (struct sockaddr*)&ev_mgr->sys_addr.s_addr,ev_mgr->sys_addr.s_sock_len))
+	fprintf(stderr, "ERROR connect!\n");
 
     ret->p_s = fd;
 
@@ -313,8 +324,8 @@ static void do_action_tcp_connect(view_stamp clt_id,void* arg){
     int enable = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable)) < 0)
         printf("TCP_NODELAY SETTING ERROR!\n");
-    keep_alive(fd);
-    while (!ret->accepted);
+    //keep_alive(fd);
+    //while (!ret->accepted);
 
     return;
 }
