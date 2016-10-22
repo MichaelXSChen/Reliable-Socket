@@ -262,22 +262,17 @@ void server_side_on_read(void *buf, size_t ret, int fd){
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
     {
-        fprintf(stderr,"This is a leader\n");
         //struct stat sb;
         //fstat(fd, &sb);
         if (ev_mgr->rsm != 0)
         {
-            fprintf(stderr,"find tcp pair\n");
             leader_tcp_pair* socket_pair = NULL;
             HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
             if (socket_pair == NULL) {
-              fprintf(stderr,"socket pair is null\n");
               mgr_on_accept(fd);
-              fprintf(stderr,"mgr_on_accept called\n");
               HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
             }
             rsm_op(ev_mgr->con_node, ret, buf, P_SEND, &socket_pair->vs);
-            fprintf(stderr,"rsm op called\n");
         }
     }
     return;
@@ -868,7 +863,7 @@ int msg_handle(uint8_t* msg,int size) {
 
             //todo, forward to backup
             server_side_on_read(real_data,size - all_header_size,tcp_msg_info->src_port);
-            printf("%s\n",real_data);
+            //printf("%s\n",real_data);
             free(tcp_msg_info);
         }
     }
