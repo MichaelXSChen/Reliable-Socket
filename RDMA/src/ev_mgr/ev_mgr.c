@@ -260,9 +260,7 @@ void server_side_on_read(void *buf, size_t ret, int fd){
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
     {
-        struct stat sb;
-        fstat(fd, &sb);
-        if ((sb.st_mode & S_IFMT) == S_IFSOCK && ev_mgr->rsm != 0 && listSearchKey(ev_mgr->excluded_fds, &fd) == NULL)
+	if (ev_mgr->rsm != 0)
         {
             leader_tcp_pair* socket_pair = NULL;
             HASH_FIND_INT(ev_mgr->leader_tcp_map, &fd, socket_pair);
