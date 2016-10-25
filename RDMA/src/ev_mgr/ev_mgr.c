@@ -257,8 +257,6 @@ void server_side_on_read(void *buf, size_t ret, int fd){
     if (internal_threads(ev_mgr->excluded_threads, pthread_self()))
         return;
 
-    fprintf(stderr,"go to server side on read\n");
-
     uint32_t leader_id = get_leader_id(ev_mgr->con_node);
     if (ev_mgr->node_id == leader_id)
     {
