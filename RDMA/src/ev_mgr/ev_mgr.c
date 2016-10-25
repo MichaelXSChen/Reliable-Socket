@@ -736,7 +736,7 @@ tcp_info* tcp_handle(struct tcphdr* tcp_header) {
     dst_port = tcp_dst_port(tcp_header);
 
     //todo ensure the port is critical applications' port
-    if(dst_port!=6379) {
+    if(htons(dst_port)!=ev_mgr->sys_addr.s_addr.sin_port) {
 
 #ifdef MSG_DBUG
         printf("Packet of port %d is not critical applications' packet\n",dst_port);
