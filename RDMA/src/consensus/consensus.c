@@ -10,7 +10,7 @@
 
 #define USE_SPIN_LOCK
 //#define REPLICA_MEASURE_LATENCY
-#define LEADER_MEASURE_LATENCY
+//#define LEADER_MEASURE_LATENCY
 //#define AFFINITY
 
 #define DUMMY_END 'f'
@@ -142,22 +142,6 @@ dare_log_entry_t* leader_handle_submit_req(struct consensus_component_t* comp, s
         pthread_mutex_lock(&comp->lock);
 #endif
 
-#ifdef AFFINITY
-	if (has_set_affinity == 0)
-	{
-		if (core_id > 24)
-			core_id = 1;
-		set_affinity(core_id);
-		core_id++;
-		has_set_affinity = 1;
-		/*int s, policy = SCHED_FIFO;
-		struct sched_param param;
-		param.sched_priority = 1;
-		s = pthread_setschedparam(pthread_self(), policy, &param);
-		if (s != 0)
-			fprintf(stderr, "pthread_setschedparam failed\n");*/
-	}
-#endif
 
         view_stamp next = get_next_view_stamp(comp);
         SYS_LOG(comp, "handling request, view id is %"PRIu32", req id  %"PRIu32", type is %d, data is (%s), size is %zu\n",
