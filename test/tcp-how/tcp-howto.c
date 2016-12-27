@@ -136,6 +136,8 @@ static int main_cl(int argc, char **argv)
     }
     addr.sin_port = htons(port);
 
+
+    int aux = 1;
     ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
         if (ret < 0) {
             perror("Cannot turn on TCP_REPAIR mode");
@@ -147,13 +149,18 @@ static int main_cl(int argc, char **argv)
     if (ret < 0) {
         perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
     }
-    u32 seq;
-    ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, &auxl);
+    u32 seq = 931209;
+    ret = setsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, auxl);
     if (ret < 0) {
         perror("Failed to get the TCP send queue seq");
     }
     printf("queue id: %" PRIu32 "\n", seq);
 
+    aux = 0;
+    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+        if (ret < 0) {
+            perror("Cannot turn on TCP_REPAIR mode");
+        }
 
 
 
@@ -164,8 +171,8 @@ static int main_cl(int argc, char **argv)
         perror("Can't connect");
         return -1;
     }
-    u32 seq;
-    socklen_t tcp_info_length = sizeof(struct tcp_info);
+    //u32 seq;
+    //socklen_t tcp_info_length = sizeof(struct tcp_info);
     while (1) {
         // int aux = 1;
         // //enter repari mode
