@@ -9,6 +9,12 @@
 #include <signal.h>
 #include <netdb.h>
 #include <errno.h>
+#include <netinet/tcp.h>
+#include <inttypes.h>
+#include <stdint.h>
+
+typedef uint32_t u32;
+
 
 static int serve_new_conn(int sk)
 {
@@ -135,16 +141,42 @@ static int main_cl(int argc, char **argv)
         perror("Can't connect");
         return -1;
     }
-    char buffer[256];
+    u32 seq;
+    socklen_t tcp_info_length = sizeof(struct tcp_info);
     while (1) {
-        socklen_t optlen;
-        bzero(buffer, 256);
-        ret = getsockopt(sk,getprotobyname("tcp")->p_proto,TCP_INFO,buffer,&optlen);
-        if (ret != 0){
-            perror("getscokopt");
-            return -1;
+        int aux = 1;
+        //enter repari mode
+        ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+        if (ret < 0) {
+            perror("Cannot turn on TCP_REPAIR mode");
         }
-        printf("Got opt:%s, length:%d\n", buffer,optlen);
+
+        socklen_t auxl;
+        int queue_id = TCP_SEND_QUEUE;
+        auxl = sizeof(queue_id);
+        ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue_id, auxl);
+        if (ret < 0) {
+            perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
+        }
+        u32 seq;
+        ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, &auxl);
+        if (ret < 0) {
+            perror("Failed to get the TCP send queue seq");
+        }
+        printf("queue id: %" PRIu32 "\n", seq);
+        //struct tcp_info info;
+        //int queue_id;
+        //socklen_t auxl;
+        //auxl = sizeof(queue_id);
+
+
+        //ret = getsockopt(sk,SOL_TCP,TCP_QUEUE_SEQ,&seq,&auxl);
+        //if (ret != 0){
+        //    perror("getscokopt");
+        //    return -1;
+        //}
+        // printf("Got opt:%s, length:%d\n", info,tcp_info_length);
+        //printf("Value:%" PRIu32 "\n", info.tcpi_last_data_sent);
         write(sk, &val, sizeof(val));
         rval = -1;
         read(sk, &rval, sizeof(rval));
@@ -156,6 +188,22 @@ static int main_cl(int argc, char **argv)
         val++;
     }
 }
+
+/**
+static int tcp_repair_on(int fd)
+{
+    int ret, aux = 1;
+
+    ret = setsockopt(fd, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+    if (ret < 0)
+        pr_perror("Can't turn TCP repair mode ON");
+     return ret;
+}
+**/
+
+
+
+
 
 int main(int argc, char **argv)
 {
