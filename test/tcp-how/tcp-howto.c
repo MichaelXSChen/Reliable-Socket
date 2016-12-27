@@ -136,6 +136,29 @@ static int main_cl(int argc, char **argv)
     }
     addr.sin_port = htons(port);
 
+    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+        if (ret < 0) {
+            perror("Cannot turn on TCP_REPAIR mode");
+        }
+    socklen_t auxl;
+    int queue_id = TCP_SEND_QUEUE;
+    auxl = sizeof(queue_id);
+    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue_id, auxl);
+    if (ret < 0) {
+        perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
+    }
+    u32 seq;
+    ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, &auxl);
+    if (ret < 0) {
+        perror("Failed to get the TCP send queue seq");
+    }
+    printf("queue id: %" PRIu32 "\n", seq);
+
+
+
+
+
+
     ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0) {
         perror("Can't connect");
@@ -144,26 +167,26 @@ static int main_cl(int argc, char **argv)
     u32 seq;
     socklen_t tcp_info_length = sizeof(struct tcp_info);
     while (1) {
-        int aux = 1;
-        //enter repari mode
-        ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
-        if (ret < 0) {
-            perror("Cannot turn on TCP_REPAIR mode");
-        }
+        // int aux = 1;
+        // //enter repari mode
+        // ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+        // if (ret < 0) {
+        //     perror("Cannot turn on TCP_REPAIR mode");
+        // }
 
-        socklen_t auxl;
-        int queue_id = TCP_SEND_QUEUE;
-        auxl = sizeof(queue_id);
-        ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue_id, auxl);
-        if (ret < 0) {
-            perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
-        }
-        u32 seq;
-        ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, &auxl);
-        if (ret < 0) {
-            perror("Failed to get the TCP send queue seq");
-        }
-        printf("queue id: %" PRIu32 "\n", seq);
+        // socklen_t auxl;
+        // int queue_id = TCP_SEND_QUEUE;
+        // auxl = sizeof(queue_id);
+        // ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue_id, auxl);
+        // if (ret < 0) {
+        //     perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
+        // }
+        // u32 seq;
+        // ret = getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, &auxl);
+        // if (ret < 0) {
+        //     perror("Failed to get the TCP send queue seq");
+        // }
+        // printf("queue id: %" PRIu32 "\n", seq);
         //struct tcp_info info;
         //int queue_id;
         //socklen_t auxl;
