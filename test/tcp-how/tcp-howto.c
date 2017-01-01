@@ -317,7 +317,7 @@ int replace_tcp_2 (int *sk){
 
 
 
-int replace_tcp (int *sk){
+int replace_tcp (int *sk, struct sockaddr_in bind_address, struct sockaddr_in connect_address){
     int ret, aux; 
     struct tcp_info ti; 
     struct sockaddr addr_local, addr_remote;
@@ -462,13 +462,13 @@ int replace_tcp (int *sk){
     }
 
 
-    if (bind(*sk, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) != 0){
+    if (bind(*sk, (struct sockaddr *)&bind_address, sizeof(bind_address)) != 0){
         perror("Cannot bind to socket");
         fflush(stdout);
      return -1;
     }
     //connect
-    if (connect(*sk, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) != 0){
+    if (connect(*sk, (struct sockaddr *)&connect_address, sizeof(connect_address)) != 0){
         perror("Cannot connect the inet socket back");
         return -1;
     }
@@ -642,7 +642,7 @@ static int main_srv(int argc, char **argv)
 
 
         ask = accept(sk, (struct sockaddr *)&cliaddr,&clilen);
-        printf("port: %d\n", cliaddr.sin_port);
+        //printf("port: %d\n", cliaddr.sin_port);
         
 
 
@@ -813,7 +813,7 @@ static int main_cl(int argc, char **argv)
         //printf("Value:%" PRIu32 "\n", info.tcpi_last_data_sent);
         if(val == 5){
 
-            ret = replace_tcp(&sk);
+            //ret = replace_tcp(&sk, cliaddr, remote_addr);
             if (ret != 0){
                 printf("error replace_tcp\n");
 
