@@ -343,46 +343,49 @@ int replace_tcp (int *sk, struct sockaddr_in bind_address, struct sockaddr_in co
 
 
 
-// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     
-//     int ret; 
-//     printf("Coonect Function intercepted!!\n\n\n");
-//     orig_connect_func_type orig_connect;
-//     orig_connect = (orig_connect_func_type) dlsym(RTLD_NEXT,"connect");
+    int ret; 
+    printf("Coonect Function intercepted!!\n\n\n");
+    orig_connect_func_type orig_connect;
+    orig_connect = (orig_connect_func_type) dlsym(RTLD_NEXT,"connect");
     
-//     int sk; 
-//     sk = orig_connect(sockfd, addr, addrlen);
-//     printf("sk after connect : %d\n", sk);
-//     fflush(stdout);
+    tcp_repair_on(sockfd);
+    set_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, 931209);
+    tcp_repair_off(sockfd);
+    
+    ret = orig_connect(sockfd, addr, addrlen);
+    // printf("sk after connect : %d\n", sk);
+    // fflush(stdout);
 
 
-//     struct sockaddr_in cliaddr, srvaddr;
-//     memset(&cliaddr, 0, sizeof(struct sockaddr_in));
-//     cliaddr.sin_family = AF_INET;
-//     cliaddr.sin_port = htons(10060);
-//     ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
-//     if (ret < 0) {
-//         perror("Can't convert addr");
-//         return -1;
-//     }
+    // struct sockaddr_in cliaddr, srvaddr;
+    // memset(&cliaddr, 0, sizeof(struct sockaddr_in));
+    // cliaddr.sin_family = AF_INET;
+    // cliaddr.sin_port = htons(10060);
+    // ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
+    // if (ret < 0) {
+    //     perror("Can't convert addr");
+    //     return -1;
+    // }
 
-//     int port = 9999; 
-//     memset(&srvaddr, 0, sizeof(srvaddr));
-//     srvaddr.sin_family = AF_INET;
-//     srvaddr.sin_port = htons(port);
-//     ret = inet_aton("127.0.0.1", &srvaddr.sin_addr);
-//     if (ret < 0) {
-//         perror("Can't convert addr");
-//         return -1;
-//     }
+    // int port = 9999; 
+    // memset(&srvaddr, 0, sizeof(srvaddr));
+    // srvaddr.sin_family = AF_INET;
+    // srvaddr.sin_port = htons(port);
+    // ret = inet_aton("127.0.0.1", &srvaddr.sin_addr);
+    // if (ret < 0) {
+    //     perror("Can't convert addr");
+    //     return -1;
+    // }
 
 
-//     ret = replace_tcp(&sk, cliaddr, srvaddr);
-//     if (ret != 0) {
-//         return ret;
-//     }
-//     return sk;
-// }
+    // ret = replace_tcp(&sk, cliaddr, srvaddr);
+    // if (ret != 0) {
+    //     return ret;
+    // }
+    return ret;
+}
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 	int ret, port;
@@ -447,17 +450,17 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 }
 
 
-int socket(int domain, int type, int protocol){
-    printf("socket func called:");
-    orig_socket_func_type orig_socket;
-    orig_socket = (orig_socket_func_type) dlsym(RTLD_NEXT,"socket");
-    int sk =  orig_socket(domain, type, protocol);
+// int socket(int domain, int type, int protocol){
+//     printf("socket func called:");
+//     orig_socket_func_type orig_socket;
+//     orig_socket = (orig_socket_func_type) dlsym(RTLD_NEXT,"socket");
+//     int sk =  orig_socket(domain, type, protocol);
     
 
-    printf("sk: %d\n", sk);
-    fflush(stdout);
-    return sk;
+//     printf("sk: %d\n", sk);
+//     fflush(stdout);
+//     return sk;
 
-}
+// }
 
 
