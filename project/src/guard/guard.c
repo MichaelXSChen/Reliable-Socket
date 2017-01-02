@@ -7,6 +7,9 @@
 #include <sys/wait.h>
 #include <stdarg.h>
 #include <errno.h>
+//#include <signal.h>
+
+
 #define DEBUG_ON 1 
 
 
@@ -63,7 +66,26 @@ int exec_task(pid_t *pid, char* argv[]){
     return 0;
 }
 
-
+int monitor() {
+	int status;
+	pid_t pid; 
+	pid = waitpid(0, &status, 0);
+	if (pid < 0){
+		perror("Failed while executing waitpid");
+		return -1;
+	}
+	if (WIFEXITED(status)){
+		//Exited by return or exit
+		int exstat = WEXITSTATUS(status);
+		//TODO: what to do here??
+		debug("Process %d exit with exit value: %d", (int)pid, exstat);
+	}
+	else if (WIFSIGNALED(status)){
+		int sig = WTERMSIG(status);
+		//TODO: what to do here??
+		debug("Process %d exit because of signal: %s", (int)pid, strsignal(sig));
+	}
+}
 
 
 
@@ -115,15 +137,16 @@ int main(int argc, char *argv){
 	// 	ret = main_loop_test();
 	// }
 	// else{
-	int status;
-	ret = waitpid(pid, &status, 0);
-	if (ret == -1){
-		//TODO: understand why return -1;
-		perror("faild to wait pid");
-	}
-	else {
-		printf("Child process end with exit value (%d)\n\n", status);
-	}
+	// int status;
+	// ret = waitpid(pid, &status, 0);
+	// if (ret == -1){
+	// 	//TODO: understand why return -1;
+	// 	perror("faild to wait pid");
+	// }
+	// else {
+	// 	printf("Child process end with exit value (%d)\n\n", status);
+	// }
 	// }	
+	monitor();
 	return 0;
 }
