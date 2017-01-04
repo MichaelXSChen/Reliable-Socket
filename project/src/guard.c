@@ -171,9 +171,9 @@ int main(int argc, char *argv){
 	pid_t pid, sid;
 	
 	
-	char* array[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};
+	char* array[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", "abcdefg", "aaaaaaa","bbbbbbb"};
 	struct arg_command cmd, cmd2;
-	cmd.argc = 4;
+	cmd.argc = 6;
 	cmd.argv = array;
 	//debug("%s", cmd.argv[2]);
 	char* buf;
@@ -182,6 +182,11 @@ int main(int argc, char *argv){
 	debug("Len: %d", len);
 	
 	arg_command_deserialize(&cmd2, buf, len);
+	debug("argc:%d", cmd2.argc);
+	int i = 0;
+	for (i =0; i< cmd2.argc; i++){
+		debug("cmd:%s", cmd2.argv[i]);
+	}
 	//This make the process a deamon program/
 	/*
 	pid = fork();

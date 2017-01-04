@@ -66,20 +66,20 @@ int arg_command_deserialize(struct arg_command *cmd, const char *buf, int len){
 
 	memcpy(&argc, buf, sizeof(argc));
 	tpl_node *tn;
-	char ** argv;
+	char * argv[argc];
 	tn = tpl_map("s#", &argv, argc);
-	tpl_load(tn, TPL_MEM, &(buf[sizeof(argc)]), len-sizeof(argc));
+
+	tpl_load(tn, TPL_MEM, &buf[sizeof(argc)], len-sizeof(argc));
 	tpl_unpack(tn,0);
 	tpl_free(tn);
 	int i;
+	fflush(stdout);
+	cmd->argc = argc;
+	cmd->argv = (char**) malloc(argc * sizeof(char*));
 	for (i = 0; i<argc; i++){
-		printf("%s\n",argv[i]);
+		cmd->argv[i]= argv[i];
 	}
 
-
-
-
-	debug("argc: %d", argc);
 
 
 	return 0;
