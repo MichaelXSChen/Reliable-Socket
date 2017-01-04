@@ -64,7 +64,7 @@ int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd){
 int arg_command_deserialize(struct arg_command *cmd, const char *buf, int len){
 	int argc=0;
 
-	memcpy(&argc, &buf, sizeof(argc));
+	memcpy(&argc, buf, sizeof(argc));
 
 
 	debug("argc: %d", argc);
