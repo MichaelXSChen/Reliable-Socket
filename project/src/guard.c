@@ -159,31 +159,6 @@ int guard_listen(int port) {
 // };
 
 
-
-
-// int serialize(char *buf, char **argv, int size, int *len){
-// 	tpl_node *tn;
-	
-// 	//int size = sizeof(argv)/sizeof(char *);
-// 	debug("size %d", size);
-// 	//return 0;
-
-// 	tn = tpl_map("s#", argv, size);
-// 	tpl_pack(tn, 0);
-
-// 	tpl_dump(tn, TPL_GETSIZE, len);
-
-// 	buf = (char *) malloc(*len);
-// 	debug("len: %d", *len);
-// 	tpl_dump(tn, TPL_MEM, &buf, len);
-
-
-// 	tpl_free(tn);
-
-// 	return 0;
-
-// }
-
 // int deserialize(char**, char *str, int size,  ){
 // 	char** out;
 // 	tl_node *tn;
@@ -197,14 +172,16 @@ int main(int argc, char *argv){
 	
 	
 	char* array[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};
-	// struct command_type cmd;
-	// cmd.argc = 4;
-	// cmd.argv = array;
-	// debug("%s", cmd.argv[2]);
-
+	struct arg_command cmd, cmd2;
+	cmd.argc = 4;
+	cmd.argv = array;
+	//debug("%s", cmd.argv[2]);
 	char* buf;
 	int len;
-	//serialize(buf, array, 4, &len);
+	arg_command_serialize(&buf,&len, &cmd);
+	debug("Len: %d", len);
+	
+	arg_command_deserialize(&cmd2, buf, len);
 	//This make the process a deamon program/
 	/*
 	pid = fork();
@@ -227,18 +204,8 @@ int main(int argc, char *argv){
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
 	close(STDERR_FILENO);
-
 	*/
 
-	//Main logic here
-	// FILE *fp;
-	// fp = fopen("Log.txt", "w+");
-	// while(1){
-	// 	sleep(1);
-	// 	fprintf(fp, "logging info\n");
-	// 	fflush(fp);
-	// }
-	// fclose(fp);
 
 
 
@@ -260,7 +227,7 @@ int main(int argc, char *argv){
 	// }
 	// }
 
-	guard_listen(12346);	
+	//guard_listen(12346);	
 	//monitor();
 	return 0;
 }
