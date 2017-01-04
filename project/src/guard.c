@@ -7,22 +7,17 @@
 #include <sys/wait.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+
+
+#include "include/common.h"
+#include "include/tpl.h"
+#include "include/util.h"
 //#include <signal.h>
 
 
-#define DEBUG_ON 1 
-
-
-void debug(const char* format,...){
-	if (DEBUG_ON){
-		va_list args;
-		fprintf(stderr, "[DEBUG]: ");
-		va_start (args, format);
-		vfprintf(stderr, format, args);
-		va_end(args);
-		fprintf(stderr, "\n");
-	}
-}
 
 
 // int main_loop_test(){
@@ -89,10 +84,127 @@ int monitor() {
 
 
 
+
+int serve_conn(int sk){
+	while(1){
+		char *buf;
+		int length, ret;
+		ret = recv_bytes(sk, &buf, &length);
+		if (ret < 0){
+			perrorf("Failed to recv");
+			return -1;
+		}
+		else{
+			debug("length %d", length);
+
+			//debug("strlen: %d", strlen(buf));
+			debug("str: %s", buf);
+		}
+	}
+
+
+	return 0;
+}
+
+int guard_listen(int port) {
+	int sk,ret;
+
+
+	struct sockaddr_in addr;
+
+	sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sk < 0){
+		perror("Cannot create socket");
+		return -1;
+	}
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	addr.sin_port = htons(port);
+
+	debug("Bingd to port %d", port);
+	ret = bind(sk, (struct sockaddr*)&addr, sizeof(addr));
+	if (ret < 0){
+		perror("[ERROR]: Cannot bind to socket");
+		return -1;
+	}
+	ret = listen(sk, 16);
+	if (ret < 0){
+		perror("Cannot put socket to listen state");
+		return ret;
+	}
+	debug("Wating for connections");
+
+
+	int ask, pid; 
+
+
+	ask = accept(sk, NULL, NULL);
+	if (ask < 0){
+		perror("Cannot accept new conn");
+		return -1;
+	}
+	close(sk);
+
+	serve_conn(ask);
+	return 0;
+
+}
+
+
+
+// struct command_type{
+// 	int argc;
+// 	char** argv;
+// };
+
+
+
+
+// int serialize(char *buf, char **argv, int size, int *len){
+// 	tpl_node *tn;
+	
+// 	//int size = sizeof(argv)/sizeof(char *);
+// 	debug("size %d", size);
+// 	//return 0;
+
+// 	tn = tpl_map("s#", argv, size);
+// 	tpl_pack(tn, 0);
+
+// 	tpl_dump(tn, TPL_GETSIZE, len);
+
+// 	buf = (char *) malloc(*len);
+// 	debug("len: %d", *len);
+// 	tpl_dump(tn, TPL_MEM, &buf, len);
+
+
+// 	tpl_free(tn);
+
+// 	return 0;
+
+// }
+
+// int deserialize(char**, char *str, int size,  ){
+// 	char** out;
+// 	tl_node *tn;
+// 	tn = tpl_map("s#");
+// }
+
+
+
 int main(int argc, char *argv){
 	pid_t pid, sid;
 	
+	
+	char* array[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};
+	// struct command_type cmd;
+	// cmd.argc = 4;
+	// cmd.argv = array;
+	// debug("%s", cmd.argv[2]);
 
+	char* buf;
+	int len;
+	//serialize(buf, array, 4, &len);
 	//This make the process a deamon program/
 	/*
 	pid = fork();
@@ -132,7 +244,7 @@ int main(int argc, char *argv){
 
 	int ret;
 	char* argv_child[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};
-	ret = exec_task(&pid, argv_child);
+	//ret = exec_task(&pid, argv_child);
 	// if (pid == 0){
 	// 	ret = main_loop_test();
 	// }
@@ -146,7 +258,11 @@ int main(int argc, char *argv){
 	// else {
 	// 	printf("Child process end with exit value (%d)\n\n", status);
 	// }
-	// }	
-	monitor();
+	// }
+
+	guard_listen(12346);	
+	//monitor();
 	return 0;
 }
+
+
