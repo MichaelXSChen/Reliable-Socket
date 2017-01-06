@@ -50,6 +50,7 @@ static int tcp_repair_off(int fd)
 }
 
 static int get_tcp_queue_seq(int sk, int queue, u32 *seq){
+    debug("sk: %d", sk);
     if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)) < 0){
         perror("CANNOT SET TCP Repair Queue");
         return -1;
@@ -362,51 +363,166 @@ int replace_tcp (int *sk, struct sockaddr_in bind_address, struct sockaddr_in co
 
 
 
-int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+    
+//     int ret; 
+//     printf("Coonect Function intercepted!!\n\n\n");
+//     orig_connect_func_type orig_connect;
+//     orig_connect = (orig_connect_func_type) dlsym(RTLD_NEXT,"connect");
+    
+//     tcp_repair_on(sockfd);
+//     set_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, 931209);
+//     tcp_repair_off(sockfd);
+    
+//     ret = orig_connect(sockfd, addr, addrlen);
+//     // printf("sk after connect : %d\n", sk);
+//     // fflush(stdout);
+
+
+//     // struct sockaddr_in cliaddr, srvaddr;
+//     // memset(&cliaddr, 0, sizeof(struct sockaddr_in));
+//     // cliaddr.sin_family = AF_INET;
+//     // cliaddr.sin_port = htons(10060);
+//     // ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
+//     // if (ret < 0) {
+//     //     perror("Can't convert addr");
+//     //     return -1;
+//     // }
+
+//     // int port = 9999; 
+//     // memset(&srvaddr, 0, sizeof(srvaddr));
+//     // srvaddr.sin_family = AF_INET;
+//     // srvaddr.sin_port = htons(port);
+//     // ret = inet_aton("127.0.0.1", &srvaddr.sin_addr);
+//     // if (ret < 0) {
+//     //     perror("Can't convert addr");
+//     //     return -1;
+//     // }
+
+
+//     // ret = replace_tcp(&sk, cliaddr, srvaddr);
+//     // if (ret != 0) {
+//     //     return ret;
+//     // }
+//     return ret;
+// }
+
+
+
+
+
+int handle_con_info(const struct con_info_type *con_info){
     
     int ret; 
-    printf("Coonect Function intercepted!!\n\n\n");
-    orig_connect_func_type orig_connect;
-    orig_connect = (orig_connect_func_type) dlsym(RTLD_NEXT,"connect");
+    //Send the packet
+    //If it is the leader, it will be consensusd
+    //If it is a follower, it will get the ISN to apply locally.
+    char *buf;
+    int len;
+    ret = con_info_serialize(&buf, &len, con_info);
     
-    tcp_repair_on(sockfd);
-    set_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, 931209);
-    tcp_repair_off(sockfd);
+    printf("\n");
+    for (ret = 0; ret < len; ret ++){
+        printf("%d:   %d\n", ret, buf[ret]);
+        fflush(stdout);
+    }
+
+    printf("\n");
+
+    if (ret < 0){
+        perror("Failed to serialize connection info");
+        return -1;
+    }
+    int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
     
-    ret = orig_connect(sockfd, addr, addrlen);
-    // printf("sk after connect : %d\n", sk);
-    // fflush(stdout);
 
+    struct sockaddr_in addr;
+    debug("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    addr.sin_port = htons(CON_MGR_PORT);
 
-    // struct sockaddr_in cliaddr, srvaddr;
-    // memset(&cliaddr, 0, sizeof(struct sockaddr_in));
-    // cliaddr.sin_family = AF_INET;
-    // cliaddr.sin_port = htons(10060);
-    // ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
-    // if (ret < 0) {
-    //     perror("Can't convert addr");
-    //     return -1;
-    // }
+    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
 
-    // int port = 9999; 
-    // memset(&srvaddr, 0, sizeof(srvaddr));
-    // srvaddr.sin_family = AF_INET;
-    // srvaddr.sin_port = htons(port);
-    // ret = inet_aton("127.0.0.1", &srvaddr.sin_addr);
-    // if (ret < 0) {
-    //     perror("Can't convert addr");
-    //     return -1;
-    // }
+    ret = send_bytes(sk, buf, len);
 
+    if (ret < 0){
+        perror("Failed to send con_info");
+        return -1;
+    }
 
-    // ret = replace_tcp(&sk, cliaddr, srvaddr);
-    // if (ret != 0) {
-    //     return ret;
-    // }
-    return ret;
+    return 0;
+
+    //recv return value from con -manager
+
 }
 
+
+
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+    int ret, port;
+    printf("accept func intercepted \n\n");
+    fflush(stdout);
+    int aux; 
+    socklen_t len;
+
+    orig_accpet_func_type orig_accept_func; 
+    orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
+    int sk; 
+    sk = orig_accept_func(sockfd, addr, addrlen);
+
+    uint32_t seq; 
+
+    // sleep(5);
+    // ret = tcp_repair_on(sk);
+    // if (ret < 0){
+    //     perrorf("Failed turn on");
+    // }
+    // ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
+    // if (ret < 0){
+    //     perrorf("Failed to get tcp_seq");
+    //     return -1;
+    // }
+
+    // ret = tcp_repair_off(sk);
+    // if (ret < 0){
+    //     perrorf("Failed turn off");
+    // }
+    seq =99999;
+
+    struct con_id_type con_id;
+    con_id.src_ip = 12345;
+    con_id.src_port = 1122;
+    con_id.dst_ip = 67890;
+    con_id.dst_port = 2211;
+    struct con_info_type con_info;
+    con_info.con_id = con_id;
+    con_info.isn = 931209;
+
+    ret = handle_con_info(&con_info);
+    if (ret < 0){
+        perrorf("Failed to send con_info");
+        return -1;
+    }
+    return sk; 
+}
+
+
+
+int accept_bk(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 	int ret, port;
 	printf("accept func intercepted \n\n");
     fflush(stdout);
@@ -486,55 +602,4 @@ int is_leader(){
     return 1;     
 }
 
-static int init_connection(){
-    int ret = 0;
-    int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    struct sockaddr_in addr;
-    debug("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
-    if (ret < 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    addr.sin_port = htons(CON_MGR_PORT);
 
-    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-
-    return sk;
-}
-
-
-int handle_isn(struct con_info_type con_info){
-    
-    int ret; 
-    //Send the packet
-    //If it is the leader, it will be consensusd
-    //If it is a follower, it will get the ISN to apply locally.
-    int sk = init_connection();
-
-    char *buf;
-    int len;
-    ret = con_info_serialize(&buf, &len, &con_info);
-    if (ret < 0){
-        perror("Failed to serialize connection info");
-        return -1;
-    }
-    ret = send_bytes(sk, buf, len);
-    if (ret < 0){
-        perror("Faile to send con_info");
-    }
-
-
-    //recv return value from con -manager
-
-}

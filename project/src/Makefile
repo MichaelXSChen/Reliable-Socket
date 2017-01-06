@@ -9,7 +9,8 @@ intercept.so: intercept.c util.c common.c
 	gcc -fPIC -c util.c -o util_pic.o -I.
 	gcc -fPIC -c common.c -o common_pic.o -I.
 	gcc -fPIC -c intercept.c -o intercept.o	-I.
-	gcc -shared -o intercept.so util_pic.o common_pic.o intercept.o
+	gcc -fPIC -c tpl.c -o tpl_pic.o -I.
+	gcc -fPIC -shared -o intercept.so util_pic.o common_pic.o intercept.o tpl_pic.o -ldl
 
 guard: guard.c guard.o tpl.o common.o util.o
 	gcc -c guard.c -I.

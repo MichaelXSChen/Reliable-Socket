@@ -8,9 +8,9 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <inttypes.h>
 
-
-#define SERVICE_PORT 9999
+#define SERVICE_PORT 4321
 
 
 int is_leader(){
@@ -21,6 +21,12 @@ int is_leader(){
 
 struct con_isn_pair_type *con_isn_list;
 int sk; 
+
+
+int handle_con_info(){
+	return 0;
+}
+
 
 void *serve(void *sk_arg){
 	int *sk = (int *) sk_arg;
@@ -35,6 +41,11 @@ void *serve(void *sk_arg){
 		}
 		struct con_info_type con_info;
 		ret = con_info_deserialize(&con_info, buf, len);
+		debug("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
+		debug("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
+		debug("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
+		debug("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
+		debug("ISN: %" PRIu32 "", con_info.isn);
 
 		pthread_exit(0);
 	}	
