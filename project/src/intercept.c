@@ -50,15 +50,17 @@ static int tcp_repair_off(int fd)
 }
 
 static int get_tcp_queue_seq(int sk, int queue, u32 *seq){
-    debug("sk: %d", sk);
     if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)) < 0){
         perror("CANNOT SET TCP Repair Queue");
         return -1;
     }
-    if (getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, seq, NULL) < 0){
+    socklen_t len = sizeof(*seq);
+    if (getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, seq, &len) < 0){
         perror("Cannot GET tcp sequece number");
         return -1;
     }
+    debug("seq: %"PRIu32"", *seq);
+
 }
 
 
@@ -409,8 +411,6 @@ int replace_tcp (int *sk, struct sockaddr_in bind_address, struct sockaddr_in co
 
 
 
-
-
 int handle_con_info(const struct con_info_type *con_info){
     
     int ret; 
@@ -420,12 +420,7 @@ int handle_con_info(const struct con_info_type *con_info){
     char *buf;
     int len;
     ret = con_info_serialize(&buf, &len, con_info);
-    
-    printf("\n");
-    for (ret = 0; ret < len; ret ++){
-        printf("%d:   %d\n", ret, buf[ret]);
-        fflush(stdout);
-    }
+
 
     printf("\n");
 
@@ -484,24 +479,26 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     int sk; 
     sk = orig_accept_func(sockfd, addr, addrlen);
 
-    uint32_t seq; 
+    uint32_t seq=0; 
+    sleep(1);
+    ret = tcp_repair_on(sk);
+    if (ret < 0){
+        perrorf("Failed turn on");
+    }
+    ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
+    if (ret < 0){
+        perrorf("Failed to get tcp_seq");
+        return -1;
+    }
 
-    // sleep(5);
-    // ret = tcp_repair_on(sk);
-    // if (ret < 0){
-    //     perrorf("Failed turn on");
-    // }
-    // ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
-    // if (ret < 0){
-    //     perrorf("Failed to get tcp_seq");
-    //     return -1;
-    // }
+    ret = tcp_repair_off(sk);
+    if (ret < 0){
+        perrorf("Failed turn off");
+    }
+   
 
-    // ret = tcp_repair_off(sk);
-    // if (ret < 0){
-    //     perrorf("Failed turn off");
-    // }
-    seq =99999;
+
+    debug("SEQ: %"PRIu32 "", seq);
 
     struct con_id_type con_id;
     con_id.src_ip = 12345;
@@ -512,7 +509,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     con_info.con_id = con_id;
     con_info.isn = 931209;
 
-    ret = handle_con_info(&con_info);
+    //ret = handle_con_info(&con_info);
     if (ret < 0){
         perrorf("Failed to send con_info");
         return -1;
