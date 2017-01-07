@@ -110,6 +110,24 @@ void *serve(void *sk_arg){
 				find(&entry,&(con_info.con_id));
 			}
 			debug("Match, isn = %"PRIu32"", entry->isn);
+			is_leader = 0;
+			ret = send(*sk, &is_leader, sizeof(is_leader), 0);
+			if (ret < 0){
+				printf("Failed to send reply back");
+				pthread_exit(0);
+			}
+
+			con_info.isn = entry->isn;
+			int len;
+			char* buf;
+			ret = con_info_serialize(&buf, &len, &con_info);
+
+			ret = send_bytes(*sk, buf, len);
+
+		    if (ret < 0){
+		        perror("Failed to send con_info");
+		        pthread_exit(0);
+		    }
 
 		}	
 

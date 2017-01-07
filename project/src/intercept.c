@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
 
 #include "include/common.h"
 #include "include/util.h"
@@ -411,7 +412,7 @@ int replace_tcp (int *sk, struct sockaddr_in bind_address, struct sockaddr_in co
 
 
 
-int handle_con_info(const struct con_info_type *con_info){
+int handle_con_info(struct con_info_type **con_info){
     
     int ret; 
     //Send the packet
@@ -419,7 +420,7 @@ int handle_con_info(const struct con_info_type *con_info){
     //If it is a follower, it will get the ISN to apply locally.
     char *buf;
     int len;
-    ret = con_info_serialize(&buf, &len, con_info);
+    ret = con_info_serialize(&buf, &len, *con_info);
 
 
     printf("\n");
@@ -459,6 +460,36 @@ int handle_con_info(const struct con_info_type *con_info){
         return -1;
     }
 
+    uint8_t is_leader;
+    ret = recv(sk, &is_leader, sizeof(is_leader), 0);
+    debug("Is leader:%"PRIu8"", is_leader);
+    if(is_leader){
+        return 0;
+    }else{
+        char *buf;
+        int ret, len;
+        ret = recv_bytes(sk, &buf, &len);
+        if (ret < 0){
+            perrorf("failed to recv bytes");
+            return -1;
+        }
+
+        //TODO: Check the correction of incoming data. 
+        // struct con_info_type con_info_new;
+        // ret = con_info_deserialize(&con_info_new, buf, len);
+        // debug("Serailize succeed, new isn= %"PRIu32"", con_info_new.isn);
+        // *con_info = &con_info_new;
+
+        free(*con_info);
+        ret = con_info_deserialize(*con_info, buf, len);
+        debug("Serailize succeed, new isn= %"PRIu32"",(*con_info)->isn);
+    
+        return 1;
+    }
+
+
+
+
     return 0;
 
     //recv return value from con -manager
@@ -497,22 +528,30 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     }
    
 
-
+    struct con_info_type *con_info;
+    con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
    
 
-    struct con_id_type con_id;
-    con_id.src_ip = 12345;
-    con_id.src_port = 1122;
-    con_id.dst_ip = 67890;
-    con_id.dst_port = 2211;
-    struct con_info_type con_info;
-    con_info.con_id = con_id;
-    con_info.isn = seq;
+    //struct con_id_type con_id;
+    con_info->con_id.src_ip = 12345;
+    con_info->con_id.src_port = 1122;
+    con_info->con_id.dst_ip = 67890;
+    con_info->con_id.dst_port = 2211;
+    //struct con_info_type con_info;
+    //con_info.con_id = con_id;
+    con_info->isn = seq;
 
     ret = handle_con_info(&con_info);
     if (ret < 0){
         perrorf("Failed to send con_info");
         return -1;
+    }
+
+    if (ret = 0){
+        debug("I am the leader");
+    }
+    if (ret = 1){
+        debug("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
     }
     return sk; 
 }
