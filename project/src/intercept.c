@@ -200,6 +200,11 @@ int replace_tcp (int *sk, uint32_t seq){
         return -1;
     }
 
+
+    uint32_t recv_seq;
+    ret = get_tcp_queue_seq(*sk, TCP_RECV_QUEUE, &recv_seq);
+
+
     ret = close(*sk);
     
  
@@ -211,10 +216,15 @@ int replace_tcp (int *sk, uint32_t seq){
     if (ret != 0){
        return ret;
     }
+    ret = set_tcp_queue_seq(*sk, TCP_RECV_QUEUE, recv_seq);
+    if (ret != 0) {
+        perror("Failed to set recv queue seq");
+        return -1;
+    }
 
     ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, seq);
     if (ret != 0) {
-        perror("Failed to set send queue");
+        perror("Failed to set send queue seq");
         return -1;
     }
 
@@ -342,9 +352,9 @@ int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
         return -1;
     }
 
-    ret = recv(sk, &is_leader, sizeof(is_leader), 0);
+    ret = recv(sk, is_leader, sizeof(*is_leader), 0);
     debug("Is leader:%"PRIu8"", is_leader);
-    if(is_leader){
+    if(*is_leader == 1){
         return 0;
     }else{
         char *buf;
@@ -431,6 +441,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     }else{
         debug("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
     }
+
     ret =replace_tcp(&sk, seq);
     return sk; 
 }
