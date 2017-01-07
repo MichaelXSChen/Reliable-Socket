@@ -97,7 +97,7 @@ int con_info_serialize(char **buf, int *len, const struct con_info_type *con_inf
 
 
 int con_info_deserialize(struct con_info_type *con_info, const char *buf, int len){
-	debug("deserialize called, len: %d", len);
+	//debug("deserialize called, len: %d", len);
 	tpl_node *tn;
 	tn = tpl_map("S($(uvuv)u)", con_info);
 	tpl_load(tn, TPL_MEM, buf, len);

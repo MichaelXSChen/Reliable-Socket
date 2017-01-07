@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include "include/uthash.h"
 #include "include/tpl.h"
 
 #ifndef COMMON_H
@@ -37,14 +36,13 @@ struct con_info_type{
     uint32_t isn; 
 };
 
-struct con_list_entry{
-	struct con_id_type con_id;
-    uint32_t isn; 
-    UT_hash_handle hh;
-};
 
 int con_info_serialize(char **buf, int *len, const struct con_info_type *con_info);
 int con_info_deserialize(struct con_info_type *con_info, const char *buf, int len);
 
- 
+struct con_info_reply{
+    uint8_t is_leader;
+    uint32_t isn;
+};
+
 #endif // COMMON_H
