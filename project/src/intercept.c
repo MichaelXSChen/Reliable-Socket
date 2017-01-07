@@ -26,6 +26,9 @@ typedef int (*orig_bind_func_type)(int sockfd, const struct sockaddr *addr, sock
 
 typedef uint32_t u32;
 
+
+
+
 //int sock; 
 
 
@@ -84,6 +87,21 @@ static int set_tcp_queue_seq(int sk, int queue, u32 seq)
 
 
 
+
+static int get_sock_addr(int sk){
+    struct sockaddr_in addr; 
+    len = sizeof(addr);
+
+    getpeername(sk, (struct sockaddr*)&addr, &len);
+
+    debug("Peer port:%"PRIu16"", ntohs(addr->sin_port));
+    char ipstr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &adrr->sin_addr, ipstr, sizeof(ipstr));
+    debug("Peer IP:%s", ipstr);
+
+
+    return 0;
+}
 
 /**
 
@@ -527,6 +545,9 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         perrorf("Failed turn off");
     }
    
+
+    get_sock_addr(sk);
+
 
     struct con_info_type *con_info;
     con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
