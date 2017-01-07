@@ -148,13 +148,12 @@ int init(){
 	int ret;
 
 	con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
-	entry->con_id.src_port = 1122;
-	entry->con_id.src_ip = 12345;
-	entry->con_id.dst_ip = 67890;
-	entry->con_id.dst_port = 2211;
-	entry->isn = 950506;
+	entry->con_id.src_port = htons(9999);
+	entry->con_id.src_ip = 16777343;
+	entry->con_id.dst_ip = 16777343;
+	entry->con_id.dst_port = htons(10060);
+	entry->isn = 931209;
 
-	insert(entry);
 	insert(entry);
 
 
