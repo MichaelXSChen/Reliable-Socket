@@ -85,18 +85,46 @@ static int set_tcp_queue_seq(int sk, int queue, u32 seq)
     return 0;
 }
 
+static int get_tcp_con_id(int sk, struct con_info_type *con_info){
+    struct sockaddr_in localaddr, remoteaddr;
+    int len = sizeof(localaddr);
+    int ret; 
 
+    ret = getpeername(sk, (struct sockaddr*)&remoteaddr, &len);
+    if (ret != 0){
+        perrorf("Failed to get addr for sk: %d", sk);
+        return -1;
+    }
+    con_info->con_id.dst_ip = remoteaddr.sin_addr.s_addr;
+    con_info->con_id.dst_port = remoteaddr.sin_port;
+
+
+    ret = getsockname(sk, (struct sockaddr*)&localaddr, &len);
+    if (ret != 0){
+        perrorf("Failed to get addr for sk: %d", sk);
+        return -1;
+    }
+    con_info->con_id.src_ip = localaddr.sin_addr.s_addr;
+    con_info->con_id.src_port = localaddr.sin_port;
+
+
+
+
+
+    return 0;
+
+}
 
 
 static int get_sock_addr(int sk){
     struct sockaddr_in addr; 
-    len = sizeof(addr);
+    int len = sizeof(addr);
 
-    getpeername(sk, (struct sockaddr*)&addr, &len);
+    getsockname(sk, (struct sockaddr*)&addr, &len);
 
-    debug("Peer port:%"PRIu16"", ntohs(addr->sin_port));
+    debug("Peer port:%"PRIu16"", ntohs(addr.sin_port));
     char ipstr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &adrr->sin_addr, ipstr, sizeof(ipstr));
+    inet_ntop(AF_INET, &addr.sin_addr, ipstr, sizeof(ipstr));
     debug("Peer IP:%s", ipstr);
 
 
