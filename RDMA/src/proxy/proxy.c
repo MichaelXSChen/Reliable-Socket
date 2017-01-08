@@ -21,7 +21,7 @@ static void do_action_close(uint16_t clt_id,void* arg);
 static int set_blocking(int fd, int blocking);
 
 static void do_action_raw(uint16_t clt_id, void *arg);
-static void do_action_tcpnewcon(uint16_t clt_id, void *arg);
+static void do_action_tcpnewcon(void *data, size_t size);
 
 
 
@@ -353,7 +353,7 @@ static void do_action_to_server(uint16_t clt_id,uint8_t type,size_t data_size,vo
             if(output!=NULL){
                 fprintf(output, "Operation: TCPNEWCON\n");
             }
-            do_action_tcpnewcon(clt_id, arg);
+            do_action_tcpnewcon(data, data_size);
             break;
         default:
             break;
@@ -504,19 +504,24 @@ proxy_exit_error:
 
 int msg_handle(uint8_t *buf, int size){
     if(is_leader()){
-        //do consensus
+        //do consensus if leader
+        //drop otherwise
         leader_handle_submit_req(RAW, size, buf, 0, proxy);
     }
-    else{
-        //drop the msg
-        return 0;
-    }
+    return 0;
 }
 
+int tcpnewcon_handle(uint8_t *buf,int size){
+    if(is_leader()){
+        leader_handle_submit_req(TCPNEWCON, size, buf, 0, proxy);
+    }
+    return 0;
+}
 
-static void do_action_tcpnewcon(uint16_t clt_id, void *arg){
+static void do_action_tcpnewcon(void *data, size_t size){
     //Backup 
-    //Call insert in con-manager                                           
+    //Call insert in con-manager
+    insert_connection_bytes((char*)data, size);
 }
 
 static void do_action_raw(uint16_t clt_id, void *arg){

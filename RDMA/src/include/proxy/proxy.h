@@ -96,6 +96,11 @@ typedef struct proxy_send_msg_t{
 typedef struct proxy_close_msg_t{
     proxy_msg_header header;
 }proxy_close_msg;
+
+
+int tcpnewcon_handle(uint8_t *buf,int size);
+
+
 #define PROXY_CLOSE_MSG_SIZE (sizeof(proxy_close_msg))
 
 #endif

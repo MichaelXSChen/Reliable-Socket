@@ -1,8 +1,8 @@
 #include "../include/vpb/common.h"
 #include "../../utils/uthash/uthash.h"
 #include "../include/vpb/con-manager.h"
-
-
+#include "../include/dare/dare_server.h"
+#include "../include/proxy/proxy.h"
 
 #include <pthread.h>
 #include <stdint.h>
@@ -45,13 +45,24 @@ int insert_connection(con_list_entry* entry){
 }
 
 
-
-int iamleader(){
-	//TODO:return 1 if it is leader, 0 other wise. 
-	//The manager will work differently if is leader or not
+int insert_connection_bytes(char* buf, int len){
+	int ret;
+	struct con_info_type con_info;
+	ret = con_info_deserialize(&con_info, buf, len);
+	if (ret <0){
+		perrorf("Failed to deserialize consensused req");
+		return -1;
+	}
+	con_list_entry entry;
+	entry.con_id = con_info.con_id;
+	entry.isn = con_info.isn;
+	ret = insert_connection(&entry);
+	if (ret <0){
+		perrorf("Failed to insert into hashmap");
+		return ret;
+	}
 	return 0;
 }
-
 
 
 int handle_con_info(){
@@ -80,17 +91,20 @@ void *serve(void *sk_arg){
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		debugf("ISN: %" PRIu32 "", con_info.isn);
 
-		uint8_t is_leader;
-		if (iamleader()){
-			//TODO: Make consensus 
+		uint8_t iamleader;
+		if (is_leader()){
+			//TODO: Cleaner
 
 			/**
-			Consensus 
+			Consensus
 			**/
 
+
+			tcpnewcon_handle((uint8_t *)buf,len); 
+
 			//
-			is_leader = 1;
-			ret = send(*sk, &is_leader, sizeof(is_leader), 0);
+			iamleader = 1;
+			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			if (ret < 0){
 				printf("Failed to send reply back");
 				pthread_exit(0);
@@ -103,11 +117,12 @@ void *serve(void *sk_arg){
 			while(entry == NULL){
 				debugf("NO match, try again");
 				sleep(1);
+				//TODO: improve this faster;
 				find_connection(&entry,&(con_info.con_id));
 			}
 			debugf("Match, isn = %"PRIu32"", entry->isn);
-			is_leader = 0;
-			ret = send(*sk, &is_leader, sizeof(is_leader), 0);
+			iamleader = 0;
+			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			if (ret < 0){
 				printf("Failed to send reply back");
 				pthread_exit(0);
@@ -136,7 +151,22 @@ void *serve(void *sk_arg){
 }
 
 
-
+void *wait_for_connection(void *arg){
+	int ret;
+	while(1){
+		struct sockaddr_in cliaddr;
+		socklen_t clilen;
+		int ask = accept(sk, (struct sockaddr*)&cliaddr, &clilen);
+		if (ask < 0){
+			perror("Cannot accept new con");
+		}
+		pthread_t thread1;
+		ret = pthread_create(&thread1, NULL, &serve, (void *)&ask);
+		if (ret < 0){
+			pthread_exit(0);
+		}
+	}
+}
 
 int con_manager_init(){
 	// Init the hash table
@@ -186,22 +216,9 @@ int con_manager_init(){
 		perror("Failed to put sock into listen state");
 		return -1;
 	}
-	while(1){
-		struct sockaddr_in cliaddr;
-		socklen_t clilen;
-		int ask = accept(sk, (struct sockaddr*)&cliaddr, &clilen);
-		if (ask < 0){
-			perror("Cannot accept new con");
-			return -1;
-		}
-		pthread_t thread1;
-		ret = pthread_create(&thread1, NULL, &serve, (void *)&ask);
-		if (ret < 0){
-			perror("Failed to create thread");
-			return -1;
-		}
-	}
+	pthread_t listen_thread;
 
+	ret = pthread_create(&listen_thread, NULL, &wait_for_connection, (void*)&sk);
 
 	return 0;
 }

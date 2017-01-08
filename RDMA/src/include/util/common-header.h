@@ -7,7 +7,7 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <error.h>
+//#include <error.h>
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
