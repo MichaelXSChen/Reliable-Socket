@@ -21,39 +21,44 @@
 #include <assert.h>
 #include "cpu.h"
 #include "helper.h"
-#include "qemu/host-utils.h"
+#include "host-utils.h"
 
 #define D(x)
 
 #if !defined(CONFIG_USER_ONLY)
-#include "exec/softmmu_exec.h"
+#include "softmmu_exec.h"
 
 #define MMUSUFFIX _mmu
 #define SHIFT 0
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 #define SHIFT 1
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 #define SHIFT 2
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 #define SHIFT 3
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 /* Try to fill the TLB and return an exception if error. If retaddr is
- * NULL, it means that the function was called in C code (i.e. not
- * from generated code or from helper.c)
- */
-void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
+   NULL, it means that the function was called in C code (i.e. not
+   from generated code or from helper.c) */
+void tlb_fill(CPUMBState *env, target_ulong addr, int is_write, int mmu_idx,
               uintptr_t retaddr)
 {
+    TranslationBlock *tb;
     int ret;
 
-    ret = mb_cpu_handle_mmu_fault(cs, addr, is_write, mmu_idx);
+    ret = cpu_mb_handle_mmu_fault(env, addr, is_write, mmu_idx);
     if (unlikely(ret)) {
         if (retaddr) {
             /* now we have a real cpu fault */
-            cpu_restore_state(cs, retaddr);
+            tb = tb_find_pc(retaddr);
+            if (tb) {
+                /* the PC is inside the translated code. It means that we have
+                   a virtual CPU fault */
+                cpu_restore_state(tb, env, retaddr);
+            }
         }
-        cpu_loop_exit(cs);
+        cpu_loop_exit(env);
     }
 }
 #endif
@@ -95,10 +100,8 @@ uint32_t helper_get(uint32_t id, uint32_t ctrl)
 
 void helper_raise_exception(CPUMBState *env, uint32_t index)
 {
-    CPUState *cs = CPU(mb_env_get_cpu(env));
-
-    cs->exception_index = index;
-    cpu_loop_exit(cs);
+    env->exception_index = index;
+    cpu_loop_exit(env);
 }
 
 void helper_debug(CPUMBState *env)
@@ -498,20 +501,11 @@ void helper_mmu_write(CPUMBState *env, uint32_t rn, uint32_t v)
     mmu_write(env, rn, v);
 }
 
-void mb_cpu_unassigned_access(CPUState *cs, hwaddr addr,
-                              bool is_write, bool is_exec, int is_asi,
-                              unsigned size)
+void cpu_unassigned_access(CPUMBState *env, target_phys_addr_t addr,
+                           int is_write, int is_exec, int is_asi, int size)
 {
-    MicroBlazeCPU *cpu;
-    CPUMBState *env;
-
     qemu_log_mask(CPU_LOG_INT, "Unassigned " TARGET_FMT_plx " wr=%d exe=%d\n",
-             addr, is_write ? 1 : 0, is_exec ? 1 : 0);
-    if (cs == NULL) {
-        return;
-    }
-    cpu = MICROBLAZE_CPU(cs);
-    env = &cpu->env;
+             addr, is_write, is_exec);
     if (!(env->sregs[SR_MSR] & MSR_EE)) {
         return;
     }

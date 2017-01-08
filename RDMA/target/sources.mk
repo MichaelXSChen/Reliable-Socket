@@ -11,14 +11,17 @@ OBJS :=
 C_DEPS := 
 EXECUTABLES := 
 
+RBTREE_OBJS := 
+DARE_OBJS := 
+DARE := 
+RBTREE := 
+DARE_LIBPATH := 
+
 # Every subdirectory with source files must be described here
 SUBDIRS := \
 src/util \
 src \
+src/dare \
 src/db \
-src/consensus \
 src/config-comp \
-src/rdma \
-src/output \
-src/replica-sys \
-src/ev_mgr \
+src/proxy \

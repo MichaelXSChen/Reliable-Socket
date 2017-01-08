@@ -12,8 +12,8 @@
  */
 
 #include "trace.h"
-#include "block/block_int.h"
-#include "block/blockjob.h"
+#include "block_int.h"
+#include "blockjob.h"
 #include "qemu/ratelimit.h"
 
 enum {
@@ -57,11 +57,6 @@ static void close_unused_images(BlockDriverState *top, BlockDriverState *base,
     BlockDriverState *intermediate;
     intermediate = top->backing_hd;
 
-    /* Must assign before bdrv_delete() to prevent traversing dangling pointer
-     * while we delete backing image instances.
-     */
-    top->backing_hd = base;
-
     while (intermediate) {
         BlockDriverState *unused;
 
@@ -73,10 +68,9 @@ static void close_unused_images(BlockDriverState *top, BlockDriverState *base,
         unused = intermediate;
         intermediate = intermediate->backing_hd;
         unused->backing_hd = NULL;
-        bdrv_unref(unused);
+        bdrv_delete(unused);
     }
-
-    bdrv_refresh_limits(top);
+    top->backing_hd = base;
 }
 
 static void coroutine_fn stream_run(void *opaque)
@@ -90,14 +84,9 @@ static void coroutine_fn stream_run(void *opaque)
     int n = 0;
     void *buf;
 
-    if (!bs->backing_hd) {
-        block_job_completed(&s->common, 0);
-        return;
-    }
-
     s->common.len = bdrv_getlength(bs);
     if (s->common.len < 0) {
-        block_job_completed(&s->common, s->common.len);
+        block_job_complete(&s->common, s->common.len);
         return;
     }
 
@@ -119,24 +108,23 @@ static void coroutine_fn stream_run(void *opaque)
 
 wait:
         /* Note that even when no rate limit is applied we need to yield
-         * with no pending I/O here so that bdrv_drain_all() returns.
+         * with no pending I/O here so that qemu_aio_flush() returns.
          */
-        block_job_sleep_ns(&s->common, QEMU_CLOCK_REALTIME, delay_ns);
+        block_job_sleep_ns(&s->common, rt_clock, delay_ns);
         if (block_job_is_cancelled(&s->common)) {
             break;
         }
 
-        copy = false;
-
-        ret = bdrv_is_allocated(bs, sector_num,
-                                STREAM_BUFFER_SIZE / BDRV_SECTOR_SIZE, &n);
+        ret = bdrv_co_is_allocated(bs, sector_num,
+                                   STREAM_BUFFER_SIZE / BDRV_SECTOR_SIZE, &n);
         if (ret == 1) {
             /* Allocated in the top, no need to copy.  */
-        } else if (ret >= 0) {
+            copy = false;
+        } else {
             /* Copy if allocated in the intermediate images.  Limit to the
              * known-unallocated area [sector_num, sector_num+n).  */
-            ret = bdrv_is_allocated_above(bs->backing_hd, base,
-                                          sector_num, n, &n);
+            ret = bdrv_co_is_allocated_above(bs->backing_hd, base,
+                                             sector_num, n, &n);
 
             /* Finish early if end of backing file has been reached */
             if (ret == 0 && n == 0) {
@@ -146,7 +134,7 @@ wait:
             copy = (ret == 1);
         }
         trace_stream_one_iteration(s, sector_num, n, ret);
-        if (copy) {
+        if (ret >= 0 && copy) {
             if (s->common.speed) {
                 delay_ns = ratelimit_calculate_delay(&s->limit, n);
                 if (delay_ns > 0) {
@@ -196,7 +184,7 @@ wait:
     }
 
     qemu_vfree(buf);
-    block_job_completed(&s->common, ret);
+    block_job_complete(&s->common, ret);
 }
 
 static void stream_set_speed(BlockJob *job, int64_t speed, Error **errp)
@@ -210,9 +198,9 @@ static void stream_set_speed(BlockJob *job, int64_t speed, Error **errp)
     ratelimit_set_speed(&s->limit, speed / BDRV_SECTOR_SIZE, SLICE_TIME);
 }
 
-static const BlockJobDriver stream_job_driver = {
+static BlockJobType stream_job_type = {
     .instance_size = sizeof(StreamBlockJob),
-    .job_type      = BLOCK_JOB_TYPE_STREAM,
+    .job_type      = "stream",
     .set_speed     = stream_set_speed,
 };
 
@@ -231,7 +219,7 @@ void stream_start(BlockDriverState *bs, BlockDriverState *base,
         return;
     }
 
-    s = block_job_create(&stream_job_driver, bs, speed, cb, opaque, errp);
+    s = block_job_create(&stream_job_type, bs, speed, cb, opaque, errp);
     if (!s) {
         return;
     }

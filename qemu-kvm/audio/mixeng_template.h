@@ -35,7 +35,7 @@
 #define IN_T glue (glue (ITYPE, BSIZE), _t)
 
 #ifdef FLOAT_MIXENG
-static inline mixeng_real glue (conv_, ET) (IN_T v)
+static mixeng_real inline glue (conv_, ET) (IN_T v)
 {
     IN_T nv = ENDIAN_CONVERT (v);
 
@@ -54,7 +54,7 @@ static inline mixeng_real glue (conv_, ET) (IN_T v)
 #endif
 }
 
-static inline IN_T glue (clip_, ET) (mixeng_real v)
+static IN_T inline glue (clip_, ET) (mixeng_real v)
 {
     if (v >= 0.5) {
         return IN_MAX;

@@ -74,7 +74,7 @@ void mmap_unlock(void)
 }
 #endif
 
-static void *bsd_vmalloc(size_t size)
+void *qemu_vmalloc(size_t size)
 {
     void *p;
     mmap_lock();
@@ -98,7 +98,7 @@ void *g_malloc(size_t size)
 {
     char * p;
     size += 16;
-    p = bsd_vmalloc(size);
+    p = qemu_vmalloc(size);
     *(size_t *)p = size;
     return p + 16;
 }

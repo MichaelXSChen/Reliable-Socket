@@ -22,58 +22,6 @@
 #include "qemu-common.h"
 
 
-static void mips_cpu_set_pc(CPUState *cs, vaddr value)
-{
-    MIPSCPU *cpu = MIPS_CPU(cs);
-    CPUMIPSState *env = &cpu->env;
-
-    env->active_tc.PC = value & ~(target_ulong)1;
-    if (value & 1) {
-        env->hflags |= MIPS_HFLAG_M16;
-    } else {
-        env->hflags &= ~(MIPS_HFLAG_M16);
-    }
-}
-
-static void mips_cpu_synchronize_from_tb(CPUState *cs, TranslationBlock *tb)
-{
-    MIPSCPU *cpu = MIPS_CPU(cs);
-    CPUMIPSState *env = &cpu->env;
-
-    env->active_tc.PC = tb->pc;
-    env->hflags &= ~MIPS_HFLAG_BMASK;
-    env->hflags |= tb->flags & MIPS_HFLAG_BMASK;
-}
-
-static bool mips_cpu_has_work(CPUState *cs)
-{
-    MIPSCPU *cpu = MIPS_CPU(cs);
-    CPUMIPSState *env = &cpu->env;
-    bool has_work = false;
-
-    /* It is implementation dependent if non-enabled interrupts
-       wake-up the CPU, however most of the implementations only
-       check for interrupts that can be taken. */
-    if ((cs->interrupt_request & CPU_INTERRUPT_HARD) &&
-        cpu_mips_hw_interrupts_pending(env)) {
-        has_work = true;
-    }
-
-    /* MIPS-MT has the ability to halt the CPU.  */
-    if (env->CP0_Config3 & (1 << CP0C3_MT)) {
-        /* The QEMU model will issue an _WAKE request whenever the CPUs
-           should be woken up.  */
-        if (cs->interrupt_request & CPU_INTERRUPT_WAKE) {
-            has_work = true;
-        }
-
-        if (!mips_vpe_active(env)) {
-            has_work = false;
-        }
-    }
-    return has_work;
-}
-
 /* CPUClass::reset() */
 static void mips_cpu_reset(CPUState *s)
 {
@@ -83,64 +31,24 @@ static void mips_cpu_reset(CPUState *s)
 
     mcc->parent_reset(s);
 
-    memset(env, 0, offsetof(CPUMIPSState, mvp));
-    tlb_flush(s, 1);
-
     cpu_state_reset(env);
-}
-
-static void mips_cpu_realizefn(DeviceState *dev, Error **errp)
-{
-    CPUState *cs = CPU(dev);
-    MIPSCPUClass *mcc = MIPS_CPU_GET_CLASS(dev);
-
-    cpu_reset(cs);
-    qemu_init_vcpu(cs);
-
-    mcc->parent_realize(dev, errp);
 }
 
 static void mips_cpu_initfn(Object *obj)
 {
-    CPUState *cs = CPU(obj);
     MIPSCPU *cpu = MIPS_CPU(obj);
     CPUMIPSState *env = &cpu->env;
 
-    cs->env_ptr = env;
     cpu_exec_init(env);
-
-    if (tcg_enabled()) {
-        mips_tcg_init();
-    }
 }
 
 static void mips_cpu_class_init(ObjectClass *c, void *data)
 {
     MIPSCPUClass *mcc = MIPS_CPU_CLASS(c);
     CPUClass *cc = CPU_CLASS(c);
-    DeviceClass *dc = DEVICE_CLASS(c);
-
-    mcc->parent_realize = dc->realize;
-    dc->realize = mips_cpu_realizefn;
 
     mcc->parent_reset = cc->reset;
     cc->reset = mips_cpu_reset;
-
-    cc->has_work = mips_cpu_has_work;
-    cc->do_interrupt = mips_cpu_do_interrupt;
-    cc->dump_state = mips_cpu_dump_state;
-    cc->set_pc = mips_cpu_set_pc;
-    cc->synchronize_from_tb = mips_cpu_synchronize_from_tb;
-    cc->gdb_read_register = mips_cpu_gdb_read_register;
-    cc->gdb_write_register = mips_cpu_gdb_write_register;
-#ifdef CONFIG_USER_ONLY
-    cc->handle_mmu_fault = mips_cpu_handle_mmu_fault;
-#else
-    cc->do_unassigned_access = mips_cpu_unassigned_access;
-    cc->get_phys_page_debug = mips_cpu_get_phys_page_debug;
-#endif
-
-    cc->gdb_num_core_regs = 73;
 }
 
 static const TypeInfo mips_cpu_type_info = {

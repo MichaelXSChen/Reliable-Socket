@@ -16,10 +16,10 @@
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "block/nbd.h"
-#include "block/block.h"
+#include "nbd.h"
+#include "block.h"
 
-#include "block/coroutine.h"
+#include "qemu-coroutine.h"
 
 #include <errno.h>
 #include <string.h>
@@ -36,9 +36,8 @@
 #include <linux/fs.h>
 #endif
 
-#include "qemu/sockets.h"
-#include "qemu/queue.h"
-#include "qemu/main-loop.h"
+#include "qemu_socket.h"
+#include "qemu-queue.h"
 
 //#define DEBUG_NBD
 
@@ -99,6 +98,7 @@ struct NBDExport {
     off_t size;
     uint32_t nbdflags;
     QTAILQ_HEAD(, NBDClient) clients;
+    QSIMPLEQ_HEAD(, NBDRequest) requests;
     QTAILQ_ENTRY(NBDExport) next;
 };
 
@@ -186,6 +186,56 @@ static ssize_t write_sync(int fd, void *buffer, size_t size)
         ret = nbd_wr_sync(fd, buffer, size, false);
     } while (ret == -EAGAIN);
     return ret;
+}
+
+static void combine_addr(char *buf, size_t len, const char* address,
+                         uint16_t port)
+{
+    /* If the address-part contains a colon, it's an IPv6 IP so needs [] */
+    if (strstr(address, ":")) {
+        snprintf(buf, len, "[%s]:%u", address, port);
+    } else {
+        snprintf(buf, len, "%s:%u", address, port);
+    }
+}
+
+int tcp_socket_outgoing(const char *address, uint16_t port)
+{
+    char address_and_port[128];
+    combine_addr(address_and_port, 128, address, port);
+    return tcp_socket_outgoing_spec(address_and_port);
+}
+
+int tcp_socket_outgoing_spec(const char *address_and_port)
+{
+    return inet_connect(address_and_port, NULL);
+}
+
+int tcp_socket_incoming(const char *address, uint16_t port)
+{
+    char address_and_port[128];
+    combine_addr(address_and_port, 128, address, port);
+    return tcp_socket_incoming_spec(address_and_port);
+}
+
+int tcp_socket_incoming_spec(const char *address_and_port)
+{
+    char *ostr  = NULL;
+    int olen = 0;
+    return inet_listen(address_and_port, ostr, olen, SOCK_STREAM, 0, NULL);
+}
+
+int unix_socket_incoming(const char *path)
+{
+    char *ostr = NULL;
+    int olen = 0;
+
+    return unix_listen(path, ostr, olen);
+}
+
+int unix_socket_outgoing(const char *path)
+{
+    return unix_connect(path);
 }
 
 /* Basic flow for negotiation
@@ -320,11 +370,10 @@ static int nbd_send_negotiate(NBDClient *client)
         [28 .. 151]   reserved     (0)
      */
 
-    qemu_set_block(csock);
+    socket_set_block(csock);
     rc = -EINVAL;
 
     TRACE("Beginning negotiation.");
-    memset(buf, 0, sizeof(buf));
     memcpy(buf, "NBDMAGIC", 8);
     if (client->exp) {
         assert ((client->exp->nbdflags & ~65535) == 0);
@@ -334,6 +383,7 @@ static int nbd_send_negotiate(NBDClient *client)
     } else {
         cpu_to_be64w((uint64_t*)(buf + 8), NBD_OPTS_MAGIC);
     }
+    memset(buf + 28, 0, 124);
 
     if (client->exp) {
         if (write_sync(csock, buf, sizeof(buf)) != sizeof(buf)) {
@@ -363,7 +413,7 @@ static int nbd_send_negotiate(NBDClient *client)
     TRACE("Negotiation succeeded.");
     rc = 0;
 fail:
-    qemu_set_nonblock(csock);
+    socket_set_nonblock(csock);
     return rc;
 }
 
@@ -377,6 +427,7 @@ int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
 
     TRACE("Receiving negotiation.");
 
+    socket_set_block(csock);
     rc = -EINVAL;
 
     if (read_sync(csock, buf, 8) != 8) {
@@ -491,6 +542,7 @@ int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
     rc = 0;
 
 fail:
+    socket_set_nonblock(csock);
     return rc;
 }
 
@@ -521,21 +573,22 @@ int nbd_init(int fd, int csock, uint32_t flags, off_t size, size_t blocksize)
         return -serrno;
     }
 
-    if (ioctl(fd, NBD_SET_FLAGS, flags) < 0) {
-        if (errno == ENOTTY) {
-            int read_only = (flags & NBD_FLAG_READ_ONLY) != 0;
-            TRACE("Setting readonly attribute");
+    if (flags & NBD_FLAG_READ_ONLY) {
+        int read_only = 1;
+        TRACE("Setting readonly attribute");
 
-            if (ioctl(fd, BLKROSET, (unsigned long) &read_only) < 0) {
-                int serrno = errno;
-                LOG("Failed setting read-only attribute");
-                return -serrno;
-            }
-        } else {
+        if (ioctl(fd, BLKROSET, (unsigned long) &read_only) < 0) {
             int serrno = errno;
-            LOG("Failed setting flags");
+            LOG("Failed setting read-only attribute");
             return -serrno;
         }
+    }
+
+    if (ioctl(fd, NBD_SET_FLAGS, flags) < 0
+        && errno != ENOTTY) {
+        int serrno = errno;
+        LOG("Failed setting flags");
+        return -serrno;
     }
 
     TRACE("Negotiation ended");
@@ -777,11 +830,18 @@ void nbd_client_close(NBDClient *client)
 static NBDRequest *nbd_request_get(NBDClient *client)
 {
     NBDRequest *req;
+    NBDExport *exp = client->exp;
 
     assert(client->nb_requests <= MAX_NBD_REQUESTS - 1);
     client->nb_requests++;
 
-    req = g_slice_new0(NBDRequest);
+    if (QSIMPLEQ_EMPTY(&exp->requests)) {
+        req = g_malloc0(sizeof(NBDRequest));
+        req->data = qemu_blockalign(exp->bs, NBD_BUFFER_SIZE);
+    } else {
+        req = QSIMPLEQ_FIRST(&exp->requests);
+        QSIMPLEQ_REMOVE_HEAD(&exp->requests, entry);
+    }
     nbd_client_get(client);
     req->client = client;
     return req;
@@ -790,12 +850,7 @@ static NBDRequest *nbd_request_get(NBDClient *client)
 static void nbd_request_put(NBDRequest *req)
 {
     NBDClient *client = req->client;
-
-    if (req->data) {
-        qemu_vfree(req->data);
-    }
-    g_slice_free(NBDRequest, req);
-
+    QSIMPLEQ_INSERT_HEAD(&client->exp->requests, req, entry);
     if (client->nb_requests-- == MAX_NBD_REQUESTS) {
         qemu_notify_event();
     }
@@ -807,6 +862,7 @@ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset,
                           void (*close)(NBDExport *))
 {
     NBDExport *exp = g_malloc0(sizeof(NBDExport));
+    QSIMPLEQ_INIT(&exp->requests);
     exp->refcount = 1;
     QTAILQ_INIT(&exp->clients);
     exp->bs = bs;
@@ -814,7 +870,6 @@ NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset,
     exp->nbdflags = nbdflags;
     exp->size = size == -1 ? bdrv_getlength(bs) : size;
     exp->close = close;
-    bdrv_ref(bs);
     return exp;
 }
 
@@ -861,10 +916,6 @@ void nbd_export_close(NBDExport *exp)
     }
     nbd_export_set_name(exp, NULL);
     nbd_export_put(exp);
-    if (exp->bs) {
-        bdrv_unref(exp->bs);
-        exp->bs = NULL;
-    }
 }
 
 void nbd_export_get(NBDExport *exp)
@@ -885,6 +936,13 @@ void nbd_export_put(NBDExport *exp)
 
         if (exp->close) {
             exp->close(exp);
+        }
+
+        while (!QSIMPLEQ_EMPTY(&exp->requests)) {
+            NBDRequest *first = QSIMPLEQ_FIRST(&exp->requests);
+            QSIMPLEQ_REMOVE_HEAD(&exp->requests, entry);
+            qemu_vfree(first->data);
+            g_free(first);
         }
 
         g_free(exp);
@@ -945,7 +1003,6 @@ static ssize_t nbd_co_receive_request(NBDRequest *req, struct nbd_request *reque
 {
     NBDClient *client = req->client;
     int csock = client->sock;
-    uint32_t command;
     ssize_t rc;
 
     client->recv_coroutine = qemu_coroutine_self();
@@ -957,9 +1014,9 @@ static ssize_t nbd_co_receive_request(NBDRequest *req, struct nbd_request *reque
         goto out;
     }
 
-    if (request->len > NBD_MAX_BUFFER_SIZE) {
+    if (request->len > NBD_BUFFER_SIZE) {
         LOG("len (%u) is larger than max len (%u)",
-            request->len, NBD_MAX_BUFFER_SIZE);
+            request->len, NBD_BUFFER_SIZE);
         rc = -EINVAL;
         goto out;
     }
@@ -973,11 +1030,7 @@ static ssize_t nbd_co_receive_request(NBDRequest *req, struct nbd_request *reque
 
     TRACE("Decoding type");
 
-    command = request->type & NBD_CMD_MASK_COMMAND;
-    if (command == NBD_CMD_READ || command == NBD_CMD_WRITE) {
-        req->data = qemu_blockalign(client->exp->bs, request->len);
-    }
-    if (command == NBD_CMD_WRITE) {
+    if ((request->type & NBD_CMD_MASK_COMMAND) == NBD_CMD_WRITE) {
         TRACE("Reading %u byte(s)", request->len);
 
         if (qemu_co_recv(csock, req->data, request->len) != request->len) {
@@ -1001,7 +1054,6 @@ static void nbd_trip(void *opaque)
     struct nbd_request request;
     struct nbd_reply reply;
     ssize_t ret;
-    uint32_t command;
 
     TRACE("Reading request.");
     if (client->closing) {
@@ -1024,8 +1076,8 @@ static void nbd_trip(void *opaque)
         reply.error = -ret;
         goto error_reply;
     }
-    command = request.type & NBD_CMD_MASK_COMMAND;
-    if (command != NBD_CMD_DISC && (request.from + request.len) > exp->size) {
+
+    if ((request.from + request.len) > exp->size) {
             LOG("From: %" PRIu64 ", Len: %u, Size: %" PRIu64
             ", Offset: %" PRIu64 "\n",
                     request.from, request.len,
@@ -1034,7 +1086,7 @@ static void nbd_trip(void *opaque)
         goto invalid_request;
     }
 
-    switch (command) {
+    switch (request.type & NBD_CMD_MASK_COMMAND) {
     case NBD_CMD_READ:
         TRACE("Request type is READ");
 

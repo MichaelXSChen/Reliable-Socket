@@ -24,38 +24,44 @@
 /*****************************************************************************/
 /* Softmmu support */
 #if !defined(CONFIG_USER_ONLY)
-#include "exec/softmmu_exec.h"
+#include "softmmu_exec.h"
 
 #define MMUSUFFIX _mmu
 
 #define SHIFT 0
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 1
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 2
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 3
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 /* try to fill the TLB and return an exception if error. If retaddr is
    NULL, it means that the function was called in C code (i.e. not
    from generated code or from helper.c) */
 /* XXX: fix it to restore all registers */
-void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
+void tlb_fill(CPUS390XState *env, target_ulong addr, int is_write, int mmu_idx,
               uintptr_t retaddr)
 {
+    TranslationBlock *tb;
     int ret;
 
-    ret = s390_cpu_handle_mmu_fault(cs, addr, is_write, mmu_idx);
+    ret = cpu_s390x_handle_mmu_fault(env, addr, is_write, mmu_idx);
     if (unlikely(ret != 0)) {
         if (likely(retaddr)) {
             /* now we have a real cpu fault */
-            cpu_restore_state(cs, retaddr);
+            tb = tb_find_pc(retaddr);
+            if (likely(tb)) {
+                /* the PC is inside the translated code. It means that we have
+                   a virtual CPU fault */
+                cpu_restore_state(tb, env, retaddr);
+            }
         }
-        cpu_loop_exit(cs);
+        cpu_loop_exit(env);
     }
 }
 
@@ -72,16 +78,15 @@ void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
 static void mvc_fast_memset(CPUS390XState *env, uint32_t l, uint64_t dest,
                             uint8_t byte)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
-    hwaddr dest_phys;
-    hwaddr len = l;
+    target_phys_addr_t dest_phys;
+    target_phys_addr_t len = l;
     void *dest_p;
     uint64_t asc = env->psw.mask & PSW_MASK_ASC;
     int flags;
 
     if (mmu_translate(env, dest, 1, asc, &dest_phys, &flags)) {
         cpu_stb_data(env, dest, byte);
-        cpu_abort(CPU(cpu), "should never reach here");
+        cpu_abort(env, "should never reach here");
     }
     dest_phys |= dest & ~TARGET_PAGE_MASK;
 
@@ -95,10 +100,9 @@ static void mvc_fast_memset(CPUS390XState *env, uint32_t l, uint64_t dest,
 static void mvc_fast_memmove(CPUS390XState *env, uint32_t l, uint64_t dest,
                              uint64_t src)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
-    hwaddr dest_phys;
-    hwaddr src_phys;
-    hwaddr len = l;
+    target_phys_addr_t dest_phys;
+    target_phys_addr_t src_phys;
+    target_phys_addr_t len = l;
     void *dest_p;
     void *src_p;
     uint64_t asc = env->psw.mask & PSW_MASK_ASC;
@@ -106,13 +110,13 @@ static void mvc_fast_memmove(CPUS390XState *env, uint32_t l, uint64_t dest,
 
     if (mmu_translate(env, dest, 1, asc, &dest_phys, &flags)) {
         cpu_stb_data(env, dest, 0);
-        cpu_abort(CPU(cpu), "should never reach here");
+        cpu_abort(env, "should never reach here");
     }
     dest_phys |= dest & ~TARGET_PAGE_MASK;
 
     if (mmu_translate(env, src, 0, asc, &src_phys, &flags)) {
         cpu_ldub_data(env, src);
-        cpu_abort(CPU(cpu), "should never reach here");
+        cpu_abort(env, "should never reach here");
     }
     src_phys |= src & ~TARGET_PAGE_MASK;
 
@@ -306,142 +310,214 @@ uint32_t HELPER(clm)(CPUS390XState *env, uint32_t r1, uint32_t mask,
     return cc;
 }
 
-static inline uint64_t fix_address(CPUS390XState *env, uint64_t a)
+/* store character under mask */
+void HELPER(stcm)(CPUS390XState *env, uint32_t r1, uint32_t mask,
+                  uint64_t addr)
 {
-    /* 31-Bit mode */
-    if (!(env->psw.mask & PSW_MASK_64)) {
-        a &= 0x7fffffff;
+    uint8_t r;
+
+    HELPER_LOG("%s: r1 0x%x mask 0x%x addr 0x%lx\n", __func__, r1, mask,
+               addr);
+    while (mask) {
+        if (mask & 8) {
+            r = (r1 & 0xff000000UL) >> 24;
+            cpu_stb_data(env, addr, r);
+            HELPER_LOG("mask 0x%x %02x (0x%lx) ", mask, r, addr);
+            addr++;
+        }
+        mask = (mask << 1) & 0xf;
+        r1 <<= 8;
     }
-    return a;
+    HELPER_LOG("\n");
 }
 
 static inline uint64_t get_address(CPUS390XState *env, int x2, int b2, int d2)
 {
     uint64_t r = d2;
+
     if (x2) {
         r += env->regs[x2];
     }
+
     if (b2) {
         r += env->regs[b2];
     }
-    return fix_address(env, r);
+
+    /* 31-Bit mode */
+    if (!(env->psw.mask & PSW_MASK_64)) {
+        r &= 0x7fffffff;
+    }
+
+    return r;
 }
 
 static inline uint64_t get_address_31fix(CPUS390XState *env, int reg)
 {
-    return fix_address(env, env->regs[reg]);
+    uint64_t r = env->regs[reg];
+
+    /* 31-Bit mode */
+    if (!(env->psw.mask & PSW_MASK_64)) {
+        r &= 0x7fffffff;
+    }
+
+    return r;
 }
 
 /* search string (c is byte to search, r2 is string, r1 end of string) */
-uint64_t HELPER(srst)(CPUS390XState *env, uint64_t r0, uint64_t end,
-                      uint64_t str)
+uint32_t HELPER(srst)(CPUS390XState *env, uint32_t c, uint32_t r1, uint32_t r2)
 {
-    uint32_t len;
-    uint8_t v, c = r0;
+    uint64_t i;
+    uint32_t cc = 2;
+    uint64_t str = get_address_31fix(env, r2);
+    uint64_t end = get_address_31fix(env, r1);
 
-    str = fix_address(env, str);
-    end = fix_address(env, end);
+    HELPER_LOG("%s: c %d *r1 0x%" PRIx64 " *r2 0x%" PRIx64 "\n", __func__,
+               c, env->regs[r1], env->regs[r2]);
 
-    /* Assume for now that R2 is unmodified.  */
-    env->retxl = str;
-
-    /* Lest we fail to service interrupts in a timely manner, limit the
-       amount of work we're willing to do.  For now, let's cap at 8k.  */
-    for (len = 0; len < 0x2000; ++len) {
-        if (str + len == end) {
-            /* Character not found.  R1 & R2 are unmodified.  */
-            env->cc_op = 2;
-            return end;
-        }
-        v = cpu_ldub_data(env, str + len);
-        if (v == c) {
-            /* Character found.  Set R1 to the location; R2 is unmodified.  */
-            env->cc_op = 1;
-            return str + len;
+    for (i = str; i != end; i++) {
+        if (cpu_ldub_data(env, i) == c) {
+            env->regs[r1] = i;
+            cc = 1;
+            break;
         }
     }
 
-    /* CPU-determined bytes processed.  Advance R2 to next byte to process.  */
-    env->retxl = str + len;
-    env->cc_op = 3;
-    return end;
+    return cc;
 }
 
 /* unsigned string compare (c is string terminator) */
-uint64_t HELPER(clst)(CPUS390XState *env, uint64_t c, uint64_t s1, uint64_t s2)
+uint32_t HELPER(clst)(CPUS390XState *env, uint32_t c, uint32_t r1, uint32_t r2)
 {
-    uint32_t len;
+    uint64_t s1 = get_address_31fix(env, r1);
+    uint64_t s2 = get_address_31fix(env, r2);
+    uint8_t v1, v2;
+    uint32_t cc;
 
     c = c & 0xff;
-    s1 = fix_address(env, s1);
-    s2 = fix_address(env, s2);
-
-    /* Lest we fail to service interrupts in a timely manner, limit the
-       amount of work we're willing to do.  For now, let's cap at 8k.  */
-    for (len = 0; len < 0x2000; ++len) {
-        uint8_t v1 = cpu_ldub_data(env, s1 + len);
-        uint8_t v2 = cpu_ldub_data(env, s2 + len);
-        if (v1 == v2) {
-            if (v1 == c) {
-                /* Equal.  CC=0, and don't advance the registers.  */
-                env->cc_op = 0;
-                env->retxl = s2;
-                return s1;
-            }
-        } else {
-            /* Unequal.  CC={1,2}, and advance the registers.  Note that
-               the terminator need not be zero, but the string that contains
-               the terminator is by definition "low".  */
-            env->cc_op = (v1 == c ? 1 : v2 == c ? 2 : v1 < v2 ? 1 : 2);
-            env->retxl = s2 + len;
-            return s1 + len;
+#ifdef CONFIG_USER_ONLY
+    if (!c) {
+        HELPER_LOG("%s: comparing '%s' and '%s'\n",
+                   __func__, (char *)g2h(s1), (char *)g2h(s2));
+    }
+#endif
+    for (;;) {
+        v1 = cpu_ldub_data(env, s1);
+        v2 = cpu_ldub_data(env, s2);
+        if ((v1 == c || v2 == c) || (v1 != v2)) {
+            break;
         }
+        s1++;
+        s2++;
     }
 
-    /* CPU-determined bytes equal; advance the registers.  */
-    env->cc_op = 3;
-    env->retxl = s2 + len;
-    return s1 + len;
+    if (v1 == v2) {
+        cc = 0;
+    } else {
+        cc = (v1 < v2) ? 1 : 2;
+        /* FIXME: 31-bit mode! */
+        env->regs[r1] = s1;
+        env->regs[r2] = s2;
+    }
+    return cc;
 }
 
 /* move page */
 void HELPER(mvpg)(CPUS390XState *env, uint64_t r0, uint64_t r1, uint64_t r2)
 {
     /* XXX missing r0 handling */
-    env->cc_op = 0;
 #ifdef CONFIG_USER_ONLY
-    memmove(g2h(r1), g2h(r2), TARGET_PAGE_SIZE);
+    int i;
+
+    for (i = 0; i < TARGET_PAGE_SIZE; i++) {
+        cpu_stb_data(env, r1 + i, cpu_ldub_data(env, r2 + i));
+    }
 #else
     mvc_fast_memmove(env, TARGET_PAGE_SIZE, r1, r2);
 #endif
 }
 
 /* string copy (c is string terminator) */
-uint64_t HELPER(mvst)(CPUS390XState *env, uint64_t c, uint64_t d, uint64_t s)
+void HELPER(mvst)(CPUS390XState *env, uint32_t c, uint32_t r1, uint32_t r2)
 {
-    uint32_t len;
+    uint64_t dest = get_address_31fix(env, r1);
+    uint64_t src = get_address_31fix(env, r2);
+    uint8_t v;
 
     c = c & 0xff;
-    d = fix_address(env, d);
-    s = fix_address(env, s);
-
-    /* Lest we fail to service interrupts in a timely manner, limit the
-       amount of work we're willing to do.  For now, let's cap at 8k.  */
-    for (len = 0; len < 0x2000; ++len) {
-        uint8_t v = cpu_ldub_data(env, s + len);
-        cpu_stb_data(env, d + len, v);
+#ifdef CONFIG_USER_ONLY
+    if (!c) {
+        HELPER_LOG("%s: copy '%s' to 0x%lx\n", __func__, (char *)g2h(src),
+                   dest);
+    }
+#endif
+    for (;;) {
+        v = cpu_ldub_data(env, src);
+        cpu_stb_data(env, dest, v);
         if (v == c) {
-            /* Complete.  Set CC=1 and advance R1.  */
-            env->cc_op = 1;
-            env->retxl = s;
-            return d + len;
+            break;
         }
+        src++;
+        dest++;
+    }
+    env->regs[r1] = dest; /* FIXME: 31-bit mode! */
+}
+
+/* compare and swap 64-bit */
+uint32_t HELPER(csg)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
+{
+    /* FIXME: locking? */
+    uint32_t cc;
+    uint64_t v2 = cpu_ldq_data(env, a2);
+
+    if (env->regs[r1] == v2) {
+        cc = 0;
+        cpu_stq_data(env, a2, env->regs[r3]);
+    } else {
+        cc = 1;
+        env->regs[r1] = v2;
+    }
+    return cc;
+}
+
+/* compare double and swap 64-bit */
+uint32_t HELPER(cdsg)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
+{
+    /* FIXME: locking? */
+    uint32_t cc;
+    uint64_t v2_hi = cpu_ldq_data(env, a2);
+    uint64_t v2_lo = cpu_ldq_data(env, a2 + 8);
+    uint64_t v1_hi = env->regs[r1];
+    uint64_t v1_lo = env->regs[r1 + 1];
+
+    if ((v1_hi == v2_hi) && (v1_lo == v2_lo)) {
+        cc = 0;
+        cpu_stq_data(env, a2, env->regs[r3]);
+        cpu_stq_data(env, a2 + 8, env->regs[r3 + 1]);
+    } else {
+        cc = 1;
+        env->regs[r1] = v2_hi;
+        env->regs[r1 + 1] = v2_lo;
     }
 
-    /* Incomplete.  Set CC=3 and signal to advance R1 and R2.  */
-    env->cc_op = 3;
-    env->retxl = s + len;
-    return d + len;
+    return cc;
+}
+
+/* compare and swap 32-bit */
+uint32_t HELPER(cs)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
+{
+    /* FIXME: locking? */
+    uint32_t cc;
+    uint32_t v2 = cpu_ldl_data(env, a2);
+
+    HELPER_LOG("%s: r1 %d a2 0x%lx r3 %d\n", __func__, r1, a2, r3);
+    if (((uint32_t)env->regs[r1]) == v2) {
+        cc = 0;
+        cpu_stl_data(env, a2, (uint32_t)env->regs[r3]);
+    } else {
+        cc = 1;
+        env->regs[r1] = (env->regs[r1] & 0xffffffff00000000ULL) | v2;
+    }
+    return cc;
 }
 
 static uint32_t helper_icm(CPUS390XState *env, uint32_t r1, uint64_t address,
@@ -485,7 +561,6 @@ static uint32_t helper_icm(CPUS390XState *env, uint32_t r1, uint64_t address,
 uint32_t HELPER(ex)(CPUS390XState *env, uint32_t cc, uint64_t v1,
                     uint64_t addr, uint64_t ret)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
     uint16_t insn = cpu_lduw_code(env, addr);
 
     HELPER_LOG("%s: v1 0x%lx addr 0x%lx insn 0x%x\n", __func__, v1, addr,
@@ -518,13 +593,14 @@ uint32_t HELPER(ex)(CPUS390XState *env, uint32_t cc, uint64_t v1,
             break;
         default:
             goto abort;
+            break;
         }
     } else if ((insn & 0xff00) == 0x0a00) {
         /* supervisor call */
         HELPER_LOG("%s: svc %ld via execute\n", __func__, (insn | v1) & 0xff);
         env->psw.addr = ret - 4;
         env->int_svc_code = (insn | v1) & 0xff;
-        env->int_svc_ilen = 4;
+        env->int_svc_ilc = 4;
         helper_exception(env, EXCP_SVC);
     } else if ((insn & 0xff00) == 0xbf00) {
         uint32_t insn2, r1, r3, b2, d2;
@@ -537,9 +613,58 @@ uint32_t HELPER(ex)(CPUS390XState *env, uint32_t cc, uint64_t v1,
         cc = helper_icm(env, r1, get_address(env, 0, b2, d2), r3);
     } else {
     abort:
-        cpu_abort(CPU(cpu), "EXECUTE on instruction prefix 0x%x not implemented\n",
+        cpu_abort(env, "EXECUTE on instruction prefix 0x%x not implemented\n",
                   insn);
     }
+    return cc;
+}
+
+/* store character under mask high operates on the upper half of r1 */
+void HELPER(stcmh)(CPUS390XState *env, uint32_t r1, uint64_t address,
+                   uint32_t mask)
+{
+    int pos = 56; /* top of the upper half of r1 */
+
+    while (mask) {
+        if (mask & 8) {
+            cpu_stb_data(env, address, (env->regs[r1] >> pos) & 0xff);
+            address++;
+        }
+        mask = (mask << 1) & 0xf;
+        pos -= 8;
+    }
+}
+
+/* insert character under mask high; same as icm, but operates on the
+   upper half of r1 */
+uint32_t HELPER(icmh)(CPUS390XState *env, uint32_t r1, uint64_t address,
+                      uint32_t mask)
+{
+    int pos = 56; /* top of the upper half of r1 */
+    uint64_t rmask = 0xff00000000000000ULL;
+    uint8_t val = 0;
+    int ccd = 0;
+    uint32_t cc = 0;
+
+    while (mask) {
+        if (mask & 8) {
+            env->regs[r1] &= ~rmask;
+            val = cpu_ldub_data(env, address);
+            if ((val & 0x80) && !ccd) {
+                cc = 1;
+            }
+            ccd = 1;
+            if (val && cc == 0) {
+                cc = 2;
+            }
+            env->regs[r1] |= (uint64_t)val << pos;
+            address++;
+        }
+        mask = (mask << 1) & 0xf;
+        pos -= 8;
+        rmask >>= 8;
+    }
+
     return cc;
 }
 
@@ -703,49 +828,42 @@ uint32_t HELPER(clcle)(CPUS390XState *env, uint32_t r1, uint64_t a2,
 }
 
 /* checksum */
-uint64_t HELPER(cksm)(CPUS390XState *env, uint64_t r1,
-                      uint64_t src, uint64_t src_len)
+void HELPER(cksm)(CPUS390XState *env, uint32_t r1, uint32_t r2)
 {
-    uint64_t max_len, len;
-    uint64_t cksm = (uint32_t)r1;
+    uint64_t src = get_address_31fix(env, r2);
+    uint64_t src_len = env->regs[(r2 + 1) & 15];
+    uint64_t cksm = (uint32_t)env->regs[r1];
 
-    /* Lest we fail to service interrupts in a timely manner, limit the
-       amount of work we're willing to do.  For now, let's cap at 8k.  */
-    max_len = (src_len > 0x2000 ? 0x2000 : src_len);
+    while (src_len >= 4) {
+        cksm += cpu_ldl_data(env, src);
 
-    /* Process full words as available.  */
-    for (len = 0; len + 4 <= max_len; len += 4, src += 4) {
-        cksm += (uint32_t)cpu_ldl_data(env, src);
+        /* move to next word */
+        src_len -= 4;
+        src += 4;
     }
 
-    switch (max_len - len) {
+    switch (src_len) {
+    case 0:
+        break;
     case 1:
         cksm += cpu_ldub_data(env, src) << 24;
-        len += 1;
         break;
     case 2:
         cksm += cpu_lduw_data(env, src) << 16;
-        len += 2;
         break;
     case 3:
         cksm += cpu_lduw_data(env, src) << 16;
         cksm += cpu_ldub_data(env, src + 2) << 8;
-        len += 3;
         break;
     }
 
-    /* Fold the carry from the checksum.  Note that we can see carry-out
-       during folding more than once (but probably not more than twice).  */
-    while (cksm > 0xffffffffull) {
-        cksm = (uint32_t)cksm + (cksm >> 32);
-    }
+    /* indicate we've processed everything */
+    env->regs[r2] = src + src_len;
+    env->regs[(r2 + 1) & 15] = 0;
 
-    /* Indicate whether or not we've processed everything.  */
-    env->cc_op = (len == src_len ? 0 : 3);
-
-    /* Return both cksm and processed length.  */
-    env->retxl = cksm;
-    return len;
+    /* store result */
+    env->regs[r1] = (env->regs[r1] & 0xffffffff00000000ULL) |
+        ((uint32_t)cksm + (cksm >> 32));
 }
 
 void HELPER(unpk)(CPUS390XState *env, uint32_t len, uint64_t dest,
@@ -810,7 +928,6 @@ void HELPER(tr)(CPUS390XState *env, uint32_t len, uint64_t array,
 #if !defined(CONFIG_USER_ONLY)
 void HELPER(lctlg)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
     int i;
     uint64_t src = a2;
 
@@ -825,12 +942,11 @@ void HELPER(lctlg)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
         }
     }
 
-    tlb_flush(CPU(cpu), 1);
+    tlb_flush(env, 1);
 }
 
 void HELPER(lctl)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
     int i;
     uint64_t src = a2;
 
@@ -844,7 +960,7 @@ void HELPER(lctl)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
         }
     }
 
-    tlb_flush(CPU(cpu), 1);
+    tlb_flush(env, 1);
 }
 
 void HELPER(stctg)(CPUS390XState *env, uint32_t r1, uint64_t a2, uint32_t r3)
@@ -897,7 +1013,7 @@ uint64_t HELPER(iske)(CPUS390XState *env, uint64_t r2)
 }
 
 /* set storage key extended */
-void HELPER(sske)(CPUS390XState *env, uint64_t r1, uint64_t r2)
+void HELPER(sske)(CPUS390XState *env, uint32_t r1, uint64_t r2)
 {
     uint64_t addr = get_address(env, 0, 0, r2);
 
@@ -909,7 +1025,7 @@ void HELPER(sske)(CPUS390XState *env, uint64_t r1, uint64_t r2)
 }
 
 /* reset reference bit extended */
-uint32_t HELPER(rrbe)(CPUS390XState *env, uint64_t r2)
+uint32_t HELPER(rrbe)(CPUS390XState *env, uint32_t r1, uint64_t r2)
 {
     uint8_t re;
     uint8_t key;
@@ -935,19 +1051,18 @@ uint32_t HELPER(rrbe)(CPUS390XState *env, uint64_t r2)
 }
 
 /* compare and swap and purge */
-uint32_t HELPER(csp)(CPUS390XState *env, uint32_t r1, uint64_t r2)
+uint32_t HELPER(csp)(CPUS390XState *env, uint32_t r1, uint32_t r2)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
     uint32_t cc;
     uint32_t o1 = env->regs[r1];
-    uint64_t a2 = r2 & ~3ULL;
+    uint64_t a2 = get_address_31fix(env, r2) & ~3ULL;
     uint32_t o2 = cpu_ldl_data(env, a2);
 
     if (o1 == o2) {
         cpu_stl_data(env, a2, env->regs[(r1 + 1) & 15]);
-        if (r2 & 0x3) {
+        if (env->regs[r2] & 0x3) {
             /* flush TLB / ALB */
-            tlb_flush(CPU(cpu), 1);
+            tlb_flush(env, 1);
         }
         cc = 0;
     } else {
@@ -961,7 +1076,6 @@ uint32_t HELPER(csp)(CPUS390XState *env, uint32_t r1, uint64_t r2)
 static uint32_t mvc_asc(CPUS390XState *env, int64_t l, uint64_t a1,
                         uint64_t mode1, uint64_t a2, uint64_t mode2)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
     target_ulong src, dest;
     int flags, cc = 0, i;
 
@@ -974,12 +1088,12 @@ static uint32_t mvc_asc(CPUS390XState *env, int64_t l, uint64_t a1,
     }
 
     if (mmu_translate(env, a1 & TARGET_PAGE_MASK, 1, mode1, &dest, &flags)) {
-        cpu_loop_exit(CPU(s390_env_get_cpu(env)));
+        cpu_loop_exit(env);
     }
     dest |= a1 & ~TARGET_PAGE_MASK;
 
     if (mmu_translate(env, a2 & TARGET_PAGE_MASK, 0, mode2, &src, &flags)) {
-        cpu_loop_exit(CPU(s390_env_get_cpu(env)));
+        cpu_loop_exit(env);
     }
     src |= a2 & ~TARGET_PAGE_MASK;
 
@@ -991,7 +1105,7 @@ static uint32_t mvc_asc(CPUS390XState *env, int64_t l, uint64_t a1,
             mvc_asc(env, l - i, a1 + i, mode1, a2 + i, mode2);
             break;
         }
-        stb_phys(cs->as, dest + i, ldub_phys(cs->as, src + i));
+        stb_phys(dest + i, ldub_phys(src + i));
     }
 
     return cc;
@@ -1016,7 +1130,6 @@ uint32_t HELPER(mvcp)(CPUS390XState *env, uint64_t l, uint64_t a1, uint64_t a2)
 /* invalidate pte */
 void HELPER(ipte)(CPUS390XState *env, uint64_t pte_addr, uint64_t vaddr)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
     uint64_t page = vaddr & TARGET_PAGE_MASK;
     uint64_t pte = 0;
 
@@ -1026,42 +1139,37 @@ void HELPER(ipte)(CPUS390XState *env, uint64_t pte_addr, uint64_t vaddr)
        According to spec we'd have to find it out ourselves */
     /* XXX Linux is fine with overwriting the pte, the spec requires
        us to only set the invalid bit */
-    stq_phys(cs->as, pte_addr, pte | _PAGE_INVALID);
+    stq_phys(pte_addr, pte | _PAGE_INVALID);
 
     /* XXX we exploit the fact that Linux passes the exact virtual
        address here - it's not obliged to! */
-    tlb_flush_page(cs, page);
+    tlb_flush_page(env, page);
 
     /* XXX 31-bit hack */
     if (page & 0x80000000) {
-        tlb_flush_page(cs, page & ~0x80000000);
+        tlb_flush_page(env, page & ~0x80000000);
     } else {
-        tlb_flush_page(cs, page | 0x80000000);
+        tlb_flush_page(env, page | 0x80000000);
     }
 }
 
 /* flush local tlb */
 void HELPER(ptlb)(CPUS390XState *env)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
-
-    tlb_flush(CPU(cpu), 1);
+    tlb_flush(env, 1);
 }
 
 /* store using real address */
-void HELPER(stura)(CPUS390XState *env, uint64_t addr, uint64_t v1)
+void HELPER(stura)(CPUS390XState *env, uint64_t addr, uint32_t v1)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
-
-    stw_phys(cs->as, get_address(env, 0, 0, addr), (uint32_t)v1);
+    stw_phys(get_address(env, 0, 0, addr), v1);
 }
 
 /* load real address */
-uint64_t HELPER(lra)(CPUS390XState *env, uint64_t addr)
+uint32_t HELPER(lra)(CPUS390XState *env, uint64_t addr, uint32_t r1)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
     uint32_t cc = 0;
-    int old_exc = cs->exception_index;
+    int old_exc = env->exception_index;
     uint64_t asc = env->psw.mask & PSW_MASK_ASC;
     uint64_t ret;
     int flags;
@@ -1071,18 +1179,25 @@ uint64_t HELPER(lra)(CPUS390XState *env, uint64_t addr)
         program_interrupt(env, PGM_SPECIAL_OP, 2);
     }
 
-    cs->exception_index = old_exc;
+    env->exception_index = old_exc;
     if (mmu_translate(env, addr, 0, asc, &ret, &flags)) {
         cc = 3;
     }
-    if (cs->exception_index == EXCP_PGM) {
+    if (env->exception_index == EXCP_PGM) {
         ret = env->int_pgm_code | 0x80000000;
     } else {
         ret |= addr & ~TARGET_PAGE_MASK;
     }
-    cs->exception_index = old_exc;
+    env->exception_index = old_exc;
 
-    env->cc_op = cc;
-    return ret;
+    if (!(env->psw.mask & PSW_MASK_64)) {
+        env->regs[r1] = (env->regs[r1] & 0xffffffff00000000ULL) |
+            (ret & 0xffffffffULL);
+    } else {
+        env->regs[r1] = ret;
+    }
+
+    return cc;
 }
+
 #endif

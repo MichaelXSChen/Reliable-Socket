@@ -33,25 +33,20 @@
 /*****************************************************************************/
 /* PowerPC Hypercall emulation */
 
-void (*cpu_ppc_hypercall)(PowerPCCPU *);
+void (*cpu_ppc_hypercall)(CPUPPCState *);
 
 /*****************************************************************************/
 /* Exception processing */
 #if defined(CONFIG_USER_ONLY)
-void ppc_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUPPCState *env)
 {
-    PowerPCCPU *cpu = POWERPC_CPU(cs);
-    CPUPPCState *env = &cpu->env;
-
-    cs->exception_index = POWERPC_EXCP_NONE;
+    env->exception_index = POWERPC_EXCP_NONE;
     env->error_code = 0;
 }
 
 void ppc_hw_interrupt(CPUPPCState *env)
 {
-    CPUState *cs = CPU(ppc_env_get_cpu(env));
-
-    cs->exception_index = POWERPC_EXCP_NONE;
+    env->exception_index = POWERPC_EXCP_NONE;
     env->error_code = 0;
 }
 #else /* defined(CONFIG_USER_ONLY) */
@@ -68,10 +63,8 @@ static inline void dump_syscall(CPUPPCState *env)
 /* Note that this function should be greatly optimized
  * when called with a constant excp, from ppc_hw_interrupt
  */
-static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
+static inline void powerpc_excp(CPUPPCState *env, int excp_model, int excp)
 {
-    CPUState *cs = CPU(cpu);
-    CPUPPCState *env = &cpu->env;
     target_ulong msr, new_msr, vector;
     int srr0, srr1, asrr0, asrr1;
     int lpes0, lpes1, lev;
@@ -90,11 +83,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
                   " => %08x (%02x)\n", env->nip, excp, env->error_code);
 
     /* new srr1 value excluding must-be-zero bits */
-    if (excp_model == POWERPC_EXCP_BOOKE) {
-        msr = env->msr;
-    } else {
-        msr = env->msr & ~0x783f0000ULL;
-    }
+    msr = env->msr & ~0x783f0000ULL;
 
     /* new interrupt handler msr */
     new_msr = env->msr & ((target_ulong)1 << MSR_ME);
@@ -137,8 +126,8 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
                 fprintf(stderr, "Machine check while not allowed. "
                         "Entering checkstop state\n");
             }
-            cs->halted = 1;
-            cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
+            env->halted = 1;
+            env->interrupt_request |= CPU_INTERRUPT_EXITTB;
         }
         if (0) {
             /* XXX: find a suitable condition to enable the hypervisor mode */
@@ -155,7 +144,6 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             srr1 = SPR_40x_SRR3;
             break;
         case POWERPC_EXCP_BOOKE:
-            /* FIXME: choose one or the other based on CPU type */
             srr0 = SPR_BOOKE_MCSRR0;
             srr1 = SPR_BOOKE_MCSRR1;
             asrr0 = SPR_BOOKE_CSRR0;
@@ -181,14 +169,8 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         msr |= env->error_code;
         goto store_next;
     case POWERPC_EXCP_EXTERNAL:  /* External input                           */
-        cs = CPU(cpu);
-
         if (lpes0 == 1) {
             new_msr |= (target_ulong)MSR_HVB;
-        }
-        if (env->mpic_proxy) {
-            /* IACK the IRQ on delivery */
-            env->spr[SPR_BOOKE_EPR] = ldl_phys(cs->as, env->mpic_iack);
         }
         goto store_next;
     case POWERPC_EXCP_ALIGN:     /* Alignment exception                      */
@@ -205,7 +187,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         case POWERPC_EXCP_FP:
             if ((msr_fe0 == 0 && msr_fe1 == 0) || msr_fp == 0) {
                 LOG_EXCP("Ignore floating point exception\n");
-                cs->exception_index = POWERPC_EXCP_NONE;
+                env->exception_index = POWERPC_EXCP_NONE;
                 env->error_code = 0;
                 return;
             }
@@ -242,7 +224,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             break;
         default:
             /* Should never occur */
-            cpu_abort(cs, "Invalid program exception %d. Aborting\n",
+            cpu_abort(env, "Invalid program exception %d. Aborting\n",
                       env->error_code);
             break;
         }
@@ -256,7 +238,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         dump_syscall(env);
         lev = env->error_code;
         if ((lev == 1) && cpu_ppc_hypercall) {
-            cpu_ppc_hypercall(cpu);
+            cpu_ppc_hypercall(env);
             return;
         }
         if (lev == 1 || (lpes0 == 0 && lpes1 == 0)) {
@@ -292,7 +274,6 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     case POWERPC_EXCP_DEBUG:     /* Debug interrupt                          */
         switch (excp_model) {
         case POWERPC_EXCP_BOOKE:
-            /* FIXME: choose one or the other based on CPU type */
             srr0 = SPR_BOOKE_DSRR0;
             srr1 = SPR_BOOKE_DSRR1;
             asrr0 = SPR_BOOKE_CSRR0;
@@ -302,26 +283,26 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             break;
         }
         /* XXX: TODO */
-        cpu_abort(cs, "Debug exception is not implemented yet !\n");
+        cpu_abort(env, "Debug exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_SPEU:      /* SPE/embedded floating-point unavailable  */
         env->spr[SPR_BOOKE_ESR] = ESR_SPV;
         goto store_current;
     case POWERPC_EXCP_EFPDI:     /* Embedded floating-point data interrupt   */
         /* XXX: TODO */
-        cpu_abort(cs, "Embedded floating point data exception "
+        cpu_abort(env, "Embedded floating point data exception "
                   "is not implemented yet !\n");
         env->spr[SPR_BOOKE_ESR] = ESR_SPV;
         goto store_next;
     case POWERPC_EXCP_EFPRI:     /* Embedded floating-point round interrupt  */
         /* XXX: TODO */
-        cpu_abort(cs, "Embedded floating point round exception "
+        cpu_abort(env, "Embedded floating point round exception "
                   "is not implemented yet !\n");
         env->spr[SPR_BOOKE_ESR] = ESR_SPV;
         goto store_next;
     case POWERPC_EXCP_EPERFM:    /* Embedded performance monitor interrupt   */
         /* XXX: TODO */
-        cpu_abort(cs,
+        cpu_abort(env,
                   "Performance counter exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_DOORI:     /* Embedded doorbell interrupt              */
@@ -393,25 +374,20 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             new_msr |= (target_ulong)MSR_HVB;
         }
         goto store_current;
-    case POWERPC_EXCP_VSXU:       /* VSX unavailable exception               */
-        if (lpes1 == 0) {
-            new_msr |= (target_ulong)MSR_HVB;
-        }
-        goto store_current;
     case POWERPC_EXCP_PIT:       /* Programmable interval timer interrupt    */
         LOG_EXCP("PIT exception\n");
         goto store_next;
     case POWERPC_EXCP_IO:        /* IO error exception                       */
         /* XXX: TODO */
-        cpu_abort(cs, "601 IO error exception is not implemented yet !\n");
+        cpu_abort(env, "601 IO error exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_RUNM:      /* Run mode exception                       */
         /* XXX: TODO */
-        cpu_abort(cs, "601 run mode exception is not implemented yet !\n");
+        cpu_abort(env, "601 run mode exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_EMUL:      /* Emulation trap exception                 */
         /* XXX: TODO */
-        cpu_abort(cs, "602 emulation trap exception "
+        cpu_abort(env, "602 emulation trap exception "
                   "is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_IFTLB:     /* Instruction fetch TLB error              */
@@ -429,7 +405,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         case POWERPC_EXCP_74xx:
             goto tlb_miss_74xx;
         default:
-            cpu_abort(cs, "Invalid instruction TLB miss exception\n");
+            cpu_abort(env, "Invalid instruction TLB miss exception\n");
             break;
         }
         break;
@@ -448,7 +424,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         case POWERPC_EXCP_74xx:
             goto tlb_miss_74xx;
         default:
-            cpu_abort(cs, "Invalid data load TLB miss exception\n");
+            cpu_abort(env, "Invalid data load TLB miss exception\n");
             break;
         }
         break;
@@ -534,30 +510,30 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             msr |= env->error_code; /* key bit */
             break;
         default:
-            cpu_abort(cs, "Invalid data store TLB miss exception\n");
+            cpu_abort(env, "Invalid data store TLB miss exception\n");
             break;
         }
         goto store_next;
     case POWERPC_EXCP_FPA:       /* Floating-point assist exception          */
         /* XXX: TODO */
-        cpu_abort(cs, "Floating point assist exception "
+        cpu_abort(env, "Floating point assist exception "
                   "is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_DABR:      /* Data address breakpoint                  */
         /* XXX: TODO */
-        cpu_abort(cs, "DABR exception is not implemented yet !\n");
+        cpu_abort(env, "DABR exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_IABR:      /* Instruction address breakpoint           */
         /* XXX: TODO */
-        cpu_abort(cs, "IABR exception is not implemented yet !\n");
+        cpu_abort(env, "IABR exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_SMI:       /* System management interrupt              */
         /* XXX: TODO */
-        cpu_abort(cs, "SMI exception is not implemented yet !\n");
+        cpu_abort(env, "SMI exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_THERM:     /* Thermal interrupt                        */
         /* XXX: TODO */
-        cpu_abort(cs, "Thermal management exception "
+        cpu_abort(env, "Thermal management exception "
                   "is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_PERFM:     /* Embedded performance monitor interrupt   */
@@ -565,36 +541,36 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             new_msr |= (target_ulong)MSR_HVB;
         }
         /* XXX: TODO */
-        cpu_abort(cs,
+        cpu_abort(env,
                   "Performance counter exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_VPUA:      /* Vector assist exception                  */
         /* XXX: TODO */
-        cpu_abort(cs, "VPU assist exception is not implemented yet !\n");
+        cpu_abort(env, "VPU assist exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_SOFTP:     /* Soft patch exception                     */
         /* XXX: TODO */
-        cpu_abort(cs,
+        cpu_abort(env,
                   "970 soft-patch exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_MAINT:     /* Maintenance exception                    */
         /* XXX: TODO */
-        cpu_abort(cs,
+        cpu_abort(env,
                   "970 maintenance exception is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_MEXTBR:    /* Maskable external breakpoint             */
         /* XXX: TODO */
-        cpu_abort(cs, "Maskable external exception "
+        cpu_abort(env, "Maskable external exception "
                   "is not implemented yet !\n");
         goto store_next;
     case POWERPC_EXCP_NMEXTBR:   /* Non maskable external breakpoint         */
         /* XXX: TODO */
-        cpu_abort(cs, "Non maskable external exception "
+        cpu_abort(env, "Non maskable external exception "
                   "is not implemented yet !\n");
         goto store_next;
     default:
     excp_invalid:
-        cpu_abort(cs, "Invalid PowerPC exception %d. Aborting\n", excp);
+        cpu_abort(env, "Invalid PowerPC exception %d. Aborting\n", excp);
         break;
     store_current:
         /* save current instruction location */
@@ -616,27 +592,17 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     }
     /* If we disactivated any translation, flush TLBs */
     if (msr & ((1 << MSR_IR) | (1 << MSR_DR))) {
-        tlb_flush(cs, 1);
+        tlb_flush(env, 1);
     }
 
-#ifdef TARGET_PPC64
-    if (excp_model == POWERPC_EXCP_POWER7) {
-        if (env->spr[SPR_LPCR] & LPCR_ILE) {
-            new_msr |= (target_ulong)1 << MSR_LE;
-        }
-    } else if (msr_ile) {
-        new_msr |= (target_ulong)1 << MSR_LE;
-    }
-#else
     if (msr_ile) {
         new_msr |= (target_ulong)1 << MSR_LE;
     }
-#endif
 
     /* Jump to handler */
     vector = env->excp_vectors[excp];
     if (vector == (target_ulong)-1ULL) {
-        cpu_abort(cs, "Raised an exception without defined vector %d\n",
+        cpu_abort(env, "Raised an exception without defined vector %d\n",
                   excp);
     }
     vector |= env->excp_prefix;
@@ -663,7 +629,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     hreg_compute_hflags(env);
     env->nip = vector;
     /* Reset exception state */
-    cs->exception_index = POWERPC_EXCP_NONE;
+    env->exception_index = POWERPC_EXCP_NONE;
     env->error_code = 0;
 
     if ((env->mmu_model == POWERPC_MMU_BOOKE) ||
@@ -671,46 +637,41 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
         /* XXX: The BookE changes address space when switching modes,
                 we should probably implement that as different MMU indexes,
                 but for the moment we do it the slow way and flush all.  */
-        tlb_flush(cs, 1);
+        tlb_flush(env, 1);
     }
 }
 
-void ppc_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUPPCState *env)
 {
-    PowerPCCPU *cpu = POWERPC_CPU(cs);
-    CPUPPCState *env = &cpu->env;
-
-    powerpc_excp(cpu, env->excp_model, cs->exception_index);
+    powerpc_excp(env, env->excp_model, env->exception_index);
 }
 
 void ppc_hw_interrupt(CPUPPCState *env)
 {
-    PowerPCCPU *cpu = ppc_env_get_cpu(env);
     int hdice;
-#if 0
-    CPUState *cs = CPU(cpu);
 
+#if 0
     qemu_log_mask(CPU_LOG_INT, "%s: %p pending %08x req %08x me %d ee %d\n",
-                  __func__, env, env->pending_interrupts,
-                  cs->interrupt_request, (int)msr_me, (int)msr_ee);
+                __func__, env, env->pending_interrupts,
+                env->interrupt_request, (int)msr_me, (int)msr_ee);
 #endif
     /* External reset */
     if (env->pending_interrupts & (1 << PPC_INTERRUPT_RESET)) {
         env->pending_interrupts &= ~(1 << PPC_INTERRUPT_RESET);
-        powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_RESET);
+        powerpc_excp(env, env->excp_model, POWERPC_EXCP_RESET);
         return;
     }
     /* Machine check exception */
     if (env->pending_interrupts & (1 << PPC_INTERRUPT_MCK)) {
         env->pending_interrupts &= ~(1 << PPC_INTERRUPT_MCK);
-        powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_MCHECK);
+        powerpc_excp(env, env->excp_model, POWERPC_EXCP_MCHECK);
         return;
     }
 #if 0 /* TODO */
     /* External debug exception */
     if (env->pending_interrupts & (1 << PPC_INTERRUPT_DEBUG)) {
         env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DEBUG);
-        powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_DEBUG);
+        powerpc_excp(env, env->excp_model, POWERPC_EXCP_DEBUG);
         return;
     }
 #endif
@@ -723,7 +684,8 @@ void ppc_hw_interrupt(CPUPPCState *env)
     if ((msr_ee != 0 || msr_hv == 0 || msr_pr != 0) && hdice != 0) {
         /* Hypervisor decrementer exception */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_HDECR)) {
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_HDECR);
+            env->pending_interrupts &= ~(1 << PPC_INTERRUPT_HDECR);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_HDECR);
             return;
         }
     }
@@ -736,7 +698,7 @@ void ppc_hw_interrupt(CPUPPCState *env)
 #if 0
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_CEXT);
 #endif
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_CRITICAL);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_CRITICAL);
             return;
         }
     }
@@ -744,32 +706,30 @@ void ppc_hw_interrupt(CPUPPCState *env)
         /* Watchdog timer on embedded PowerPC */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_WDT)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_WDT);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_WDT);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_WDT);
             return;
         }
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_CDOORBELL)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_CDOORBELL);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_DOORCI);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_DOORCI);
             return;
         }
         /* Fixed interval timer on embedded PowerPC */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_FIT)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_FIT);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_FIT);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_FIT);
             return;
         }
         /* Programmable interval timer on embedded PowerPC */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_PIT)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PIT);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_PIT);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_PIT);
             return;
         }
         /* Decrementer exception */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_DECR)) {
-            if (ppc_decr_clear_on_delivery(env)) {
-                env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DECR);
-            }
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_DECR);
+            env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DECR);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_DECR);
             return;
         }
         /* External interrupt */
@@ -780,23 +740,23 @@ void ppc_hw_interrupt(CPUPPCState *env)
 #if 0
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_EXT);
 #endif
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_EXTERNAL);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_EXTERNAL);
             return;
         }
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_DOORBELL)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DOORBELL);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_DOORI);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_DOORI);
             return;
         }
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_PERFM)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PERFM);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_PERFM);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_PERFM);
             return;
         }
         /* Thermal interrupt */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_THERM)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_THERM);
-            powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_THERM);
+            powerpc_excp(env, env->excp_model, POWERPC_EXCP_THERM);
             return;
         }
     }
@@ -817,14 +777,12 @@ static void cpu_dump_rfi(target_ulong RA, target_ulong msr)
 void helper_raise_exception_err(CPUPPCState *env, uint32_t exception,
                                 uint32_t error_code)
 {
-    CPUState *cs = CPU(ppc_env_get_cpu(env));
-
 #if 0
     printf("Raise exception %3x code : %d\n", exception, error_code);
 #endif
-    cs->exception_index = exception;
+    env->exception_index = exception;
     env->error_code = error_code;
-    cpu_loop_exit(cs);
+    cpu_loop_exit(env);
 }
 
 void helper_raise_exception(CPUPPCState *env, uint32_t exception)
@@ -835,12 +793,9 @@ void helper_raise_exception(CPUPPCState *env, uint32_t exception)
 #if !defined(CONFIG_USER_ONLY)
 void helper_store_msr(CPUPPCState *env, target_ulong val)
 {
-    CPUState *cs;
-
     val = hreg_store_msr(env, val, 0);
     if (val != 0) {
-        cs = CPU(ppc_env_get_cpu(env));
-        cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
+        env->interrupt_request |= CPU_INTERRUPT_EXITTB;
         helper_raise_exception(env, val);
     }
 }
@@ -848,8 +803,6 @@ void helper_store_msr(CPUPPCState *env, target_ulong val)
 static inline void do_rfi(CPUPPCState *env, target_ulong nip, target_ulong msr,
                           target_ulong msrm, int keep_msrh)
 {
-    CPUState *cs = CPU(ppc_env_get_cpu(env));
-
 #if defined(TARGET_PPC64)
     if (msr_is_64bit(env, msr)) {
         nip = (uint64_t)nip;
@@ -874,18 +827,13 @@ static inline void do_rfi(CPUPPCState *env, target_ulong nip, target_ulong msr,
     /* No need to raise an exception here,
      * as rfi is always the last insn of a TB
      */
-    cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
+    env->interrupt_request |= CPU_INTERRUPT_EXITTB;
 }
 
 void helper_rfi(CPUPPCState *env)
 {
-    if (env->excp_model == POWERPC_EXCP_BOOKE) {
-        do_rfi(env, env->spr[SPR_SRR0], env->spr[SPR_SRR1],
-               ~((target_ulong)0), 0);
-    } else {
-        do_rfi(env, env->spr[SPR_SRR0], env->spr[SPR_SRR1],
-               ~((target_ulong)0x783F0000), 1);
-    }
+    do_rfi(env, env->spr[SPR_SRR0], env->spr[SPR_SRR1],
+           ~((target_ulong)0x783F0000), 1);
 }
 
 #if defined(TARGET_PPC64)
@@ -912,22 +860,20 @@ void helper_40x_rfci(CPUPPCState *env)
 
 void helper_rfci(CPUPPCState *env)
 {
-    do_rfi(env, env->spr[SPR_BOOKE_CSRR0], env->spr[SPR_BOOKE_CSRR1],
-           ~((target_ulong)0), 0);
+    do_rfi(env, env->spr[SPR_BOOKE_CSRR0], SPR_BOOKE_CSRR1,
+           ~((target_ulong)0x3FFF0000), 0);
 }
 
 void helper_rfdi(CPUPPCState *env)
 {
-    /* FIXME: choose CSRR1 or DSRR1 based on cpu type */
-    do_rfi(env, env->spr[SPR_BOOKE_DSRR0], env->spr[SPR_BOOKE_DSRR1],
-           ~((target_ulong)0), 0);
+    do_rfi(env, env->spr[SPR_BOOKE_DSRR0], SPR_BOOKE_DSRR1,
+           ~((target_ulong)0x3FFF0000), 0);
 }
 
 void helper_rfmci(CPUPPCState *env)
 {
-    /* FIXME: choose CSRR1 or MCSRR1 based on cpu type */
-    do_rfi(env, env->spr[SPR_BOOKE_MCSRR0], env->spr[SPR_BOOKE_MCSRR1],
-           ~((target_ulong)0), 0);
+    do_rfi(env, env->spr[SPR_BOOKE_MCSRR0], SPR_BOOKE_MCSRR1,
+           ~((target_ulong)0x3FFF0000), 0);
 }
 #endif
 
@@ -1007,19 +953,16 @@ void helper_msgsnd(target_ulong rb)
 {
     int irq = dbell2irq(rb);
     int pir = rb & DBELL_PIRTAG_MASK;
-    CPUState *cs;
+    CPUPPCState *cenv;
 
     if (irq < 0) {
         return;
     }
 
-    CPU_FOREACH(cs) {
-        PowerPCCPU *cpu = POWERPC_CPU(cs);
-        CPUPPCState *cenv = &cpu->env;
-
+    for (cenv = first_cpu; cenv != NULL; cenv = cenv->next_cpu) {
         if ((rb & DBELL_BRDCAST) || (cenv->spr[SPR_BOOKE_PIR] == pir)) {
             cenv->pending_interrupts |= 1 << irq;
-            cpu_interrupt(cs, CPU_INTERRUPT_HARD);
+            cpu_interrupt(cenv, CPU_INTERRUPT_HARD);
         }
     }
 }

@@ -33,6 +33,7 @@
 #include "hw/usb.h"
 #include "hw/usb/desc.h"
 #include "hw/hw.h"
+#include "hw/audiodev.h"
 #include "audio/audio.h"
 
 #define USBAUDIO_VENDOR_NUM     0x46f4 /* CRC16() of "QEMU" */
@@ -224,7 +225,7 @@ static const USBDescDevice desc_device = {
             .bNumInterfaces        = 2,
             .bConfigurationValue   = DEV_CONFIG_VALUE,
             .iConfiguration        = STRING_CONFIG,
-            .bmAttributes          = USB_CFG_ATT_ONE | USB_CFG_ATT_SELFPOWER,
+            .bmAttributes          = 0xc0,
             .bMaxPower             = 0x32,
             .nif = ARRAY_SIZE(desc_iface),
             .ifs = desc_iface,
@@ -502,7 +503,7 @@ static int usb_audio_set_control(USBAudioState *s, uint8_t attrib,
     return ret;
 }
 
-static void usb_audio_handle_control(USBDevice *dev, USBPacket *p,
+static int usb_audio_handle_control(USBDevice *dev, USBPacket *p,
                                     int request, int value, int index,
                                     int length, uint8_t *data)
 {
@@ -517,7 +518,7 @@ static void usb_audio_handle_control(USBDevice *dev, USBPacket *p,
 
     ret = usb_desc_handle_control(dev, p, request, value, index, length, data);
     if (ret >= 0) {
-        return;
+        return ret;
     }
 
     switch (request) {
@@ -533,7 +534,6 @@ static void usb_audio_handle_control(USBDevice *dev, USBPacket *p,
             }
             goto fail;
         }
-        p->actual_length = ret;
         break;
 
     case ClassInterfaceOutRequest | CR_SET_CUR:
@@ -557,9 +557,10 @@ fail:
                     "request 0x%04x value 0x%04x index 0x%04x length 0x%04x\n",
                     request, value, index, length);
         }
-        p->status = USB_RET_STALL;
+        ret = USB_RET_STALL;
         break;
     }
+    return ret;
 }
 
 static void usb_audio_set_interface(USBDevice *dev, int iface,
@@ -582,35 +583,50 @@ static void usb_audio_handle_reset(USBDevice *dev)
     usb_audio_set_output_altset(s, ALTSET_OFF);
 }
 
-static void usb_audio_handle_dataout(USBAudioState *s, USBPacket *p)
+static int usb_audio_handle_dataout(USBAudioState *s, USBPacket *p)
 {
+    int rc;
+
     if (s->out.altset == ALTSET_OFF) {
-        p->status = USB_RET_STALL;
-        return;
+        return USB_RET_STALL;
     }
 
-    streambuf_put(&s->out.buf, p);
-    if (p->actual_length < p->iov.size && s->debug > 1) {
+    rc = streambuf_put(&s->out.buf, p);
+    if (rc < p->iov.size && s->debug > 1) {
         fprintf(stderr, "usb-audio: output overrun (%zd bytes)\n",
-                p->iov.size - p->actual_length);
+                p->iov.size - rc);
     }
+
+    return 0;
 }
 
-static void usb_audio_handle_data(USBDevice *dev, USBPacket *p)
+static int usb_audio_handle_data(USBDevice *dev, USBPacket *p)
 {
     USBAudioState *s = (USBAudioState *) dev;
+    int ret = 0;
 
-    if (p->pid == USB_TOKEN_OUT && p->ep->nr == 1) {
-        usb_audio_handle_dataout(s, p);
-        return;
+    switch (p->pid) {
+    case USB_TOKEN_OUT:
+        switch (p->ep->nr) {
+        case 1:
+            ret = usb_audio_handle_dataout(s, p);
+            break;
+        default:
+            goto fail;
+        }
+        break;
+
+    default:
+fail:
+        ret = USB_RET_STALL;
+        break;
     }
-
-    p->status = USB_RET_STALL;
-    if (s->debug) {
+    if (ret == USB_RET_STALL && s->debug) {
         fprintf(stderr, "usb-audio: failed data transaction: "
                         "pid 0x%x ep 0x%x len 0x%zx\n",
                         p->pid, p->ep->nr, p->iov.size);
     }
+    return ret;
 }
 
 static void usb_audio_handle_destroy(USBDevice *dev)
@@ -673,7 +689,6 @@ static void usb_audio_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd          = &vmstate_usb_audio;
     dc->props         = usb_audio_properties;
-    set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     k->product_desc   = "QEMU USB Audio Interface";
     k->usb_desc       = &desc_audio;
     k->init           = usb_audio_initfn;
@@ -684,7 +699,7 @@ static void usb_audio_class_init(ObjectClass *klass, void *data)
     k->set_interface  = usb_audio_set_interface;
 }
 
-static const TypeInfo usb_audio_info = {
+static TypeInfo usb_audio_info = {
     .name          = "usb-audio",
     .parent        = TYPE_USB_DEVICE,
     .instance_size = sizeof(USBAudioState),

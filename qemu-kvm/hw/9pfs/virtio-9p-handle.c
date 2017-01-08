@@ -11,7 +11,7 @@
  *
  */
 
-#include "hw/virtio/virtio.h"
+#include "hw/virtio.h"
 #include "virtio-9p.h"
 #include "virtio-9p-xattr.h"
 #include <arpa/inet.h>
@@ -19,7 +19,7 @@
 #include <grp.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include "qemu/xattr.h"
+#include "qemu-xattr.h"
 #include <unistd.h>
 #include <linux/fs.h>
 #ifdef CONFIG_LINUX_MAGIC_H
@@ -498,7 +498,7 @@ static int handle_lremovexattr(FsContext *ctx, V9fsPath *fs_path,
 static int handle_name_to_path(FsContext *ctx, V9fsPath *dir_path,
                               const char *name, V9fsPath *target)
 {
-    char *buffer;
+    char buffer[PATH_MAX];
     struct file_handle *fh;
     int dirfd, ret, mnt_id;
     struct handle_data *data = (struct handle_data *)ctx->private;
@@ -513,9 +513,7 @@ static int handle_name_to_path(FsContext *ctx, V9fsPath *dir_path,
         dirfd = open_by_handle(data->mountfd, dir_path->data, O_PATH);
     } else {
         /* relative to export root */
-        buffer = rpath(ctx, ".");
-        dirfd = open(buffer, O_DIRECTORY);
-        g_free(buffer);
+        dirfd = open(rpath(ctx, ".", buffer), O_DIRECTORY);
     }
     if (dirfd < 0) {
         return dirfd;
@@ -523,7 +521,7 @@ static int handle_name_to_path(FsContext *ctx, V9fsPath *dir_path,
     fh = g_malloc(sizeof(struct file_handle) + data->handle_bytes);
     fh->handle_bytes = data->handle_bytes;
     /* add a "./" at the beginning of the path */
-    buffer = g_strdup_printf("./%s", name);
+    snprintf(buffer, PATH_MAX, "./%s", name);
     /* flag = 0 imply don't follow symlink */
     ret = name_to_handle(dirfd, buffer, fh, &mnt_id, 0);
     if (!ret) {
@@ -533,7 +531,6 @@ static int handle_name_to_path(FsContext *ctx, V9fsPath *dir_path,
         g_free(fh);
     }
     close(dirfd);
-    g_free(buffer);
     return ret;
 }
 
@@ -585,7 +582,6 @@ static int handle_unlinkat(FsContext *ctx, V9fsPath *dir,
 static int handle_ioc_getversion(FsContext *ctx, V9fsPath *path,
                                  mode_t st_mode, uint64_t *st_gen)
 {
-#ifdef FS_IOC_GETVERSION
     int err;
     V9fsFidOpenState fid_open;
 
@@ -594,8 +590,7 @@ static int handle_ioc_getversion(FsContext *ctx, V9fsPath *path,
      * We can get fd for regular files and directories only
      */
     if (!S_ISREG(st_mode) && !S_ISDIR(st_mode)) {
-        errno = ENOTTY;
-        return -1;
+            return 0;
     }
     err = handle_open(ctx, path, O_RDONLY, &fid_open);
     if (err < 0) {
@@ -604,10 +599,6 @@ static int handle_ioc_getversion(FsContext *ctx, V9fsPath *path,
     err = ioctl(fid_open.fd, FS_IOC_GETVERSION, st_gen);
     handle_close(ctx, &fid_open);
     return err;
-#else
-    errno = ENOTTY;
-    return -1;
-#endif
 }
 
 static int handle_init(FsContext *ctx)

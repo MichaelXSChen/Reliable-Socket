@@ -14,20 +14,15 @@
  */
 
 #include "qemu-common.h"
-#include "sysemu/sysemu.h"
+#include "sysemu.h"
 #include "qmp-commands.h"
-#include "sysemu/char.h"
 #include "ui/qemu-spice.h"
 #include "ui/vnc.h"
-#include "sysemu/kvm.h"
-#include "sysemu/arch_init.h"
+#include "kvm.h"
+#include "arch_init.h"
 #include "hw/qdev.h"
-#include "sysemu/blockdev.h"
-#include "qom/qom-qobject.h"
-#include "qapi/qmp/qobject.h"
-#include "qapi/qmp-input-visitor.h"
-#include "hw/boards.h"
-#include "qom/object_interfaces.h"
+#include "blockdev.h"
+#include "qemu/qom-qobject.h"
 
 NameInfo *qmp_query_name(Error **errp)
 {
@@ -90,11 +85,7 @@ void qmp_quit(Error **err)
 
 void qmp_stop(Error **errp)
 {
-    if (runstate_check(RUN_STATE_INMIGRATE)) {
-        autostart = 0;
-    } else {
-        vm_stop(RUN_STATE_PAUSED);
-    }
+    vm_stop(RUN_STATE_PAUSED);
 }
 
 void qmp_system_reset(Error **errp)
@@ -110,18 +101,6 @@ void qmp_system_powerdown(Error **erp)
 void qmp_cpu(int64_t index, Error **errp)
 {
     /* Just do nothing */
-}
-
-void qmp_cpu_add(int64_t id, Error **errp)
-{
-    MachineClass *mc;
-
-    mc = MACHINE_GET_CLASS(current_machine);
-    if (mc->qemu_machine->hot_add_cpu) {
-        mc->qemu_machine->hot_add_cpu(id, errp);
-    } else {
-        error_setg(errp, "Not supported");
-    }
 }
 
 #ifndef CONFIG_VNC
@@ -165,7 +144,11 @@ void qmp_cont(Error **errp)
 {
     Error *local_err = NULL;
 
-    if (runstate_needs_reset()) {
+    if (runstate_check(RUN_STATE_INMIGRATE)) {
+        error_set(errp, QERR_MIGRATION_EXPECTED);
+        return;
+    } else if (runstate_check(RUN_STATE_INTERNAL_ERROR) ||
+               runstate_check(RUN_STATE_SHUTDOWN)) {
         error_set(errp, QERR_RESET_REQUIRED);
         return;
     } else if (runstate_check(RUN_STATE_SUSPENDED)) {
@@ -179,11 +162,7 @@ void qmp_cont(Error **errp)
         return;
     }
 
-    if (runstate_check(RUN_STATE_INMIGRATE)) {
-        autostart = 1;
-    } else {
-        vm_start();
-    }
+    vm_start();
 }
 
 void qmp_system_wakeup(Error **errp)
@@ -370,9 +349,11 @@ void qmp_change_vnc_password(const char *password, Error **errp)
     }
 }
 
-static void qmp_change_vnc_listen(const char *target, Error **errp)
+static void qmp_change_vnc_listen(const char *target, Error **err)
 {
-    vnc_display_open(NULL, target, errp);
+    if (vnc_display_open(NULL, target) < 0) {
+        error_set(err, QERR_VNC_SERVER_FAILED, target);
+    }
 }
 
 static void qmp_change_vnc(const char *target, bool has_arg, const char *arg,
@@ -406,7 +387,7 @@ void qmp_change(const char *device, const char *target,
     if (strcmp(device, "vnc") == 0) {
         qmp_change_vnc(target, has_arg, arg, err);
     } else {
-        qmp_change_blockdev(device, target, arg, err);
+        qmp_change_blockdev(device, target, has_arg, arg, err);
     }
 }
 
@@ -487,6 +468,12 @@ DevicePropertyInfoList *qmp_device_list_properties(const char *typename,
     return prop_list;
 }
 
+CpuDefinitionInfoList GCC_WEAK *arch_query_cpu_definitions(Error **errp)
+{
+    error_set(errp, QERR_NOT_SUPPORTED);
+    return NULL;
+}
+
 CpuDefinitionInfoList *qmp_query_cpu_definitions(Error **errp)
 {
     return arch_query_cpu_definitions(errp);
@@ -534,91 +521,4 @@ void qmp_add_client(const char *protocol, const char *fdname,
 
     error_setg(errp, "protocol '%s' is invalid", protocol);
     close(fd);
-}
-
-void object_add(const char *type, const char *id, const QDict *qdict,
-                Visitor *v, Error **errp)
-{
-    Object *obj;
-    const QDictEntry *e;
-    Error *local_err = NULL;
-
-    if (!object_class_by_name(type)) {
-        error_setg(errp, "invalid class name");
-        return;
-    }
-
-    obj = object_new(type);
-    if (qdict) {
-        for (e = qdict_first(qdict); e; e = qdict_next(qdict, e)) {
-            object_property_set(obj, v, e->key, &local_err);
-            if (local_err) {
-                goto out;
-            }
-        }
-    }
-
-    if (!object_dynamic_cast(obj, TYPE_USER_CREATABLE)) {
-        error_setg(&local_err, "object type '%s' isn't supported by object-add",
-                   type);
-        goto out;
-    }
-
-    user_creatable_complete(obj, &local_err);
-    if (local_err) {
-        goto out;
-    }
-
-    object_property_add_child(container_get(object_get_root(), "/objects"),
-                              id, obj, &local_err);
-out:
-    if (local_err) {
-        error_propagate(errp, local_err);
-    }
-    object_unref(obj);
-}
-
-int qmp_object_add(Monitor *mon, const QDict *qdict, QObject **ret)
-{
-    const char *type = qdict_get_str(qdict, "qom-type");
-    const char *id = qdict_get_str(qdict, "id");
-    QObject *props = qdict_get(qdict, "props");
-    const QDict *pdict = NULL;
-    Error *local_err = NULL;
-    QmpInputVisitor *qiv;
-
-    if (props) {
-        pdict = qobject_to_qdict(props);
-        if (!pdict) {
-            error_set(&local_err, QERR_INVALID_PARAMETER_TYPE, "props", "dict");
-            goto out;
-        }
-    }
-
-    qiv = qmp_input_visitor_new(props);
-    object_add(type, id, pdict, qmp_input_get_visitor(qiv), &local_err);
-    qmp_input_visitor_cleanup(qiv);
-
-out:
-    if (local_err) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-        return -1;
-    }
-
-    return 0;
-}
-
-void qmp_object_del(const char *id, Error **errp)
-{
-    Object *container;
-    Object *obj;
-
-    container = container_get(object_get_root(), "/objects");
-    obj = object_resolve_path_component(container, id);
-    if (!obj) {
-        error_setg(errp, "object id not found");
-        return;
-    }
-    object_unparent(obj);
 }

@@ -30,8 +30,7 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
     int spr = (ra | offset);
     int idx;
 
-    OpenRISCCPU *cpu = openrisc_env_get_cpu(env);
-    CPUState *cs = CPU(cpu);
+    OpenRISCCPU *cpu = OPENRISC_CPU(ENV_GET_CPU(env));
 
     switch (spr) {
     case TO_SPR(0, 0): /* VR */
@@ -45,7 +44,7 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
     case TO_SPR(0, 17): /* SR */
         if ((env->sr & (SR_IME | SR_DME | SR_SM)) ^
             (rb & (SR_IME | SR_DME | SR_SM))) {
-            tlb_flush(cs, 1);
+            tlb_flush(env, 1);
         }
         env->sr = rb;
         env->sr |= SR_FO;      /* FO is const equal to 1 */
@@ -81,15 +80,15 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
     case TO_SPR(0, 64): /* ESR */
         env->esr = rb;
         break;
-    case TO_SPR(1, 512) ... TO_SPR(1, 512+DTLB_SIZE-1): /* DTLBW0MR 0-127 */
+    case TO_SPR(1, 512) ... TO_SPR(1, 639): /* DTLBW0MR 0-127 */
         idx = spr - TO_SPR(1, 512);
         if (!(rb & 1)) {
-            tlb_flush_page(cs, env->tlb->dtlb[0][idx].mr & TARGET_PAGE_MASK);
+            tlb_flush_page(env, env->tlb->dtlb[0][idx].mr & TARGET_PAGE_MASK);
         }
         env->tlb->dtlb[0][idx].mr = rb;
         break;
 
-    case TO_SPR(1, 640) ... TO_SPR(1, 640+DTLB_SIZE-1): /* DTLBW0TR 0-127 */
+    case TO_SPR(1, 640) ... TO_SPR(1, 767): /* DTLBW0TR 0-127 */
         idx = spr - TO_SPR(1, 640);
         env->tlb->dtlb[0][idx].tr = rb;
         break;
@@ -100,15 +99,15 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
     case TO_SPR(1, 1280) ... TO_SPR(1, 1407): /* DTLBW3MR 0-127 */
     case TO_SPR(1, 1408) ... TO_SPR(1, 1535): /* DTLBW3TR 0-127 */
         break;
-    case TO_SPR(2, 512) ... TO_SPR(2, 512+ITLB_SIZE-1):   /* ITLBW0MR 0-127 */
+    case TO_SPR(2, 512) ... TO_SPR(2, 639):   /* ITLBW0MR 0-127 */
         idx = spr - TO_SPR(2, 512);
         if (!(rb & 1)) {
-            tlb_flush_page(cs, env->tlb->itlb[0][idx].mr & TARGET_PAGE_MASK);
+            tlb_flush_page(env, env->tlb->itlb[0][idx].mr & TARGET_PAGE_MASK);
         }
         env->tlb->itlb[0][idx].mr = rb;
         break;
 
-    case TO_SPR(2, 640) ... TO_SPR(2, 640+ITLB_SIZE-1): /* ITLBW0TR 0-127 */
+    case TO_SPR(2, 640) ... TO_SPR(2, 767): /* ITLBW0TR 0-127 */
         idx = spr - TO_SPR(2, 640);
         env->tlb->itlb[0][idx].tr = rb;
         break;
@@ -127,31 +126,33 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
         break;
     case TO_SPR(10, 0): /* TTMR */
         {
-            if ((env->ttmr & TTMR_M) ^ (rb & TTMR_M)) {
-                switch (rb & TTMR_M) {
-                case TIMER_NONE:
-                    cpu_openrisc_count_stop(cpu);
-                    break;
-                case TIMER_INTR:
-                case TIMER_SHOT:
-                case TIMER_CONT:
-                    cpu_openrisc_count_start(cpu);
-                    break;
-                default:
-                    break;
-                }
-            }
-
             int ip = env->ttmr & TTMR_IP;
 
             if (rb & TTMR_IP) {    /* Keep IP bit.  */
-                env->ttmr = (rb & ~TTMR_IP) | ip;
+                env->ttmr = (rb & ~TTMR_IP) + ip;
             } else {    /* Clear IP bit.  */
                 env->ttmr = rb & ~TTMR_IP;
-                cs->interrupt_request &= ~CPU_INTERRUPT_TIMER;
+                env->interrupt_request &= ~CPU_INTERRUPT_TIMER;
             }
 
-            cpu_openrisc_timer_update(cpu);
+            cpu_openrisc_count_update(cpu);
+
+            switch (env->ttmr & TTMR_M) {
+            case TIMER_NONE:
+                cpu_openrisc_count_stop(cpu);
+                break;
+            case TIMER_INTR:
+                cpu_openrisc_count_start(cpu);
+                break;
+            case TIMER_SHOT:
+                cpu_openrisc_count_start(cpu);
+                break;
+            case TIMER_CONT:
+                cpu_openrisc_count_start(cpu);
+                break;
+            default:
+                break;
+            }
         }
         break;
 
@@ -160,7 +161,7 @@ void HELPER(mtspr)(CPUOpenRISCState *env,
         if (env->ttmr & TIMER_NONE) {
             return;
         }
-        cpu_openrisc_timer_update(cpu);
+        cpu_openrisc_count_start(cpu);
         break;
     default:
 
@@ -176,7 +177,7 @@ target_ulong HELPER(mfspr)(CPUOpenRISCState *env,
     int spr = (ra | offset);
     int idx;
 
-    OpenRISCCPU *cpu = openrisc_env_get_cpu(env);
+    OpenRISCCPU *cpu = OPENRISC_CPU(ENV_GET_CPU(env));
 
     switch (spr) {
     case TO_SPR(0, 0): /* VR */
@@ -212,11 +213,11 @@ target_ulong HELPER(mfspr)(CPUOpenRISCState *env,
     case TO_SPR(0, 64): /* ESR */
         return env->esr;
 
-    case TO_SPR(1, 512) ... TO_SPR(1, 512+DTLB_SIZE-1): /* DTLBW0MR 0-127 */
+    case TO_SPR(1, 512) ... TO_SPR(1, 639): /* DTLBW0MR 0-127 */
         idx = spr - TO_SPR(1, 512);
         return env->tlb->dtlb[0][idx].mr;
 
-    case TO_SPR(1, 640) ... TO_SPR(1, 640+DTLB_SIZE-1): /* DTLBW0TR 0-127 */
+    case TO_SPR(1, 640) ... TO_SPR(1, 767): /* DTLBW0TR 0-127 */
         idx = spr - TO_SPR(1, 640);
         return env->tlb->dtlb[0][idx].tr;
 
@@ -228,11 +229,11 @@ target_ulong HELPER(mfspr)(CPUOpenRISCState *env,
     case TO_SPR(1, 1408) ... TO_SPR(1, 1535): /* DTLBW3TR 0-127 */
         break;
 
-    case TO_SPR(2, 512) ... TO_SPR(2, 512+ITLB_SIZE-1): /* ITLBW0MR 0-127 */
+    case TO_SPR(2, 512) ... TO_SPR(2, 639): /* ITLBW0MR 0-127 */
         idx = spr - TO_SPR(2, 512);
         return env->tlb->itlb[0][idx].mr;
 
-    case TO_SPR(2, 640) ... TO_SPR(2, 640+ITLB_SIZE-1): /* ITLBW0TR 0-127 */
+    case TO_SPR(2, 640) ... TO_SPR(2, 767): /* ITLBW0TR 0-127 */
         idx = spr - TO_SPR(2, 640);
         return env->tlb->itlb[0][idx].tr;
 

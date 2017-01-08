@@ -21,7 +21,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef TCG_TARGET_PPC 
 #define TCG_TARGET_PPC 1
 
 #define TCG_TARGET_WORDS_BIGENDIAN
@@ -78,7 +77,6 @@ typedef enum {
 
 /* optional instructions */
 #define TCG_TARGET_HAS_div_i32          1
-#define TCG_TARGET_HAS_rem_i32          0
 #define TCG_TARGET_HAS_rot_i32          1
 #define TCG_TARGET_HAS_ext8s_i32        1
 #define TCG_TARGET_HAS_ext16s_i32       1
@@ -95,16 +93,11 @@ typedef enum {
 #define TCG_TARGET_HAS_nor_i32          1
 #define TCG_TARGET_HAS_deposit_i32      1
 #define TCG_TARGET_HAS_movcond_i32      1
-#define TCG_TARGET_HAS_muls2_i32        0
-#define TCG_TARGET_HAS_muluh_i32        0
-#define TCG_TARGET_HAS_mulsh_i32        0
-
-#define TCG_TARGET_HAS_new_ldst         1
 
 #define TCG_AREG0 TCG_REG_R27
 
-#define tcg_qemu_tb_exec(env, tb_ptr) \
-    ((uintptr_t __attribute__ ((longcall)) \
-      (*)(void *, void *))tcg_ctx.code_gen_prologue)(env, tb_ptr)
+#define TCG_TARGET_HAS_GUEST_BASE
 
-#endif
+#define tcg_qemu_tb_exec(env, tb_ptr) \
+    ((long __attribute__ ((longcall)) \
+      (*)(void *, void *))code_gen_prologue)(env, tb_ptr)

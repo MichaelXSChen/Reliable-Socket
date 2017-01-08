@@ -23,7 +23,7 @@
 #include <stdio.h>
 
 #include "cpu.h"
-#include "exec/exec-all.h"
+#include "exec-all.h"
 #include "helper.h"
 
 /* iwMMXt macros extracted from GNU gdb.  */
@@ -577,7 +577,7 @@ uint64_t HELPER(iwmmxt_rorl)(CPUARMState *env, uint64_t x, uint32_t n)
 
 uint64_t HELPER(iwmmxt_rorq)(CPUARMState *env, uint64_t x, uint32_t n)
 {
-    x = ror64(x, n);
+    x = (x >> n) | (x << (64 - n));
     env->iwmmxt.cregs[ARM_IWMMXT_wCASF] = NZBIT64(x);
     return x;
 }

@@ -20,39 +20,27 @@
 #include "cpu.h"
 #include "qemu-common.h"
 
-static void openrisc_cpu_set_pc(CPUState *cs, vaddr value)
-{
-    OpenRISCCPU *cpu = OPENRISC_CPU(cs);
-
-    cpu->env.pc = value;
-}
-
-static bool openrisc_cpu_has_work(CPUState *cs)
-{
-    return cs->interrupt_request & (CPU_INTERRUPT_HARD |
-                                    CPU_INTERRUPT_TIMER);
-}
-
 /* CPUClass::reset() */
 static void openrisc_cpu_reset(CPUState *s)
 {
     OpenRISCCPU *cpu = OPENRISC_CPU(s);
     OpenRISCCPUClass *occ = OPENRISC_CPU_GET_CLASS(cpu);
 
+    if (qemu_loglevel_mask(CPU_LOG_RESET)) {
+        qemu_log("CPU Reset (CPU %d)\n", cpu->env.cpu_index);
+        log_cpu_state(&cpu->env, 0);
+    }
+
     occ->parent_reset(s);
 
-#ifndef CONFIG_USER_ONLY
-    memset(&cpu->env, 0, offsetof(CPUOpenRISCState, tlb));
-#else
-    memset(&cpu->env, 0, offsetof(CPUOpenRISCState, irq));
-#endif
+    memset(&cpu->env, 0, offsetof(CPUOpenRISCState, breakpoints));
 
-    tlb_flush(s, 1);
+    tlb_flush(&cpu->env, 1);
     /*tb_flush(&cpu->env);    FIXME: Do we need it?  */
 
     cpu->env.pc = 0x100;
     cpu->env.sr = SR_FO | SR_SM;
-    s->exception_index = -1;
+    cpu->env.exception_index = -1;
 
     cpu->env.upr = UPR_UP | UPR_DMP | UPR_IMP | UPR_PICP | UPR_TTP;
     cpu->env.cpucfgr = CPUCFGR_OB32S | CPUCFGR_OF32S;
@@ -74,24 +62,19 @@ static inline void set_feature(OpenRISCCPU *cpu, int feature)
     cpu->env.cpucfgr = cpu->feature;
 }
 
-static void openrisc_cpu_realizefn(DeviceState *dev, Error **errp)
+void openrisc_cpu_realize(Object *obj, Error **errp)
 {
-    CPUState *cs = CPU(dev);
-    OpenRISCCPUClass *occ = OPENRISC_CPU_GET_CLASS(dev);
+    OpenRISCCPU *cpu = OPENRISC_CPU(obj);
 
-    qemu_init_vcpu(cs);
-    cpu_reset(cs);
-
-    occ->parent_realize(dev, errp);
+    qemu_init_vcpu(&cpu->env);
+    cpu_reset(CPU(cpu));
 }
 
 static void openrisc_cpu_initfn(Object *obj)
 {
-    CPUState *cs = CPU(obj);
     OpenRISCCPU *cpu = OPENRISC_CPU(obj);
     static int inited;
 
-    cs->env_ptr = &cpu->env;
     cpu_exec_init(&cpu->env);
 
 #ifndef CONFIG_USER_ONLY
@@ -105,26 +88,6 @@ static void openrisc_cpu_initfn(Object *obj)
 }
 
 /* CPU models */
-
-static ObjectClass *openrisc_cpu_class_by_name(const char *cpu_model)
-{
-    ObjectClass *oc;
-    char *typename;
-
-    if (cpu_model == NULL) {
-        return NULL;
-    }
-
-    typename = g_strdup_printf("%s-" TYPE_OPENRISC_CPU, cpu_model);
-    oc = object_class_by_name(typename);
-    g_free(typename);
-    if (oc != NULL && (!object_class_dynamic_cast(oc, TYPE_OPENRISC_CPU) ||
-                       object_class_is_abstract(oc))) {
-        return NULL;
-    }
-    return oc;
-}
-
 static void or1200_initfn(Object *obj)
 {
     OpenRISCCPU *cpu = OPENRISC_CPU(obj);
@@ -154,42 +117,22 @@ static void openrisc_cpu_class_init(ObjectClass *oc, void *data)
 {
     OpenRISCCPUClass *occ = OPENRISC_CPU_CLASS(oc);
     CPUClass *cc = CPU_CLASS(occ);
-    DeviceClass *dc = DEVICE_CLASS(oc);
-
-    occ->parent_realize = dc->realize;
-    dc->realize = openrisc_cpu_realizefn;
 
     occ->parent_reset = cc->reset;
     cc->reset = openrisc_cpu_reset;
-
-    cc->class_by_name = openrisc_cpu_class_by_name;
-    cc->has_work = openrisc_cpu_has_work;
-    cc->do_interrupt = openrisc_cpu_do_interrupt;
-    cc->dump_state = openrisc_cpu_dump_state;
-    cc->set_pc = openrisc_cpu_set_pc;
-    cc->gdb_read_register = openrisc_cpu_gdb_read_register;
-    cc->gdb_write_register = openrisc_cpu_gdb_write_register;
-#ifdef CONFIG_USER_ONLY
-    cc->handle_mmu_fault = openrisc_cpu_handle_mmu_fault;
-#else
-    cc->get_phys_page_debug = openrisc_cpu_get_phys_page_debug;
-    dc->vmsd = &vmstate_openrisc_cpu;
-#endif
-    cc->gdb_num_core_regs = 32 + 3;
 }
 
 static void cpu_register(const OpenRISCCPUInfo *info)
 {
     TypeInfo type_info = {
+        .name = info->name,
         .parent = TYPE_OPENRISC_CPU,
         .instance_size = sizeof(OpenRISCCPU),
         .instance_init = info->initfn,
         .class_size = sizeof(OpenRISCCPUClass),
     };
 
-    type_info.name = g_strdup_printf("%s-" TYPE_OPENRISC_CPU, info->name);
-    type_register(&type_info);
-    g_free((void *)type_info.name);
+    type_register_static(&type_info);
 }
 
 static const TypeInfo openrisc_cpu_type_info = {
@@ -197,7 +140,7 @@ static const TypeInfo openrisc_cpu_type_info = {
     .parent = TYPE_CPU,
     .instance_size = sizeof(OpenRISCCPU),
     .instance_init = openrisc_cpu_initfn,
-    .abstract = true,
+    .abstract = false,
     .class_size = sizeof(OpenRISCCPUClass),
     .class_init = openrisc_cpu_class_init,
 };
@@ -214,8 +157,23 @@ static void openrisc_cpu_register_types(void)
 
 OpenRISCCPU *cpu_openrisc_init(const char *cpu_model)
 {
-    return OPENRISC_CPU(cpu_generic_init(TYPE_OPENRISC_CPU, cpu_model));
+    OpenRISCCPU *cpu;
+
+    if (!object_class_by_name(cpu_model)) {
+        return NULL;
+    }
+    cpu = OPENRISC_CPU(object_new(cpu_model));
+    cpu->env.cpu_model_str = cpu_model;
+
+    openrisc_cpu_realize(OBJECT(cpu), NULL);
+
+    return cpu;
 }
+
+typedef struct OpenRISCCPUList {
+    fprintf_function cpu_fprintf;
+    FILE *file;
+} OpenRISCCPUList;
 
 /* Sort alphabetically by type name, except for "any". */
 static gint openrisc_cpu_list_compare(gconstpointer a, gconstpointer b)
@@ -226,9 +184,9 @@ static gint openrisc_cpu_list_compare(gconstpointer a, gconstpointer b)
 
     name_a = object_class_get_name(class_a);
     name_b = object_class_get_name(class_b);
-    if (strcmp(name_a, "any-" TYPE_OPENRISC_CPU) == 0) {
+    if (strcmp(name_a, "any") == 0) {
         return 1;
-    } else if (strcmp(name_b, "any-" TYPE_OPENRISC_CPU) == 0) {
+    } else if (strcmp(name_b, "any") == 0) {
         return -1;
     } else {
         return strcmp(name_a, name_b);
@@ -238,21 +196,15 @@ static gint openrisc_cpu_list_compare(gconstpointer a, gconstpointer b)
 static void openrisc_cpu_list_entry(gpointer data, gpointer user_data)
 {
     ObjectClass *oc = data;
-    CPUListState *s = user_data;
-    const char *typename;
-    char *name;
+    OpenRISCCPUList *s = user_data;
 
-    typename = object_class_get_name(oc);
-    name = g_strndup(typename,
-                     strlen(typename) - strlen("-" TYPE_OPENRISC_CPU));
     (*s->cpu_fprintf)(s->file, "  %s\n",
-                      name);
-    g_free(name);
+                      object_class_get_name(oc));
 }
 
 void cpu_openrisc_list(FILE *f, fprintf_function cpu_fprintf)
 {
-    CPUListState s = {
+    OpenRISCCPUList s = {
         .file = f,
         .cpu_fprintf = cpu_fprintf,
     };

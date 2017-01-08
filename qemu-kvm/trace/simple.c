@@ -16,10 +16,9 @@
 #include <signal.h>
 #include <pthread.h>
 #endif
-#include "qemu/timer.h"
+#include "qemu-timer.h"
 #include "trace.h"
 #include "trace/control.h"
-#include "trace/simple.h"
 
 /** Trace file header event ID */
 #define HEADER_EVENT_ID (~(uint64_t)0) /* avoids conflicting with TraceEventIDs */
@@ -40,29 +39,9 @@
  * Trace records are written out by a dedicated thread.  The thread waits for
  * records to become available, writes them out, and then waits again.
  */
-#if GLIB_CHECK_VERSION(2, 32, 0)
-static GMutex trace_lock;
-#define lock_trace_lock() g_mutex_lock(&trace_lock)
-#define unlock_trace_lock() g_mutex_unlock(&trace_lock)
-#define get_trace_lock_mutex() (&trace_lock)
-#else
 static GStaticMutex trace_lock = G_STATIC_MUTEX_INIT;
-#define lock_trace_lock() g_static_mutex_lock(&trace_lock)
-#define unlock_trace_lock() g_static_mutex_unlock(&trace_lock)
-#define get_trace_lock_mutex() g_static_mutex_get_mutex(&trace_lock)
-#endif
-
-/* g_cond_new() was deprecated in glib 2.31 but we still need to support it */
-#if GLIB_CHECK_VERSION(2, 31, 0)
-static GCond the_trace_available_cond;
-static GCond the_trace_empty_cond;
-static GCond *trace_available_cond = &the_trace_available_cond;
-static GCond *trace_empty_cond = &the_trace_empty_cond;
-#else
 static GCond *trace_available_cond;
 static GCond *trace_empty_cond;
-#endif
-
 static bool trace_available;
 static bool trace_writeout_enabled;
 
@@ -72,9 +51,9 @@ enum {
 };
 
 uint8_t trace_buf[TRACE_BUF_LEN];
-static volatile gint trace_idx;
+static unsigned int trace_idx;
 static unsigned int writeout_idx;
-static volatile gint dropped_events;
+static uint64_t dropped_events;
 static FILE *trace_fp;
 static char *trace_file_name;
 
@@ -84,7 +63,7 @@ typedef struct {
     uint64_t timestamp_ns;
     uint32_t length;   /*    in bytes */
     uint32_t reserved; /*    unused */
-    uint64_t arguments[];
+    uint8_t arguments[];
 } TraceRecord;
 
 typedef struct {
@@ -150,26 +129,27 @@ static bool get_trace_record(unsigned int idx, TraceRecord **recordptr)
  */
 static void flush_trace_file(bool wait)
 {
-    lock_trace_lock();
+    g_static_mutex_lock(&trace_lock);
     trace_available = true;
     g_cond_signal(trace_available_cond);
 
     if (wait) {
-        g_cond_wait(trace_empty_cond, get_trace_lock_mutex());
+        g_cond_wait(trace_empty_cond, g_static_mutex_get_mutex(&trace_lock));
     }
 
-    unlock_trace_lock();
+    g_static_mutex_unlock(&trace_lock);
 }
 
 static void wait_for_trace_records_available(void)
 {
-    lock_trace_lock();
+    g_static_mutex_lock(&trace_lock);
     while (!(trace_available && trace_writeout_enabled)) {
         g_cond_signal(trace_empty_cond);
-        g_cond_wait(trace_available_cond, get_trace_lock_mutex());
+        g_cond_wait(trace_available_cond,
+                    g_static_mutex_get_mutex(&trace_lock));
     }
     trace_available = false;
-    unlock_trace_lock();
+    g_static_mutex_unlock(&trace_lock);
 }
 
 static gpointer writeout_thread(gpointer opaque)
@@ -180,22 +160,25 @@ static gpointer writeout_thread(gpointer opaque)
         uint8_t bytes[sizeof(TraceRecord) + sizeof(uint64_t)];
     } dropped;
     unsigned int idx = 0;
-    int dropped_count;
+    uint64_t dropped_count;
     size_t unused __attribute__ ((unused));
 
     for (;;) {
         wait_for_trace_records_available();
 
-        if (g_atomic_int_get(&dropped_events)) {
+        if (dropped_events) {
             dropped.rec.event = DROPPED_EVENT_ID,
             dropped.rec.timestamp_ns = get_clock();
-            dropped.rec.length = sizeof(TraceRecord) + sizeof(uint64_t),
+            dropped.rec.length = sizeof(TraceRecord) + sizeof(dropped_events),
             dropped.rec.reserved = 0;
-            do {
-                dropped_count = g_atomic_int_get(&dropped_events);
-            } while (!g_atomic_int_compare_and_exchange(&dropped_events,
-                                                        dropped_count, 0));
-            dropped.rec.arguments[0] = dropped_count;
+            while (1) {
+                dropped_count = dropped_events;
+                if (g_atomic_int_compare_and_exchange((gint *)&dropped_events,
+                                                      dropped_count, 0)) {
+                    break;
+                }
+            }
+            memcpy(dropped.rec.arguments, &dropped_count, sizeof(uint64_t));
             unused = fwrite(&dropped.rec, dropped.rec.length, 1, trace_fp);
         }
 
@@ -228,25 +211,29 @@ int trace_record_start(TraceBufferRecord *rec, TraceEventID event, size_t datasi
 {
     unsigned int idx, rec_off, old_idx, new_idx;
     uint32_t rec_len = sizeof(TraceRecord) + datasize;
-    uint64_t event_u64 = event;
     uint64_t timestamp_ns = get_clock();
 
-    do {
-        old_idx = g_atomic_int_get(&trace_idx);
+    while (1) {
+        old_idx = trace_idx;
         smp_rmb();
         new_idx = old_idx + rec_len;
 
         if (new_idx - writeout_idx > TRACE_BUF_LEN) {
             /* Trace Buffer Full, Event dropped ! */
-            g_atomic_int_inc(&dropped_events);
+            g_atomic_int_inc((gint *)&dropped_events);
             return -ENOSPC;
         }
-    } while (!g_atomic_int_compare_and_exchange(&trace_idx, old_idx, new_idx));
+
+        if (g_atomic_int_compare_and_exchange((gint *)&trace_idx,
+                                              old_idx, new_idx)) {
+            break;
+        }
+    }
 
     idx = old_idx % TRACE_BUF_LEN;
 
     rec_off = idx;
-    rec_off = write_to_buffer(rec_off, &event_u64, sizeof(event_u64));
+    rec_off = write_to_buffer(rec_off, &event, sizeof(event));
     rec_off = write_to_buffer(rec_off, &timestamp_ns, sizeof(timestamp_ns));
     rec_off = write_to_buffer(rec_off, &rec_len, sizeof(rec_len));
 
@@ -288,8 +275,7 @@ void trace_record_finish(TraceBufferRecord *rec)
     record.event |= TRACE_RECORD_VALID;
     write_to_buffer(rec->tbuf_idx, &record, sizeof(TraceRecord));
 
-    if (((unsigned int)g_atomic_int_get(&trace_idx) - writeout_idx)
-        > TRACE_BUF_FLUSH_THRESHOLD) {
+    if ((trace_idx - writeout_idx) > TRACE_BUF_FLUSH_THRESHOLD) {
         flush_trace_file(false);
     }
 }
@@ -370,16 +356,38 @@ void trace_print_events(FILE *stream, fprintf_function stream_printf)
 {
     unsigned int i;
 
-    for (i = 0; i < trace_event_count(); i++) {
-        TraceEvent *ev = trace_event_id(i);
+    for (i = 0; i < NR_TRACE_EVENTS; i++) {
         stream_printf(stream, "%s [Event ID %u] : state %u\n",
-                      trace_event_get_name(ev), i, trace_event_get_state_dynamic(ev));
+                      trace_list[i].tp_name, i, trace_list[i].state);
     }
 }
 
-void trace_event_set_state_dynamic_backend(TraceEvent *ev, bool state)
+bool trace_event_set_state(const char *name, bool state)
 {
-    ev->dstate = state;
+    unsigned int i;
+    unsigned int len;
+    bool wildcard = false;
+    bool matched = false;
+
+    len = strlen(name);
+    if (len > 0 && name[len - 1] == '*') {
+        wildcard = true;
+        len -= 1;
+    }
+    for (i = 0; i < NR_TRACE_EVENTS; i++) {
+        if (wildcard) {
+            if (!strncmp(trace_list[i].tp_name, name, len)) {
+                trace_list[i].state = state;
+                matched = true;
+            }
+            continue;
+        }
+        if (!strcmp(trace_list[i].tp_name, name)) {
+            trace_list[i].state = state;
+            return true;
+        }
+    }
+    return matched;
 }
 
 /* Helper function to create a thread with signals blocked.  Use glib's
@@ -396,13 +404,7 @@ static GThread *trace_thread_create(GThreadFunc fn)
     sigfillset(&set);
     pthread_sigmask(SIG_SETMASK, &set, &oldset);
 #endif
-
-#if GLIB_CHECK_VERSION(2, 31, 0)
-    thread = g_thread_new("trace-thread", fn, NULL);
-#else
     thread = g_thread_create(fn, NULL, FALSE, NULL);
-#endif
-
 #ifndef _WIN32
     pthread_sigmask(SIG_SETMASK, &oldset, NULL);
 #endif
@@ -414,10 +416,17 @@ bool trace_backend_init(const char *events, const char *file)
 {
     GThread *thread;
 
+    if (!g_thread_supported()) {
 #if !GLIB_CHECK_VERSION(2, 31, 0)
+        g_thread_init(NULL);
+#else
+        fprintf(stderr, "glib threading failed to initialize.\n");
+        exit(1);
+#endif
+    }
+
     trace_available_cond = g_cond_new();
     trace_empty_cond = g_cond_new();
-#endif
 
     thread = trace_thread_create(writeout_thread);
     if (!thread) {

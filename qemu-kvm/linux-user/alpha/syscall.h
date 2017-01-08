@@ -39,7 +39,6 @@ struct target_pt_regs {
 };
 
 #define UNAME_MACHINE "alpha"
-#define UNAME_MINIMUM_RELEASE "2.6.32"
 
 #undef TARGET_EDEADLK
 #define TARGET_EDEADLK		11

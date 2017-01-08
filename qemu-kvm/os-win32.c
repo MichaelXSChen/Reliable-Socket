@@ -23,7 +23,6 @@
  * THE SOFTWARE.
  */
 #include <windows.h>
-#include <mmsystem.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -31,7 +30,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include "config-host.h"
-#include "sysemu/sysemu.h"
+#include "sysemu.h"
 #include "qemu-options.h"
 
 /***********************************************************/
@@ -68,25 +67,50 @@ static BOOL WINAPI qemu_ctrl_handler(DWORD type)
     return TRUE;
 }
 
-static TIMECAPS mm_tc;
-
-static void os_undo_timer_resolution(void)
-{
-    timeEndPeriod(mm_tc.wPeriodMin);
-}
-
 void os_setup_early_signal_handling(void)
 {
+    /* Note: cpu_interrupt() is currently not SMP safe, so we force
+       QEMU to run on a single CPU */
+    HANDLE h;
+    DWORD_PTR mask, smask;
+    int i;
+
     SetConsoleCtrlHandler(qemu_ctrl_handler, TRUE);
-    timeGetDevCaps(&mm_tc, sizeof(mm_tc));
-    timeBeginPeriod(mm_tc.wPeriodMin);
-    atexit(os_undo_timer_resolution);
+
+    h = GetCurrentProcess();
+    if (GetProcessAffinityMask(h, &mask, &smask)) {
+        for(i = 0; i < 32; i++) {
+            if (mask & (1 << i))
+                break;
+        }
+        if (i != 32) {
+            mask = 1 << i;
+            SetProcessAffinityMask(h, mask);
+        }
+    }
 }
 
 /* Look for support files in the same directory as the executable.  */
-char *os_find_datadir(void)
+char *os_find_datadir(const char *argv0)
 {
-    return qemu_get_exec_dir();
+    char *p;
+    char buf[MAX_PATH];
+    DWORD len;
+
+    len = GetModuleFileName(NULL, buf, sizeof(buf) - 1);
+    if (len == 0) {
+        return NULL;
+    }
+
+    buf[len] = 0;
+    p = buf + len - 1;
+    while (p != buf && *p != '\\')
+        p--;
+    *p = 0;
+    if (access(buf, R_OK) == 0) {
+        return g_strdup(buf);
+    }
+    return NULL;
 }
 
 void os_set_line_buffering(void)

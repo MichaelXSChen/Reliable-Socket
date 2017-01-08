@@ -40,7 +40,7 @@
 #define AHCI_PORT_PRIV_DMA_SZ     (AHCI_CMD_SLOT_SZ + AHCI_CMD_TBL_AR_SZ + \
                                    AHCI_RX_FIS_SZ)
 
-#define AHCI_IRQ_ON_SG            (1U << 31)
+#define AHCI_IRQ_ON_SG            (1 << 31)
 #define AHCI_CMD_ATAPI            (1 << 5)
 #define AHCI_CMD_WRITE            (1 << 6)
 #define AHCI_CMD_PREFETCH         (1 << 7)
@@ -61,7 +61,7 @@
 /* HOST_CTL bits */
 #define HOST_CTL_RESET            (1 << 0)  /* reset controller; self-clear */
 #define HOST_CTL_IRQ_EN           (1 << 1)  /* global IRQ enable */
-#define HOST_CTL_AHCI_EN          (1U << 31) /* AHCI enabled */
+#define HOST_CTL_AHCI_EN          (1 << 31) /* AHCI enabled */
 
 /* HOST_CAP bits */
 #define HOST_CAP_SSC              (1 << 14) /* Slumber capable */
@@ -69,7 +69,7 @@
 #define HOST_CAP_CLO              (1 << 24) /* Command List Override support */
 #define HOST_CAP_SSS              (1 << 27) /* Staggered Spin-up */
 #define HOST_CAP_NCQ              (1 << 30) /* Native Command Queueing */
-#define HOST_CAP_64               (1U << 31) /* PCI DAC (64-bit DMA) support */
+#define HOST_CAP_64               (1 << 31) /* PCI DAC (64-bit DMA) support */
 
 /* registers for each SATA port */
 #define PORT_LST_ADDR             0x00 /* command list DMA addr */
@@ -89,7 +89,7 @@
 #define PORT_RESERVED             0x3c /* reserved */
 
 /* PORT_IRQ_{STAT,MASK} bits */
-#define PORT_IRQ_COLD_PRES        (1U << 31) /* cold presence detect */
+#define PORT_IRQ_COLD_PRES        (1 << 31) /* cold presence detect */
 #define PORT_IRQ_TF_ERR           (1 << 30) /* task file error */
 #define PORT_IRQ_HBUS_ERR         (1 << 29) /* host bus fatal error */
 #define PORT_IRQ_HBUS_DATA_ERR    (1 << 28) /* host bus data error */
@@ -151,7 +151,7 @@
 #define PORT_IRQ_STAT_HBDS        (1 << 28) /* Host Bus Data Error Status */
 #define PORT_IRQ_STAT_HBFS        (1 << 29) /* Host Bus Fatal Error Status */
 #define PORT_IRQ_STAT_TFES        (1 << 30) /* Task File Error Status */
-#define PORT_IRQ_STAT_CPDS        (1U << 31) /* Code Port Detect Status */
+#define PORT_IRQ_STAT_CPDS        (1 << 31) /* Code Port Detect Status */
 
 /* ap->flags bits */
 #define AHCI_FLAG_NO_NCQ                  (1 << 24)
@@ -281,9 +281,11 @@ struct AHCIDevice {
     QEMUBH *check_bh;
     uint8_t *lst;
     uint8_t *res_fis;
-    bool done_atapi_packet;
-    int32_t busy_slot;
-    bool init_d2h_sent;
+    int dma_status;
+    int done_atapi_packet;
+    int busy_slot;
+    int init_d2h_sent;
+    BlockDriverCompletionFunc *dma_cb;
     AHCICmdHdr *cur_cmd;
     NCQTransferState ncq_tfs[AHCI_MAX_CMDS];
 };
@@ -295,33 +297,15 @@ typedef struct AHCIState {
     MemoryRegion idp;       /* Index-Data Pair I/O port space */
     unsigned idp_offset;    /* Offset of index in I/O port space */
     uint32_t idp_index;     /* Current IDP index */
-    int32_t ports;
+    int ports;
     qemu_irq irq;
-    AddressSpace *as;
+    DMAContext *dma;
 } AHCIState;
 
 typedef struct AHCIPCIState {
-    /*< private >*/
-    PCIDevice parent_obj;
-    /*< public >*/
-
+    PCIDevice card;
     AHCIState ahci;
 } AHCIPCIState;
-
-#define TYPE_ICH9_AHCI "ich9-ahci"
-
-#define ICH_AHCI(obj) \
-    OBJECT_CHECK(AHCIPCIState, (obj), TYPE_ICH9_AHCI)
-
-extern const VMStateDescription vmstate_ahci;
-
-#define VMSTATE_AHCI(_field, _state) {                               \
-    .name       = (stringify(_field)),                               \
-    .size       = sizeof(AHCIState),                                 \
-    .vmsd       = &vmstate_ahci,                                     \
-    .flags      = VMS_STRUCT,                                        \
-    .offset     = vmstate_offset_value(_state, _field, AHCIState),   \
-}
 
 typedef struct NCQFrame {
     uint8_t fis_type;
@@ -346,7 +330,7 @@ typedef struct NCQFrame {
     uint8_t reserved10;
 } QEMU_PACKED NCQFrame;
 
-void ahci_init(AHCIState *s, DeviceState *qdev, AddressSpace *as, int ports);
+void ahci_init(AHCIState *s, DeviceState *qdev, DMAContext *dma, int ports);
 void ahci_uninit(AHCIState *s);
 
 void ahci_reset(AHCIState *s);

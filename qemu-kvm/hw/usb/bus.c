@@ -1,8 +1,8 @@
 #include "hw/hw.h"
 #include "hw/usb.h"
 #include "hw/qdev.h"
-#include "sysemu/sysemu.h"
-#include "monitor/monitor.h"
+#include "sysemu.h"
+#include "monitor.h"
 #include "trace.h"
 
 static void usb_bus_dev_print(Monitor *mon, DeviceState *qdev, int indent);
@@ -13,11 +13,8 @@ static int usb_qdev_exit(DeviceState *qdev);
 
 static Property usb_props[] = {
     DEFINE_PROP_STRING("port", USBDevice, port_path),
-    DEFINE_PROP_STRING("serial", USBDevice, serial),
     DEFINE_PROP_BIT("full-path", USBDevice, flags,
                     USB_DEV_FLAG_FULL_PATH, true),
-    DEFINE_PROP_BIT("msos-desc", USBDevice, flags,
-                    USB_DEV_FLAG_MSOS_DESC_ENABLE, true),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -49,12 +46,6 @@ static int usb_device_post_load(void *opaque, int version_id)
     } else {
         dev->attached = 1;
     }
-    if (dev->setup_index < 0 ||
-        dev->setup_len < 0 ||
-        dev->setup_index >= sizeof(dev->data_buf) ||
-        dev->setup_len >= sizeof(dev->data_buf)) {
-        return -EINVAL;
-    }
     return 0;
 }
 
@@ -75,10 +66,9 @@ const VMStateDescription vmstate_usb_device = {
     }
 };
 
-void usb_bus_new(USBBus *bus, size_t bus_size,
-                 USBBusOps *ops, DeviceState *host)
+void usb_bus_new(USBBus *bus, USBBusOps *ops, DeviceState *host)
 {
-    qbus_create_inplace(bus, bus_size, TYPE_USB_BUS, host, NULL);
+    qbus_create_inplace(&bus->qbus, TYPE_USB_BUS, host, NULL);
     bus->ops = ops;
     bus->busnr = next_usb_bus++;
     bus->qbus.allow_hotplug = 1; /* Yes, we can */
@@ -150,21 +140,24 @@ void usb_device_handle_reset(USBDevice *dev)
     }
 }
 
-void usb_device_handle_control(USBDevice *dev, USBPacket *p, int request,
-                               int value, int index, int length, uint8_t *data)
+int usb_device_handle_control(USBDevice *dev, USBPacket *p, int request,
+                              int value, int index, int length, uint8_t *data)
 {
     USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
     if (klass->handle_control) {
-        klass->handle_control(dev, p, request, value, index, length, data);
+        return klass->handle_control(dev, p, request, value, index, length,
+                                         data);
     }
+    return -ENOSYS;
 }
 
-void usb_device_handle_data(USBDevice *dev, USBPacket *p)
+int usb_device_handle_data(USBDevice *dev, USBPacket *p)
 {
     USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
     if (klass->handle_data) {
-        klass->handle_data(dev, p);
+        return klass->handle_data(dev, p);
     }
+    return -ENOSYS;
 }
 
 const char *usb_device_get_product_desc(USBDevice *dev)
@@ -176,9 +169,6 @@ const char *usb_device_get_product_desc(USBDevice *dev)
 const USBDesc *usb_device_get_usb_desc(USBDevice *dev)
 {
     USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
-    if (dev->usb_desc) {
-        return dev->usb_desc;
-    }
     return klass->usb_desc;
 }
 
@@ -188,40 +178,6 @@ void usb_device_set_interface(USBDevice *dev, int interface,
     USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
     if (klass->set_interface) {
         klass->set_interface(dev, interface, alt_old, alt_new);
-    }
-}
-
-void usb_device_flush_ep_queue(USBDevice *dev, USBEndpoint *ep)
-{
-    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
-    if (klass->flush_ep_queue) {
-        klass->flush_ep_queue(dev, ep);
-    }
-}
-
-void usb_device_ep_stopped(USBDevice *dev, USBEndpoint *ep)
-{
-    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
-    if (klass->ep_stopped) {
-        klass->ep_stopped(dev, ep);
-    }
-}
-
-int usb_device_alloc_streams(USBDevice *dev, USBEndpoint **eps, int nr_eps,
-                             int streams)
-{
-    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
-    if (klass->alloc_streams) {
-        return klass->alloc_streams(dev, eps, nr_eps, streams);
-    }
-    return 0;
-}
-
-void usb_device_free_streams(USBDevice *dev, USBEndpoint **eps, int nr_eps)
-{
-    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
-    if (klass->free_streams) {
-        klass->free_streams(dev, eps, nr_eps);
     }
 }
 
@@ -369,18 +325,15 @@ void usb_port_location(USBPort *downstream, USBPort *upstream, int portnr)
     if (upstream) {
         snprintf(downstream->path, sizeof(downstream->path), "%s.%d",
                  upstream->path, portnr);
-        downstream->hubcount = upstream->hubcount + 1;
     } else {
         snprintf(downstream->path, sizeof(downstream->path), "%d", portnr);
-        downstream->hubcount = 0;
     }
 }
 
 void usb_unregister_port(USBBus *bus, USBPort *port)
 {
-    if (port->dev) {
-        object_unparent(OBJECT(port->dev));
-    }
+    if (port->dev)
+        qdev_free(&port->dev->qdev);
     QTAILQ_REMOVE(&bus->free, port, next);
     bus->nfree--;
 }
@@ -446,47 +399,19 @@ void usb_release_port(USBDevice *dev)
     bus->nfree++;
 }
 
-static void usb_mask_to_str(char *dest, size_t size,
-                            unsigned int speedmask)
-{
-    static const struct {
-        unsigned int mask;
-        const char *name;
-    } speeds[] = {
-        { .mask = USB_SPEED_MASK_FULL,  .name = "full"  },
-        { .mask = USB_SPEED_MASK_HIGH,  .name = "high"  },
-        { .mask = USB_SPEED_MASK_SUPER, .name = "super" },
-    };
-    int i, pos = 0;
-
-    for (i = 0; i < ARRAY_SIZE(speeds); i++) {
-        if (speeds[i].mask & speedmask) {
-            pos += snprintf(dest + pos, size - pos, "%s%s",
-                            pos ? "+" : "",
-                            speeds[i].name);
-        }
-    }
-}
-
 int usb_device_attach(USBDevice *dev)
 {
     USBBus *bus = usb_bus_from_device(dev);
     USBPort *port = dev->port;
-    char devspeed[32], portspeed[32];
 
     assert(port != NULL);
     assert(!dev->attached);
-    usb_mask_to_str(devspeed, sizeof(devspeed), dev->speedmask);
-    usb_mask_to_str(portspeed, sizeof(portspeed), port->speedmask);
-    trace_usb_port_attach(bus->busnr, port->path,
-                          devspeed, portspeed);
+    trace_usb_port_attach(bus->busnr, port->path);
 
     if (!(port->speedmask & dev->speedmask)) {
-        error_report("Warning: speed mismatch trying to attach"
-                     " usb device \"%s\" (%s speed)"
-                     " to bus \"%s\", port \"%s\" (%s speed)",
-                     dev->product_desc, devspeed,
-                     bus->qbus.name, port->path, portspeed);
+        error_report("Warning: speed mismatch trying to attach "
+                     "usb device %s to bus %s",
+                     dev->product_desc, bus->qbus.name);
         return -1;
     }
 
@@ -528,7 +453,7 @@ int usb_device_delete_addr(int busnr, int addr)
         return -1;
     dev = port->dev;
 
-    object_unparent(OBJECT(dev));
+    qdev_free(&dev->qdev);
     return 0;
 }
 
@@ -601,7 +526,7 @@ static char *usb_get_fw_dev_path(DeviceState *qdev)
     return fw_path;
 }
 
-void usb_info(Monitor *mon, const QDict *qdict)
+void usb_info(Monitor *mon)
 {
     USBBus *bus;
     USBDevice *dev;
@@ -660,13 +585,6 @@ USBDevice *usbdevice_create(const char *cmdline)
         return NULL;
     }
 
-    if (!bus) {
-        error_report("Error: no usb bus to attach usbdevice %s, "
-                     "please try -machine usb=on and check that "
-                     "the machine model supports USB", driver);
-        return NULL;
-    }
-
     if (!f->usbdevice_init) {
         if (*params) {
             error_report("usbdevice %s accepts no params", driver);
@@ -687,7 +605,7 @@ static void usb_device_class_init(ObjectClass *klass, void *data)
     k->props    = usb_props;
 }
 
-static const TypeInfo usb_device_type_info = {
+static TypeInfo usb_device_type_info = {
     .name = TYPE_USB_DEVICE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(USBDevice),

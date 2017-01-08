@@ -10,8 +10,6 @@
  * the COPYING file in the top-level directory.
  *
  */
-#ifndef HW_9PFS_VIRTIO9P_SYNTH_H
-#define HW_9PFS_VIRTIO9P_SYNTH_H 1
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -50,5 +48,3 @@ extern int qemu_v9fs_synth_mkdir(V9fsSynthNode *parent, int mode,
 extern int qemu_v9fs_synth_add_file(V9fsSynthNode *parent, int mode,
                                     const char *name, v9fs_synth_read read,
                                     v9fs_synth_write write, void *arg);
-
-#endif

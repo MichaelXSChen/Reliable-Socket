@@ -133,8 +133,8 @@ void free(void *ptr);
 
 #include "debug.h"
 
-#include "qemu/queue.h"
-#include "qemu/sockets.h"
+#include "qemu-queue.h"
+#include "qemu_socket.h"
 
 #include "libslirp.h"
 #include "ip.h"
@@ -203,9 +203,6 @@ bool arp_table_search(Slirp *slirp, uint32_t ip_addr,
 
 struct Slirp {
     QTAILQ_ENTRY(Slirp) entry;
-    u_int time_fasttimo;
-    u_int last_slowtimo;
-    bool do_slowtimo;
 
     /* virtual network configuration */
     struct in_addr vnetwork_addr;
@@ -218,6 +215,7 @@ struct Slirp {
     char client_hostname[33];
 
     int restricted;
+    struct timeval tt;
     struct ex_list *exec_list;
 
     /* mbuf states */
@@ -237,8 +235,6 @@ struct Slirp {
     /* bootp/dhcp states */
     BOOTPClient bootp_clients[NB_BOOTP_CLIENTS];
     char *bootp_filename;
-    size_t vdnssearch_len;
-    uint8_t *vdnssearch;
 
     /* tcp states */
     struct socket tcb;
@@ -297,9 +293,6 @@ void lprint(const char *, ...) GCC_FMT_ATTR(1, 2);
 
 #define SO_OPTIONS DO_KEEPALIVE
 #define TCP_MAXIDLE (TCPTV_KEEPCNT * TCPTV_KEEPINTVL)
-
-/* dnssearch.c */
-int translate_dnssearch(Slirp *s, const char ** names);
 
 /* cksum.c */
 int cksum(struct mbuf *m, int len);

@@ -22,7 +22,7 @@
  * THE SOFTWARE.
  */
 
-#include "util.h"
+#include "net/util.h"
 #include <errno.h>
 #include <stdlib.h>
 

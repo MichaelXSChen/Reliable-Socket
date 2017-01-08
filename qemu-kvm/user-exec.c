@@ -18,9 +18,8 @@
  */
 #include "config.h"
 #include "cpu.h"
-#include "disas/disas.h"
+#include "disas.h"
 #include "tcg.h"
-#include "qemu/bitops.h"
 
 #undef EAX
 #undef ECX
@@ -38,22 +37,19 @@
 
 //#define DEBUG_SIGNAL
 
-static void exception_action(CPUState *cpu)
+static void exception_action(CPUArchState *env1)
 {
 #if defined(TARGET_I386)
-    X86CPU *x86_cpu = X86_CPU(cpu);
-    CPUX86State *env1 = &x86_cpu->env;
-
-    raise_exception_err(env1, cpu->exception_index, env1->error_code);
+    raise_exception_err(env1, env1->exception_index, env1->error_code);
 #else
-    cpu_loop_exit(cpu);
+    cpu_loop_exit(env1);
 #endif
 }
 
 /* exit the current TB from a signal handler. The host registers are
    restored in a state compatible with the CPU emulator
  */
-void cpu_resume_from_signal(CPUState *cpu, void *puc)
+void cpu_resume_from_signal(CPUArchState *env1, void *puc)
 {
 #ifdef __linux__
     struct ucontext *uc = puc;
@@ -73,8 +69,8 @@ void cpu_resume_from_signal(CPUState *cpu, void *puc)
         sigprocmask(SIG_SETMASK, &uc->sc_mask, NULL);
 #endif
     }
-    cpu->exception_index = -1;
-    siglongjmp(cpu->jmp_env, 1);
+    env1->exception_index = -1;
+    longjmp(env1->jmp_env, 1);
 }
 
 /* 'pc' is the host PC at which the exception was raised. 'address' is
@@ -85,8 +81,7 @@ static inline int handle_cpu_signal(uintptr_t pc, unsigned long address,
                                     int is_write, sigset_t *old_set,
                                     void *puc)
 {
-    CPUState *cpu;
-    CPUClass *cc;
+    TranslationBlock *tb;
     int ret;
 
 #if defined(DEBUG_SIGNAL)
@@ -99,15 +94,9 @@ static inline int handle_cpu_signal(uintptr_t pc, unsigned long address,
         return 1;
     }
 
-    /* Convert forcefully to guest address space, invalid addresses
-       are still valid segv ones */
-    address = h2g_nocheck(address);
-
-    cpu = current_cpu;
-    cc = CPU_GET_CLASS(cpu);
     /* see if it is an MMU fault */
-    g_assert(cc->handle_mmu_fault);
-    ret = cc->handle_mmu_fault(cpu, address, is_write, MMU_USER_IDX);
+    ret = cpu_handle_mmu_fault(cpu_single_env, address, is_write,
+                               MMU_USER_IDX);
     if (ret < 0) {
         return 0; /* not an MMU fault */
     }
@@ -115,12 +104,17 @@ static inline int handle_cpu_signal(uintptr_t pc, unsigned long address,
         return 1; /* the MMU fault was handled without causing real CPU fault */
     }
     /* now we have a real cpu fault */
-    cpu_restore_state(cpu, pc);
+    tb = tb_find_pc(pc);
+    if (tb) {
+        /* the PC is inside the translated code. It means that we have
+           a virtual CPU fault */
+        cpu_restore_state(tb, cpu_single_env, pc);
+    }
 
     /* we restore the process signal mask as the sigreturn should
        do it (XXX: use sigsetjmp) */
     sigprocmask(SIG_SETMASK, old_set, NULL);
-    exception_action(cpu);
+    exception_action(cpu_single_env);
 
     /* never comes here */
     return 1;
@@ -448,34 +442,16 @@ int cpu_signal_handler(int host_signum, void *pinfo,
     unsigned long pc;
     int is_write;
 
-#if defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ <= 3))
+#if (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ <= 3))
     pc = uc->uc_mcontext.gregs[R15];
 #else
     pc = uc->uc_mcontext.arm_pc;
 #endif
-
-    /* error_code is the FSR value, in which bit 11 is WnR (assuming a v6 or
-     * later processor; on v5 we will always report this as a read).
-     */
-    is_write = extract32(uc->uc_mcontext.error_code, 11, 1);
+    /* XXX: compute is_write */
+    is_write = 0;
     return handle_cpu_signal(pc, (unsigned long)info->si_addr,
                              is_write,
                              &uc->uc_sigmask, puc);
-}
-
-#elif defined(__aarch64__)
-
-int cpu_signal_handler(int host_signum, void *pinfo,
-                       void *puc)
-{
-    siginfo_t *info = pinfo;
-    struct ucontext *uc = puc;
-    uint64_t pc;
-    int is_write = 0; /* XXX how to determine? */
-
-    pc = uc->uc_mcontext.pc;
-    return handle_cpu_signal(pc, (uint64_t)info->si_addr,
-                             is_write, &uc->uc_sigmask, puc);
 }
 
 #elif defined(__mc68000)

@@ -1,10 +1,10 @@
-#include "macros.inc"
+.include "macros.inc"
 
 test_suite mmu
 
-.purgem test_init
+.purgem test
 
-.macro test_init
+.macro test name
     movi    a2, 0x00000004
     idtlb   a2
     movi    a2, 0x00100004

@@ -1,5 +1,5 @@
 #include "hw/hw.h"
-#include "monitor/monitor.h"
+#include "monitor.h"
 #include "audio.h"
 
 typedef struct {

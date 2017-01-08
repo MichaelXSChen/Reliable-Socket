@@ -7,8 +7,8 @@
 #  Anthony Liguori <aliguori@us.ibm.com>
 #  Michael Roth    <mdroth@linux.vnet.ibm.com>
 #
-# This work is licensed under the terms of the GNU GPL, version 2.
-# See the COPYING file in the top-level directory.
+# This work is licensed under the terms of the GNU GPLv2.
+# See the COPYING.LIB file in the top-level directory.
 
 from ordereddict import OrderedDict
 from qapi import *
@@ -22,6 +22,13 @@ def type_visitor(name):
         return 'visit_type_%sList' % name[0]
     else:
         return 'visit_type_%s' % name
+
+def generate_decl_enum(name, members, genlist=True):
+    return mcgen('''
+
+void %(visitor)s(Visitor *m, %(name)s * obj, const char *name, Error **errp);
+''',
+                 visitor=type_visitor(name))
 
 def generate_command_decl(name, args, ret_type):
     arglist=""
@@ -69,6 +76,19 @@ def gen_marshal_output_call(name, ret_type):
         return ""
     return "qmp_marshal_output_%s(retval, ret, errp);" % c_fun(name)
 
+def gen_visitor_output_containers_decl(ret_type):
+    ret = ""
+    push_indent()
+    if ret_type:
+        ret += mcgen('''
+QmpOutputVisitor *mo;
+QapiDeallocVisitor *md;
+Visitor *v;
+''')
+    pop_indent()
+
+    return ret
+
 def gen_visitor_input_containers_decl(args):
     ret = ""
 
@@ -108,15 +128,12 @@ bool has_%(argname)s = false;
 
 def gen_visitor_input_block(args, obj, dealloc=False):
     ret = ""
-    errparg = 'errp'
-
     if len(args) == 0:
         return ret
 
     push_indent()
 
     if dealloc:
-        errparg = 'NULL'
         ret += mcgen('''
 md = qapi_dealloc_visitor_new();
 v = qapi_dealloc_get_visitor(md);
@@ -131,22 +148,22 @@ v = qmp_input_get_visitor(mi);
     for argname, argtype, optional, structured in parse_args(args):
         if optional:
             ret += mcgen('''
-visit_start_optional(v, &has_%(c_name)s, "%(name)s", %(errp)s);
+visit_start_optional(v, &has_%(c_name)s, "%(name)s", errp);
 if (has_%(c_name)s) {
 ''',
-                         c_name=c_var(argname), name=argname, errp=errparg)
+                         c_name=c_var(argname), name=argname)
             push_indent()
         ret += mcgen('''
-%(visitor)s(v, &%(c_name)s, "%(name)s", %(errp)s);
+%(visitor)s(v, &%(c_name)s, "%(name)s", errp);
 ''',
                      c_name=c_var(argname), name=argname, argtype=argtype,
-                     visitor=type_visitor(argtype), errp=errparg)
+                     visitor=type_visitor(argtype))
         if optional:
             pop_indent()
             ret += mcgen('''
 }
-visit_end_optional(v, %(errp)s);
-''', errp=errparg)
+visit_end_optional(v, errp);
+''')
 
     if dealloc:
         ret += mcgen('''
@@ -177,7 +194,7 @@ static void qmp_marshal_output_%(c_name)s(%(c_ret_type)s ret_in, QObject **ret_o
     }
     qmp_output_visitor_cleanup(mo);
     v = qapi_dealloc_get_visitor(md);
-    %(visitor)s(v, &ret_in, "unused", NULL);
+    %(visitor)s(v, &ret_in, "unused", errp);
     qapi_dealloc_visitor_cleanup(md);
 }
 ''',
@@ -325,8 +342,8 @@ def gen_command_decl_prologue(header, guard, prefix=""):
 #define %(guard)s
 
 #include "%(prefix)sqapi-types.h"
-#include "qapi/qmp/qdict.h"
-#include "qapi/error.h"
+#include "qdict.h"
+#include "error.h"
 
 ''',
                  header=basename(header), guard=guardname(header), prefix=prefix)
@@ -349,15 +366,12 @@ def gen_command_def_prologue(prefix="", proxy=False):
  *
  */
 
-#include "qemu-common.h"
-#include "qemu/module.h"
-#include "qapi/qmp/qerror.h"
-#include "qapi/qmp/types.h"
-#include "qapi/qmp/dispatch.h"
-#include "qapi/visitor.h"
+#include "qemu-objects.h"
+#include "qapi/qmp-core.h"
+#include "qapi/qapi-visit-core.h"
 #include "qapi/qmp-output-visitor.h"
 #include "qapi/qmp-input-visitor.h"
-#include "qapi/dealloc-visitor.h"
+#include "qapi/qapi-dealloc-visitor.h"
 #include "%(prefix)sqapi-types.h"
 #include "%(prefix)sqapi-visit.h"
 

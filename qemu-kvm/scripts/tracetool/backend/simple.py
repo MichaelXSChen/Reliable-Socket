@@ -15,10 +15,6 @@ __email__      = "stefanha@linux.vnet.ibm.com"
 
 from tracetool import out
 
-
-PUBLIC = True
-
-
 def is_string(arg):
     strtype = ('const char*', 'char*', 'const char *', 'char *')
     if arg.lstrip().startswith(strtype):
@@ -28,10 +24,17 @@ def is_string(arg):
 
 def c(events):
     out('#include "trace.h"',
-        '#include "trace/control.h"',
         '#include "trace/simple.h"',
         '',
-        )
+        'TraceEvent trace_list[] = {')
+
+    for e in events:
+        out('{.tp_name = "%(name)s", .state=0},',
+            name = e.name,
+            )
+
+    out('};',
+        '')
 
     for num, event in enumerate(events):
         out('void trace_%(name)s(%(args)s)',
@@ -56,16 +59,13 @@ def c(events):
 
 
         out('',
-            '    TraceEvent *eventp = trace_event_id(%(event_enum)s);',
-            '    bool _state = trace_event_get_state_dynamic(eventp);',
-            '    if (!_state) {',
+            '    if (!trace_list[%(event_id)s].state) {',
             '        return;',
             '    }',
             '',
             '    if (trace_record_start(&rec, %(event_id)s, %(size_str)s)) {',
             '        return; /* Trace Buffer Full, Event Dropped ! */',
             '    }',
-            event_enum = 'TRACE_' + event.name.upper(),
             event_id = num,
             size_str = sizestr,
             )
@@ -94,8 +94,14 @@ def c(events):
 
 
 def h(events):
+    out('#include "trace/simple.h"',
+        '')
+
     for event in events:
         out('void trace_%(name)s(%(args)s);',
             name = event.name,
             args = event.args,
             )
+    out('')
+    out('#define NR_TRACE_EVENTS %d' % len(events))
+    out('extern TraceEvent trace_list[NR_TRACE_EVENTS];')

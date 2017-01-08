@@ -26,16 +26,16 @@
 #include "config-host.h"
 #include "qemu-common.h"
 #include "trace.h"
-#include "monitor/monitor.h"
-#include "block/block.h"
-#include "block/blockjob.h"
-#include "block/block_int.h"
-#include "qapi/qmp/qjson.h"
-#include "block/coroutine.h"
+#include "monitor.h"
+#include "block.h"
+#include "blockjob.h"
+#include "block_int.h"
+#include "qjson.h"
+#include "qemu-coroutine.h"
 #include "qmp-commands.h"
-#include "qemu/timer.h"
+#include "qemu-timer.h"
 
-void *block_job_create(const BlockJobDriver *driver, BlockDriverState *bs,
+void *block_job_create(const BlockJobType *job_type, BlockDriverState *bs,
                        int64_t speed, BlockDriverCompletionFunc *cb,
                        void *opaque, Error **errp)
 {
@@ -45,11 +45,10 @@ void *block_job_create(const BlockJobDriver *driver, BlockDriverState *bs,
         error_set(errp, QERR_DEVICE_IN_USE, bdrv_get_device_name(bs));
         return NULL;
     }
-    bdrv_ref(bs);
     bdrv_set_in_use(bs, 1);
 
-    job = g_malloc0(driver->instance_size);
-    job->driver        = driver;
+    job = g_malloc0(job_type->instance_size);
+    job->job_type      = job_type;
     job->bs            = bs;
     job->cb            = cb;
     job->opaque        = opaque;
@@ -61,7 +60,7 @@ void *block_job_create(const BlockJobDriver *driver, BlockDriverState *bs,
         Error *local_err = NULL;
 
         block_job_set_speed(job, speed, &local_err);
-        if (local_err) {
+        if (error_is_set(&local_err)) {
             bs->job = NULL;
             g_free(job);
             bdrv_set_in_use(bs, 0);
@@ -72,7 +71,7 @@ void *block_job_create(const BlockJobDriver *driver, BlockDriverState *bs,
     return job;
 }
 
-void block_job_completed(BlockJob *job, int ret)
+void block_job_complete(BlockJob *job, int ret)
 {
     BlockDriverState *bs = job->bs;
 
@@ -87,27 +86,17 @@ void block_job_set_speed(BlockJob *job, int64_t speed, Error **errp)
 {
     Error *local_err = NULL;
 
-    if (!job->driver->set_speed) {
+    if (!job->job_type->set_speed) {
         error_set(errp, QERR_NOT_SUPPORTED);
         return;
     }
-    job->driver->set_speed(job, speed, &local_err);
-    if (local_err) {
+    job->job_type->set_speed(job, speed, &local_err);
+    if (error_is_set(&local_err)) {
         error_propagate(errp, local_err);
         return;
     }
 
     job->speed = speed;
-}
-
-void block_job_complete(BlockJob *job, Error **errp)
-{
-    if (job->paused || job->cancelled || !job->driver->complete) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_READY, job->bs->device_name);
-        return;
-    }
-
-    job->driver->complete(job, errp);
 }
 
 void block_job_pause(BlockJob *job)
@@ -143,9 +132,6 @@ bool block_job_is_cancelled(BlockJob *job)
 void block_job_iostatus_reset(BlockJob *job)
 {
     job->iostatus = BLOCK_DEVICE_IO_STATUS_OK;
-    if (job->driver->iostatus_reset) {
-        job->driver->iostatus_reset(job);
-    }
 }
 
 struct BlockCancelData {
@@ -188,7 +174,7 @@ int block_job_cancel_sync(BlockJob *job)
     return (data.cancelled && data.ret == 0) ? -ECANCELED : data.ret;
 }
 
-void block_job_sleep_ns(BlockJob *job, QEMUClockType type, int64_t ns)
+void block_job_sleep_ns(BlockJob *job, QEMUClock *clock, int64_t ns)
 {
     assert(job->busy);
 
@@ -201,29 +187,15 @@ void block_job_sleep_ns(BlockJob *job, QEMUClockType type, int64_t ns)
     if (block_job_is_paused(job)) {
         qemu_coroutine_yield();
     } else {
-        co_sleep_ns(type, ns);
+        co_sleep_ns(clock, ns);
     }
-    job->busy = true;
-}
-
-void block_job_yield(BlockJob *job)
-{
-    assert(job->busy);
-
-    /* Check cancellation *before* setting busy = false, too!  */
-    if (block_job_is_cancelled(job)) {
-        return;
-    }
-
-    job->busy = false;
-    qemu_coroutine_yield();
     job->busy = true;
 }
 
 BlockJobInfo *block_job_query(BlockJob *job)
 {
     BlockJobInfo *info = g_new0(BlockJobInfo, 1);
-    info->type      = g_strdup(BlockJobType_lookup[job->driver->job_type]);
+    info->type      = g_strdup(job->job_type->job_type);
     info->device    = g_strdup(bdrv_get_device_name(job->bs));
     info->len       = job->len;
     info->busy      = job->busy;
@@ -242,27 +214,6 @@ static void block_job_iostatus_set_err(BlockJob *job, int error)
     }
 }
 
-
-QObject *qobject_from_block_job(BlockJob *job)
-{
-    return qobject_from_jsonf("{ 'type': %s,"
-                              "'device': %s,"
-                              "'len': %" PRId64 ","
-                              "'offset': %" PRId64 ","
-                              "'speed': %" PRId64 " }",
-                              BlockJobType_lookup[job->driver->job_type],
-                              bdrv_get_device_name(job->bs),
-                              job->len,
-                              job->offset,
-                              job->speed);
-}
-
-void block_job_ready(BlockJob *job)
-{
-    QObject *data = qobject_from_block_job(job);
-    monitor_protocol_event(QEVENT_BLOCK_JOB_READY, data);
-    qobject_decref(data);
-}
 
 BlockErrorAction block_job_error_action(BlockJob *job, BlockDriverState *bs,
                                         BlockdevOnError on_err,

@@ -11,14 +11,13 @@
  * See the COPYING file in the top-level directory.
  *
  */
+#include "libqtest.h"
 
 #include <glib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "libqtest.h"
 
 #define RTC_SECONDS             0x9
 #define RTC_MINUTES             0xa
@@ -36,14 +35,17 @@ static bool use_mmio;
 
 static uint8_t cmos_read_mmio(uint8_t reg)
 {
-    return readb(base + (uint32_t)reg_base + (uint32_t)reg);
+    uint8_t data;
+
+    memread(base + (uint32_t)reg_base + (uint32_t)reg, &data, 1);
+    return data;
 }
 
 static void cmos_write_mmio(uint8_t reg, uint8_t val)
 {
     uint8_t data = val;
 
-    writeb(base + (uint32_t)reg_base + (uint32_t)reg, data);
+    memwrite(base + (uint32_t)reg_base + (uint32_t)reg, &data, 1);
 }
 
 static uint8_t cmos_read_ioio(uint8_t reg)
@@ -140,9 +142,7 @@ static void cmos_get_date_time(struct tm *date)
     date->tm_mday = mday;
     date->tm_mon = mon - 1;
     date->tm_year = base_year + year - 1900;
-#ifndef __sun__
     date->tm_gmtoff = 0;
-#endif
 
     ts = mktime(date);
 }
@@ -233,11 +233,6 @@ static void fuzz_registers(void)
         reg = (uint8_t)g_test_rand_int_range(0, 16);
         val = (uint8_t)g_test_rand_int_range(0, 256);
 
-        if (reg == 7) {
-            /* watchdog setup register, may trigger system reset, skip */
-            continue;
-        }
-
         cmos_write(reg, val);
         cmos_read(reg);
     }
@@ -250,7 +245,7 @@ int main(int argc, char **argv)
 
     g_test_init(&argc, &argv, NULL);
 
-    s = qtest_start("-rtc clock=vm");
+    s = qtest_start("-display none -rtc clock=vm");
 
     qtest_add_func("/rtc/bcd/check-time", bcd_check_time);
     qtest_add_func("/rtc/fuzz-registers", fuzz_registers);

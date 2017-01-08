@@ -20,7 +20,7 @@
 #ifndef QEMU_M68K_CPU_QOM_H
 #define QEMU_M68K_CPU_QOM_H
 
-#include "qom/cpu.h"
+#include "qemu/cpu.h"
 
 #define TYPE_M68K_CPU "m68k-cpu"
 
@@ -33,7 +33,6 @@
 
 /**
  * M68kCPUClass:
- * @parent_realize: The parent class' realize handler.
  * @parent_reset: The parent class' reset handler.
  *
  * A Motorola 68k CPU model.
@@ -43,7 +42,6 @@ typedef struct M68kCPUClass {
     CPUClass parent_class;
     /*< public >*/
 
-    DeviceRealize parent_realize;
     void (*parent_reset)(CPUState *cpu);
 } M68kCPUClass;
 
@@ -63,18 +61,10 @@ typedef struct M68kCPU {
 
 static inline M68kCPU *m68k_env_get_cpu(CPUM68KState *env)
 {
-    return container_of(env, M68kCPU, env);
+    return M68K_CPU(container_of(env, M68kCPU, env));
 }
 
 #define ENV_GET_CPU(e) CPU(m68k_env_get_cpu(e))
 
-#define ENV_OFFSET offsetof(M68kCPU, env)
-
-void m68k_cpu_do_interrupt(CPUState *cpu);
-void m68k_cpu_dump_state(CPUState *cpu, FILE *f, fprintf_function cpu_fprintf,
-                         int flags);
-hwaddr m68k_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
-int m68k_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
-int m68k_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 
 #endif

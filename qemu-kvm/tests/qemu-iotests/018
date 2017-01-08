@@ -41,14 +41,11 @@ trap "_cleanup; exit \$status" 0 1 2 3 15
 
 # Any format supporting backing files
 _supported_fmt qcow qcow2 vmdk qed
-_supported_proto file
+_supported_proto generic
 _supported_os Linux
-_unsupported_imgopts "subformat=monolithicFlat" "subformat=twoGbMaxExtentFlat"
 
 TEST_OFFSETS="0 4294967296"
 
-TEST_IMG_SAVE=$TEST_IMG
-TEST_IMG=$TEST_IMG.base
 _make_test_img 6G
 
 echo "Filling base image"
@@ -66,8 +63,8 @@ _check_test_img
 echo "Creating test image with backing file"
 echo
 
-TEST_IMG=$TEST_IMG_SAVE
-_make_test_img -b "$TEST_IMG.base" 6G
+mv $TEST_IMG $TEST_IMG.base
+_make_test_img -b $TEST_IMG.base 6G
 
 echo "Filling test image"
 echo
@@ -81,8 +78,8 @@ for offset in $TEST_OFFSETS; do
 done
 _check_test_img
 
-mv "$TEST_IMG" "$TEST_IMG.orig"
-$QEMU_IMG convert -O $IMGFMT "$TEST_IMG.orig" "$TEST_IMG"
+mv $TEST_IMG $TEST_IMG.orig
+$QEMU_IMG convert -O $IMGFMT $TEST_IMG.orig $TEST_IMG
 
 echo "Reading"
 echo

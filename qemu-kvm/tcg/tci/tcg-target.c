@@ -22,8 +22,6 @@
  * THE SOFTWARE.
  */
 
-#include "tcg-be-null.h"
-
 /* TODO list:
  * - See TODO comments in code.
  */
@@ -36,8 +34,19 @@
         tcg_abort(); \
     } while (0)
 
+/* Single bit n. */
+#define BIT(n) (1 << (n))
+
 /* Bitfield n...m (in 32 bit value). */
 #define BITS(n, m) (((0xffffffffU << (31 - n)) >> (31 - n + m)) << m)
+
+/* Used for function call generation. */
+#define TCG_REG_CALL_STACK              TCG_REG_R4
+#define TCG_TARGET_STACK_ALIGN          16
+#define TCG_TARGET_CALL_STACK_OFFSET    0
+
+/* TODO: documentation. */
+static uint8_t *tb_ret_addr;
 
 /* Macros used in tcg_target_op_defs. */
 #define R       "r"
@@ -112,9 +121,6 @@ static const TCGTargetOpDef tcg_target_op_defs[] = {
 #if TCG_TARGET_HAS_rot_i32
     { INDEX_op_rotl_i32, { R, RI, RI } },
     { INDEX_op_rotr_i32, { R, RI, RI } },
-#endif
-#if TCG_TARGET_HAS_deposit_i32
-    { INDEX_op_deposit_i32, { R, "0", R } },
 #endif
 
     { INDEX_op_brcond_i32, { R, RI } },
@@ -193,9 +199,6 @@ static const TCGTargetOpDef tcg_target_op_defs[] = {
 #if TCG_TARGET_HAS_rot_i64
     { INDEX_op_rotl_i64, { R, RI, RI } },
     { INDEX_op_rotr_i64, { R, RI, RI } },
-#endif
-#if TCG_TARGET_HAS_deposit_i64
-    { INDEX_op_deposit_i64, { R, "0", R } },
 #endif
     { INDEX_op_brcond_i64, { R, RI } },
 
@@ -372,7 +375,7 @@ static const char *const tcg_target_reg_names[TCG_TARGET_NB_REGS] = {
 #endif
 
 static void patch_reloc(uint8_t *code_ptr, int type,
-                        intptr_t value, intptr_t addend)
+                        tcg_target_long value, tcg_target_long addend)
 {
     /* tcg_out_reloc always uses the same type, addend. */
     assert(type == sizeof(tcg_target_long));
@@ -415,6 +418,13 @@ static void tcg_out_i(TCGContext *s, tcg_target_ulong v)
 {
     *(tcg_target_ulong *)s->code_ptr = v;
     s->code_ptr += sizeof(tcg_target_ulong);
+}
+
+/* Write 64 bit value. */
+static void tcg_out64(TCGContext *s, uint64_t v)
+{
+    *(uint64_t *)s->code_ptr = v;
+    s->code_ptr += sizeof(v);
 }
 
 /* Write opcode. */
@@ -483,7 +493,7 @@ static void tci_out_label(TCGContext *s, TCGArg arg)
 }
 
 static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
-                       intptr_t arg2)
+                       tcg_target_long arg2)
 {
     uint8_t *old_code_ptr = s->code_ptr;
     if (type == TCG_TYPE_I32) {
@@ -497,7 +507,7 @@ static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
         tcg_out_op_t(s, INDEX_op_ld_i64);
         tcg_out_r(s, ret);
         tcg_out_r(s, arg1);
-        assert(arg2 == (int32_t)arg2);
+        assert(arg2 == (uint32_t)arg2);
         tcg_out32(s, arg2);
 #else
         TODO();
@@ -620,7 +630,7 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, const TCGArg *args,
     case INDEX_op_st_i64:
         tcg_out_r(s, args[0]);
         tcg_out_r(s, args[1]);
-        assert(args[2] == (int32_t)args[2]);
+        assert(args[2] == (uint32_t)args[2]);
         tcg_out32(s, args[2]);
         break;
     case INDEX_op_add_i32:
@@ -643,15 +653,6 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, const TCGArg *args,
         tcg_out_ri32(s, const_args[1], args[1]);
         tcg_out_ri32(s, const_args[2], args[2]);
         break;
-    case INDEX_op_deposit_i32:  /* Optional (TCG_TARGET_HAS_deposit_i32). */
-        tcg_out_r(s, args[0]);
-        tcg_out_r(s, args[1]);
-        tcg_out_r(s, args[2]);
-        assert(args[3] <= UINT8_MAX);
-        tcg_out8(s, args[3]);
-        assert(args[4] <= UINT8_MAX);
-        tcg_out8(s, args[4]);
-        break;
 
 #if TCG_TARGET_REG_BITS == 64
     case INDEX_op_mov_i64:
@@ -672,20 +673,12 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, const TCGArg *args,
     case INDEX_op_shl_i64:
     case INDEX_op_shr_i64:
     case INDEX_op_sar_i64:
+        /* TODO: Implementation of rotl_i64, rotr_i64 missing in tci.c. */
     case INDEX_op_rotl_i64:     /* Optional (TCG_TARGET_HAS_rot_i64). */
     case INDEX_op_rotr_i64:     /* Optional (TCG_TARGET_HAS_rot_i64). */
         tcg_out_r(s, args[0]);
         tcg_out_ri64(s, const_args[1], args[1]);
         tcg_out_ri64(s, const_args[2], args[2]);
-        break;
-    case INDEX_op_deposit_i64:  /* Optional (TCG_TARGET_HAS_deposit_i64). */
-        tcg_out_r(s, args[0]);
-        tcg_out_r(s, args[1]);
-        tcg_out_r(s, args[2]);
-        assert(args[3] <= UINT8_MAX);
-        tcg_out8(s, args[3]);
-        assert(args[4] <= UINT8_MAX);
-        tcg_out8(s, args[4]);
         break;
     case INDEX_op_div_i64:      /* Optional (TCG_TARGET_HAS_div_i64). */
     case INDEX_op_divu_i64:     /* Optional (TCG_TARGET_HAS_div_i64). */
@@ -836,7 +829,7 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, const TCGArg *args,
 }
 
 static void tcg_out_st(TCGContext *s, TCGType type, TCGReg arg, TCGReg arg1,
-                       intptr_t arg2)
+                       tcg_target_long arg2)
 {
     uint8_t *old_code_ptr = s->code_ptr;
     if (type == TCG_TYPE_I32) {
@@ -871,7 +864,7 @@ static void tcg_target_init(TCGContext *s)
 #if defined(CONFIG_DEBUG_TCG_INTERPRETER)
     const char *envval = getenv("DEBUG_TCG");
     if (envval) {
-        qemu_set_log(strtol(envval, NULL, 0));
+        cpu_set_log(strtol(envval, NULL, 0));
     }
 #endif
 
@@ -887,19 +880,15 @@ static void tcg_target_init(TCGContext *s)
     /* TODO: Which registers should be set here? */
     tcg_regset_set32(tcg_target_call_clobber_regs, 0,
                      BIT(TCG_TARGET_NB_REGS) - 1);
-
     tcg_regset_clear(s->reserved_regs);
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_CALL_STACK);
     tcg_add_target_add_op_defs(tcg_target_op_defs);
-
-    /* We use negative offsets from "sp" so that we can distinguish
-       stores that might pretend to be call arguments.  */
-    tcg_set_frame(s, TCG_REG_CALL_STACK,
-                  -CPU_TEMP_BUF_NLONGS * sizeof(long),
+    tcg_set_frame(s, TCG_AREG0, offsetof(CPUArchState, temp_buf),
                   CPU_TEMP_BUF_NLONGS * sizeof(long));
 }
 
 /* Generate global QEMU prologue and epilogue code. */
-static inline void tcg_target_qemu_prologue(TCGContext *s)
+static void tcg_target_qemu_prologue(TCGContext *s)
 {
+    tb_ret_addr = s->code_ptr;
 }

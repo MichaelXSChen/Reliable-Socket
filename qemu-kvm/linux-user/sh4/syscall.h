@@ -10,4 +10,3 @@ struct target_pt_regs {
 };
 
 #define UNAME_MACHINE "sh4"
-#define UNAME_MINIMUM_RELEASE "2.6.32"

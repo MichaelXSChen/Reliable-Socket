@@ -19,11 +19,16 @@
  */
 
 #include "cpu.h"
-#include "exec/gdbstub.h"
+#include "gdbstub.h"
 
-#include "helper.h"
+#include "helpers.h"
 
 #define SIGNBIT (1u << 31)
+
+typedef struct M68kCPUListState {
+    fprintf_function cpu_fprintf;
+    FILE *file;
+} M68kCPUListState;
 
 /* Sort alphabetically, except for "any". */
 static gint m68k_cpu_list_compare(gconstpointer a, gconstpointer b)
@@ -34,9 +39,9 @@ static gint m68k_cpu_list_compare(gconstpointer a, gconstpointer b)
 
     name_a = object_class_get_name(class_a);
     name_b = object_class_get_name(class_b);
-    if (strcmp(name_a, "any-" TYPE_M68K_CPU) == 0) {
+    if (strcmp(name_a, "any") == 0) {
         return 1;
-    } else if (strcmp(name_b, "any-" TYPE_M68K_CPU) == 0) {
+    } else if (strcmp(name_b, "any") == 0) {
         return -1;
     } else {
         return strcasecmp(name_a, name_b);
@@ -46,20 +51,15 @@ static gint m68k_cpu_list_compare(gconstpointer a, gconstpointer b)
 static void m68k_cpu_list_entry(gpointer data, gpointer user_data)
 {
     ObjectClass *c = data;
-    CPUListState *s = user_data;
-    const char *typename;
-    char *name;
+    M68kCPUListState *s = user_data;
 
-    typename = object_class_get_name(c);
-    name = g_strndup(typename, strlen(typename) - strlen("-" TYPE_M68K_CPU));
     (*s->cpu_fprintf)(s->file, "%s\n",
-                      name);
-    g_free(name);
+                      object_class_get_name(c));
 }
 
 void m68k_cpu_list(FILE *f, fprintf_function cpu_fprintf)
 {
-    CPUListState s = {
+    M68kCPUListState s = {
         .file = f,
         .cpu_fprintf = cpu_fprintf,
     };
@@ -98,41 +98,39 @@ static int fpu_gdb_set_reg(CPUM68KState *env, uint8_t *mem_buf, int n)
     return 0;
 }
 
-M68kCPU *cpu_m68k_init(const char *cpu_model)
+CPUM68KState *cpu_m68k_init(const char *cpu_model)
 {
     M68kCPU *cpu;
     CPUM68KState *env;
-    ObjectClass *oc;
+    static int inited;
 
-    oc = cpu_class_by_name(TYPE_M68K_CPU, cpu_model);
-    if (oc == NULL) {
+    if (object_class_by_name(cpu_model) == NULL) {
         return NULL;
     }
-    cpu = M68K_CPU(object_new(object_class_get_name(oc)));
+    cpu = M68K_CPU(object_new(cpu_model));
     env = &cpu->env;
 
+    if (!inited) {
+        inited = 1;
+        m68k_tcg_init();
+    }
+
+    env->cpu_model_str = cpu_model;
+
     register_m68k_insns(env);
-
-    object_property_set_bool(OBJECT(cpu), true, "realized", NULL);
-
-    return cpu;
-}
-
-void m68k_cpu_init_gdb(M68kCPU *cpu)
-{
-    CPUState *cs = CPU(cpu);
-    CPUM68KState *env = &cpu->env;
-
     if (m68k_feature(env, M68K_FEATURE_CF_FPU)) {
-        gdb_register_coprocessor(cs, fpu_gdb_get_reg, fpu_gdb_set_reg,
+        gdb_register_coprocessor(env, fpu_gdb_get_reg, fpu_gdb_set_reg,
                                  11, "cf-fp.xml", 18);
     }
     /* TODO: Add [E]MAC registers.  */
+
+    cpu_reset(ENV_GET_CPU(env));
+    qemu_init_vcpu(env);
+    return env;
 }
 
 void cpu_m68k_flush_flags(CPUM68KState *env, int cc_op)
 {
-    M68kCPU *cpu = m68k_env_get_cpu(env);
     int flags;
     uint32_t src;
     uint32_t dest;
@@ -205,7 +203,7 @@ void cpu_m68k_flush_flags(CPUM68KState *env, int cc_op)
             flags |= CCF_C;
         break;
     default:
-        cpu_abort(CPU(cpu), "Bad CC_OP %d", cc_op);
+        cpu_abort(env, "Bad CC_OP %d", cc_op);
     }
     env->cc_op = CC_OP_FLAGS;
     env->cc_dest = flags;
@@ -213,8 +211,6 @@ void cpu_m68k_flush_flags(CPUM68KState *env, int cc_op)
 
 void HELPER(movec)(CPUM68KState *env, uint32_t reg, uint32_t val)
 {
-    M68kCPU *cpu = m68k_env_get_cpu(env);
-
     switch (reg) {
     case 0x02: /* CACR */
         env->cacr = val;
@@ -228,7 +224,7 @@ void HELPER(movec)(CPUM68KState *env, uint32_t reg, uint32_t val)
         break;
     /* TODO: Implement control registers.  */
     default:
-        cpu_abort(CPU(cpu), "Unimplemented control register write 0x%x = 0x%x\n",
+        cpu_abort(env, "Unimplemented control register write 0x%x = 0x%x\n",
                   reg, val);
     }
 }
@@ -280,13 +276,11 @@ void m68k_switch_sp(CPUM68KState *env)
 
 #if defined(CONFIG_USER_ONLY)
 
-int m68k_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int rw,
-                              int mmu_idx)
+int cpu_m68k_handle_mmu_fault (CPUM68KState *env, target_ulong address, int rw,
+                               int mmu_idx)
 {
-    M68kCPU *cpu = M68K_CPU(cs);
-
-    cs->exception_index = EXCP_ACCESS;
-    cpu->env.mmu.ar = address;
+    env->exception_index = EXCP_ACCESS;
+    env->mmu.ar = address;
     return 1;
 }
 
@@ -295,19 +289,19 @@ int m68k_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int rw,
 /* MMU */
 
 /* TODO: This will need fixing once the MMU is implemented.  */
-hwaddr m68k_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
+target_phys_addr_t cpu_get_phys_page_debug(CPUM68KState *env, target_ulong addr)
 {
     return addr;
 }
 
-int m68k_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int rw,
-                              int mmu_idx)
+int cpu_m68k_handle_mmu_fault (CPUM68KState *env, target_ulong address, int rw,
+                               int mmu_idx)
 {
     int prot;
 
     address &= TARGET_PAGE_MASK;
     prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
-    tlb_set_page(cs, address, address, prot, mmu_idx, TARGET_PAGE_SIZE);
+    tlb_set_page(env, address, address, prot, mmu_idx, TARGET_PAGE_SIZE);
     return 0;
 }
 
@@ -315,18 +309,14 @@ int m68k_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int rw,
    be handled by the interrupt controller.  Real hardware only requests
    the vector when the interrupt is acknowledged by the CPU.  For
    simplicitly we calculate it when the interrupt is signalled.  */
-void m68k_set_irq_level(M68kCPU *cpu, int level, uint8_t vector)
+void m68k_set_irq_level(CPUM68KState *env, int level, uint8_t vector)
 {
-    CPUState *cs = CPU(cpu);
-    CPUM68KState *env = &cpu->env;
-
     env->pending_level = level;
     env->pending_vector = vector;
-    if (level) {
-        cpu_interrupt(cs, CPU_INTERRUPT_HARD);
-    } else {
-        cpu_reset_interrupt(cs, CPU_INTERRUPT_HARD);
-    }
+    if (level)
+        cpu_interrupt(env, CPU_INTERRUPT_HARD);
+    else
+        cpu_reset_interrupt(env, CPU_INTERRUPT_HARD);
 }
 
 #endif

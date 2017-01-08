@@ -51,7 +51,7 @@
               (((a) & (dpf->Amask >> dpf->Ashift)) << dpf->Ashift); \
 } while (0);
 
-static void glue(sdl_zoom_rgb, BPP)(SDL_Surface *src, SDL_Surface *dst, int smooth,
+static int glue(sdl_zoom_rgb, BPP)(SDL_Surface *src, SDL_Surface *dst, int smooth,
                                    SDL_Rect *dst_rect)
 {
     int x, y, sx, sy, *sax, *say, *csax, *csay, csx, csy, ex, ey, t1, t2, sstep, sstep_jump;
@@ -71,8 +71,13 @@ static void glue(sdl_zoom_rgb, BPP)(SDL_Surface *src, SDL_Surface *dst, int smoo
         sy = (int) (65536.0 * (float) src->h / (float) dst->h);
     }
 
-    sax = g_new(int, dst->w + 1);
-    say = g_new(int, dst->h + 1);
+    if ((sax = (int *) malloc((dst->w + 1) * sizeof(Uint32))) == NULL) {
+        return (-1);
+    }
+    if ((say = (int *) malloc((dst->h + 1) * sizeof(Uint32))) == NULL) {
+        free(sax);
+        return (-1);
+    }
 
     sp = csp = (SDL_TYPE *) src->pixels;
     dp = (SDL_TYPE *) (dst->pixels + dst_rect->y * dst->pitch +
@@ -211,8 +216,9 @@ static void glue(sdl_zoom_rgb, BPP)(SDL_Surface *src, SDL_Surface *dst, int smoo
         }
     }
 
-    g_free(sax);
-    g_free(say);
+    free(sax);
+    free(say);
+    return (0);
 }
 
 #undef SDL_TYPE

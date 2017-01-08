@@ -11,15 +11,9 @@
  *
  */
 
-#include <glib.h>
-
 #include "cpu.h"
-#include "exec/cpu-all.h"
-#include "sysemu/memory_mapping.h"
-#include "exec/memory.h"
-#include "exec/address-spaces.h"
-
-//#define DEBUG_GUEST_PHYS_REGION_ADD
+#include "cpu-all.h"
+#include "memory_mapping.h"
 
 static void memory_mapping_list_add_mapping_sorted(MemoryMappingList *list,
                                                    MemoryMapping *mapping)
@@ -36,8 +30,8 @@ static void memory_mapping_list_add_mapping_sorted(MemoryMappingList *list,
 }
 
 static void create_new_memory_mapping(MemoryMappingList *list,
-                                      hwaddr phys_addr,
-                                      hwaddr virt_addr,
+                                      target_phys_addr_t phys_addr,
+                                      target_phys_addr_t virt_addr,
                                       ram_addr_t length)
 {
     MemoryMapping *memory_mapping;
@@ -52,8 +46,8 @@ static void create_new_memory_mapping(MemoryMappingList *list,
 }
 
 static inline bool mapping_contiguous(MemoryMapping *map,
-                                      hwaddr phys_addr,
-                                      hwaddr virt_addr)
+                                      target_phys_addr_t phys_addr,
+                                      target_phys_addr_t virt_addr)
 {
     return phys_addr == map->phys_addr + map->length &&
            virt_addr == map->virt_addr + map->length;
@@ -64,7 +58,7 @@ static inline bool mapping_contiguous(MemoryMapping *map,
  * [phys_addr, phys_addr + length) have intersection?
  */
 static inline bool mapping_have_same_region(MemoryMapping *map,
-                                            hwaddr phys_addr,
+                                            target_phys_addr_t phys_addr,
                                             ram_addr_t length)
 {
     return !(phys_addr + length < map->phys_addr ||
@@ -77,8 +71,8 @@ static inline bool mapping_have_same_region(MemoryMapping *map,
  * intersection are the same?
  */
 static inline bool mapping_conflict(MemoryMapping *map,
-                                    hwaddr phys_addr,
-                                    hwaddr virt_addr)
+                                    target_phys_addr_t phys_addr,
+                                    target_phys_addr_t virt_addr)
 {
     return virt_addr - map->virt_addr != phys_addr - map->phys_addr;
 }
@@ -89,7 +83,7 @@ static inline bool mapping_conflict(MemoryMapping *map,
  * in the intersection are the same.
  */
 static inline void mapping_merge(MemoryMapping *map,
-                                 hwaddr virt_addr,
+                                 target_phys_addr_t virt_addr,
                                  ram_addr_t length)
 {
     if (virt_addr < map->virt_addr) {
@@ -104,8 +98,8 @@ static inline void mapping_merge(MemoryMapping *map,
 }
 
 void memory_mapping_list_add_merge_sorted(MemoryMappingList *list,
-                                          hwaddr phys_addr,
-                                          hwaddr virt_addr,
+                                          target_phys_addr_t phys_addr,
+                                          target_phys_addr_t virt_addr,
                                           ram_addr_t length)
 {
     MemoryMapping *memory_mapping, *last_mapping;
@@ -171,155 +165,56 @@ void memory_mapping_list_init(MemoryMappingList *list)
     QTAILQ_INIT(&list->head);
 }
 
-void guest_phys_blocks_free(GuestPhysBlockList *list)
+static CPUArchState *find_paging_enabled_cpu(CPUArchState *start_cpu)
 {
-    GuestPhysBlock *p, *q;
+    CPUArchState *env;
 
-    QTAILQ_FOREACH_SAFE(p, &list->head, next, q) {
-        QTAILQ_REMOVE(&list->head, p, next);
-        g_free(p);
-    }
-    list->num = 0;
-}
-
-void guest_phys_blocks_init(GuestPhysBlockList *list)
-{
-    list->num = 0;
-    QTAILQ_INIT(&list->head);
-}
-
-typedef struct GuestPhysListener {
-    GuestPhysBlockList *list;
-    MemoryListener listener;
-} GuestPhysListener;
-
-static void guest_phys_blocks_region_add(MemoryListener *listener,
-                                         MemoryRegionSection *section)
-{
-    GuestPhysListener *g;
-    uint64_t section_size;
-    hwaddr target_start, target_end;
-    uint8_t *host_addr;
-    GuestPhysBlock *predecessor;
-
-    /* we only care about RAM */
-    if (!memory_region_is_ram(section->mr)) {
-        return;
-    }
-
-    g            = container_of(listener, GuestPhysListener, listener);
-    section_size = int128_get64(section->size);
-    target_start = section->offset_within_address_space;
-    target_end   = target_start + section_size;
-    host_addr    = memory_region_get_ram_ptr(section->mr) +
-                   section->offset_within_region;
-    predecessor  = NULL;
-
-    /* find continuity in guest physical address space */
-    if (!QTAILQ_EMPTY(&g->list->head)) {
-        hwaddr predecessor_size;
-
-        predecessor = QTAILQ_LAST(&g->list->head, GuestPhysBlockHead);
-        predecessor_size = predecessor->target_end - predecessor->target_start;
-
-        /* the memory API guarantees monotonically increasing traversal */
-        g_assert(predecessor->target_end <= target_start);
-
-        /* we want continuity in both guest-physical and host-virtual memory */
-        if (predecessor->target_end < target_start ||
-            predecessor->host_addr + predecessor_size != host_addr) {
-            predecessor = NULL;
-        }
-    }
-
-    if (predecessor == NULL) {
-        /* isolated mapping, allocate it and add it to the list */
-        GuestPhysBlock *block = g_malloc0(sizeof *block);
-
-        block->target_start = target_start;
-        block->target_end   = target_end;
-        block->host_addr    = host_addr;
-
-        QTAILQ_INSERT_TAIL(&g->list->head, block, next);
-        ++g->list->num;
-    } else {
-        /* expand predecessor until @target_end; predecessor's start doesn't
-         * change
-         */
-        predecessor->target_end = target_end;
-    }
-
-#ifdef DEBUG_GUEST_PHYS_REGION_ADD
-    fprintf(stderr, "%s: target_start=" TARGET_FMT_plx " target_end="
-            TARGET_FMT_plx ": %s (count: %u)\n", __FUNCTION__, target_start,
-            target_end, predecessor ? "joined" : "added", g->list->num);
-#endif
-}
-
-void guest_phys_blocks_append(GuestPhysBlockList *list)
-{
-    GuestPhysListener g = { 0 };
-
-    g.list = list;
-    g.listener.region_add = &guest_phys_blocks_region_add;
-    memory_listener_register(&g.listener, &address_space_memory);
-    memory_listener_unregister(&g.listener);
-}
-
-static CPUState *find_paging_enabled_cpu(CPUState *start_cpu)
-{
-    CPUState *cpu;
-
-    CPU_FOREACH(cpu) {
-        if (cpu_paging_enabled(cpu)) {
-            return cpu;
+    for (env = start_cpu; env != NULL; env = env->next_cpu) {
+        if (cpu_paging_enabled(env)) {
+            return env;
         }
     }
 
     return NULL;
 }
 
-void qemu_get_guest_memory_mapping(MemoryMappingList *list,
-                                   const GuestPhysBlockList *guest_phys_blocks,
-                                   Error **errp)
+int qemu_get_guest_memory_mapping(MemoryMappingList *list)
 {
-    CPUState *cpu, *first_paging_enabled_cpu;
-    GuestPhysBlock *block;
+    CPUArchState *env, *first_paging_enabled_cpu;
+    RAMBlock *block;
     ram_addr_t offset, length;
+    int ret;
 
     first_paging_enabled_cpu = find_paging_enabled_cpu(first_cpu);
     if (first_paging_enabled_cpu) {
-        for (cpu = first_paging_enabled_cpu; cpu != NULL;
-             cpu = CPU_NEXT(cpu)) {
-            Error *err = NULL;
-            cpu_get_memory_mapping(cpu, list, &err);
-            if (err) {
-                error_propagate(errp, err);
-                return;
+        for (env = first_paging_enabled_cpu; env != NULL; env = env->next_cpu) {
+            ret = cpu_get_memory_mapping(list, env);
+            if (ret < 0) {
+                return -1;
             }
         }
-        return;
+        return 0;
     }
 
     /*
      * If the guest doesn't use paging, the virtual address is equal to physical
      * address.
      */
-    QTAILQ_FOREACH(block, &guest_phys_blocks->head, next) {
-        offset = block->target_start;
-        length = block->target_end - block->target_start;
+    QLIST_FOREACH(block, &ram_list.blocks, next) {
+        offset = block->offset;
+        length = block->length;
         create_new_memory_mapping(list, offset, offset, length);
     }
+
+    return 0;
 }
 
-void qemu_get_guest_simple_memory_mapping(MemoryMappingList *list,
-                                   const GuestPhysBlockList *guest_phys_blocks)
+void qemu_get_guest_simple_memory_mapping(MemoryMappingList *list)
 {
-    GuestPhysBlock *block;
+    RAMBlock *block;
 
-    QTAILQ_FOREACH(block, &guest_phys_blocks->head, next) {
-        create_new_memory_mapping(list, block->target_start, 0,
-                                  block->target_end - block->target_start);
+    QLIST_FOREACH(block, &ram_list.blocks, next) {
+        create_new_memory_mapping(list, block->offset, 0, block->length);
     }
 }
 

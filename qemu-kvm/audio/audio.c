@@ -23,9 +23,9 @@
  */
 #include "hw/hw.h"
 #include "audio.h"
-#include "monitor/monitor.h"
-#include "qemu/timer.h"
-#include "sysemu/sysemu.h"
+#include "monitor.h"
+#include "qemu-timer.h"
+#include "sysemu.h"
 
 #define AUDIO_CAP "audio"
 #include "audio_int.h"
@@ -95,7 +95,7 @@ static struct {
         }
     },
 
-    .period = { .hertz = 100 },
+    .period = { .hertz = 250 },
     .plive = 0,
     .log_to_monitor = 0,
     .try_poll_in = 1,
@@ -828,9 +828,8 @@ static int audio_attach_capture (HWVoiceOut *hw)
         QLIST_INSERT_HEAD (&hw_cap->sw_head, sw, entries);
         QLIST_INSERT_HEAD (&hw->cap_head, sc, entries);
 #ifdef DEBUG_CAPTURE
-        sw->name = g_strdup_printf ("for %p %d,%d,%d",
-                                    hw, sw->info.freq, sw->info.bits,
-                                    sw->info.nchannels);
+        asprintf (&sw->name, "for %p %d,%d,%d",
+                  hw, sw->info.freq, sw->info.bits, sw->info.nchannels);
         dolog ("Added %s active = %d\n", sw->name, sw->active);
 #endif
         if (sw->active) {
@@ -1124,11 +1123,10 @@ static int audio_is_timer_needed (void)
 static void audio_reset_timer (AudioState *s)
 {
     if (audio_is_timer_needed ()) {
-        timer_mod (s->ts,
-            qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + conf.period.ticks);
+        qemu_mod_timer (s->ts, qemu_get_clock_ns (vm_clock) + 1);
     }
     else {
-        timer_del (s->ts);
+        qemu_del_timer (s->ts);
     }
 }
 
@@ -1835,7 +1833,7 @@ static void audio_init (void)
     QLIST_INIT (&s->cap_head);
     atexit (audio_atexit);
 
-    s->ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, audio_timer, s);
+    s->ts = qemu_new_timer_ns (vm_clock, audio_timer, s);
     if (!s->ts) {
         hw_error("Could not create audio timer\n");
     }

@@ -31,7 +31,7 @@
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 
-#include "qemu/acl.h"
+#include "acl.h"
 
 enum {
     VNC_WIREMODE_CLEAR,

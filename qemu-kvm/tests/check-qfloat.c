@@ -12,7 +12,7 @@
  */
 #include <glib.h>
 
-#include "qapi/qmp/qfloat.h"
+#include "qfloat.h"
 #include "qemu-common.h"
 
 /*

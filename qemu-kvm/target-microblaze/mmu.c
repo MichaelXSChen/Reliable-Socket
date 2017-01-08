@@ -34,7 +34,6 @@ static unsigned int tlb_decode_size(unsigned int f)
 
 static void mmu_flush_idx(CPUMBState *env, unsigned int idx)
 {
-    CPUState *cs = CPU(mb_env_get_cpu(env));
     struct microblaze_mmu *mmu = &env->mmu;
     unsigned int tlb_size;
     uint32_t tlb_tag, end, t;
@@ -48,7 +47,7 @@ static void mmu_flush_idx(CPUMBState *env, unsigned int idx)
     end = tlb_tag + tlb_size;
 
     while (tlb_tag < end) {
-        tlb_flush_page(cs, tlb_tag);
+        tlb_flush_page(env, tlb_tag);
         tlb_tag += TARGET_PAGE_SIZE;
     }
 }
@@ -115,7 +114,7 @@ unsigned int mmu_translate(struct microblaze_mmu *mmu,
             tlb_ex = d & TLB_EX;
             tlb_wr = d & TLB_WR;
 
-            /* Now let's see if there is a zone that overrides the protbits.  */
+            /* Now lets see if there is a zone that overrides the protbits.  */
             tlb_zsel = (d >> 4) & 0xf;
             t0 = mmu->regs[MMU_R_ZPR] >> (30 - (tlb_zsel * 2));
             t0 &= 0x3;
@@ -219,7 +218,6 @@ uint32_t mmu_read(CPUMBState *env, uint32_t rn)
 
 void mmu_write(CPUMBState *env, uint32_t rn, uint32_t v)
 {
-    MicroBlazeCPU *cpu = mb_env_get_cpu(env);
     unsigned int i;
     D(qemu_log("%s rn=%d=%x old=%x\n", __func__, rn, v, env->mmu.regs[rn]));
 
@@ -253,7 +251,7 @@ void mmu_write(CPUMBState *env, uint32_t rn, uint32_t v)
             /* Changes to the zone protection reg flush the QEMU TLB.
                Fortunately, these are very uncommon.  */
             if (v != env->mmu.regs[rn]) {
-                tlb_flush(CPU(cpu), 1);
+                tlb_flush(env, 1);
             }
             env->mmu.regs[rn] = v;
             break;

@@ -19,8 +19,15 @@
 
 #include "cpu.h"
 #include "helper.h"
-#include "qemu/host-utils.h"
+#include "host-utils.h"
 
+
+uint64_t helper_umulh(uint64_t op1, uint64_t op2)
+{
+    uint64_t tl, th;
+    mulu64(&tl, &th, op1, op2);
+    return th;
+}
 
 uint64_t helper_ctpop(uint64_t arg)
 {

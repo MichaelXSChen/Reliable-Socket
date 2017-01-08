@@ -24,11 +24,8 @@
 
 static void raise_exception(CPUARMState *env, int tt)
 {
-    ARMCPU *cpu = arm_env_get_cpu(env);
-    CPUState *cs = CPU(cpu);
-
-    cs->exception_index = tt;
-    cpu_loop_exit(cs);
+    env->exception_index = tt;
+    cpu_loop_exit(env);
 }
 
 uint32_t HELPER(neon_tbl)(CPUARMState *env, uint32_t ireg, uint32_t def,
@@ -55,45 +52,49 @@ uint32_t HELPER(neon_tbl)(CPUARMState *env, uint32_t ireg, uint32_t def,
 
 #if !defined(CONFIG_USER_ONLY)
 
-#include "exec/softmmu_exec.h"
+#include "softmmu_exec.h"
 
 #define MMUSUFFIX _mmu
 
 #define SHIFT 0
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 1
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 2
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 3
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 /* try to fill the TLB and return an exception if error. If retaddr is
- * NULL, it means that the function was called in C code (i.e. not
- * from generated code or from helper.c)
- */
-void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
+   NULL, it means that the function was called in C code (i.e. not
+   from generated code or from helper.c) */
+void tlb_fill(CPUARMState *env, target_ulong addr, int is_write, int mmu_idx,
               uintptr_t retaddr)
 {
+    TranslationBlock *tb;
     int ret;
 
-    ret = arm_cpu_handle_mmu_fault(cs, addr, is_write, mmu_idx);
+    ret = cpu_arm_handle_mmu_fault(env, addr, is_write, mmu_idx);
     if (unlikely(ret)) {
-        ARMCPU *cpu = ARM_CPU(cs);
-        CPUARMState *env = &cpu->env;
-
         if (retaddr) {
             /* now we have a real cpu fault */
-            cpu_restore_state(cs, retaddr);
+            tb = tb_find_pc(retaddr);
+            if (tb) {
+                /* the PC is inside the translated code. It means that we have
+                   a virtual CPU fault */
+                cpu_restore_state(tb, env, retaddr);
+            }
         }
-        raise_exception(env, cs->exception_index);
+        raise_exception(env, env->exception_index);
     }
 }
 #endif
 
+/* FIXME: Pass an explicit pointer to QF to CPUARMState, and move saturating
+   instructions into helper.c  */
 uint32_t HELPER(add_setq)(CPUARMState *env, uint32_t a, uint32_t b)
 {
     uint32_t res = a + b;
@@ -225,30 +226,15 @@ uint32_t HELPER(usat16)(CPUARMState *env, uint32_t x, uint32_t shift)
 
 void HELPER(wfi)(CPUARMState *env)
 {
-    CPUState *cs = CPU(arm_env_get_cpu(env));
-
-    cs->exception_index = EXCP_HLT;
-    cs->halted = 1;
-    cpu_loop_exit(cs);
-}
-
-void HELPER(wfe)(CPUARMState *env)
-{
-    CPUState *cs = CPU(arm_env_get_cpu(env));
-
-    /* Don't actually halt the CPU, just yield back to top
-     * level loop
-     */
-    cs->exception_index = EXCP_YIELD;
-    cpu_loop_exit(cs);
+    env->exception_index = EXCP_HLT;
+    env->halted = 1;
+    cpu_loop_exit(env);
 }
 
 void HELPER(exception)(CPUARMState *env, uint32_t excp)
 {
-    CPUState *cs = CPU(arm_env_get_cpu(env));
-
-    cs->exception_index = excp;
-    cpu_loop_exit(cs);
+    env->exception_index = excp;
+    cpu_loop_exit(env);
 }
 
 uint32_t HELPER(cpsr_read)(CPUARMState *env)
@@ -293,80 +279,79 @@ void HELPER(set_user_reg)(CPUARMState *env, uint32_t regno, uint32_t val)
     }
 }
 
-void HELPER(access_check_cp_reg)(CPUARMState *env, void *rip)
-{
-    const ARMCPRegInfo *ri = rip;
-    switch (ri->accessfn(env, ri)) {
-    case CP_ACCESS_OK:
-        return;
-    case CP_ACCESS_TRAP:
-    case CP_ACCESS_TRAP_UNCATEGORIZED:
-        /* These cases will eventually need to generate different
-         * syndrome information.
-         */
-        break;
-    default:
-        g_assert_not_reached();
-    }
-    raise_exception(env, EXCP_UDEF);
-}
-
 void HELPER(set_cp_reg)(CPUARMState *env, void *rip, uint32_t value)
 {
     const ARMCPRegInfo *ri = rip;
-
-    ri->writefn(env, ri, value);
+    int excp = ri->writefn(env, ri, value);
+    if (excp) {
+        raise_exception(env, excp);
+    }
 }
 
 uint32_t HELPER(get_cp_reg)(CPUARMState *env, void *rip)
 {
     const ARMCPRegInfo *ri = rip;
-
-    return ri->readfn(env, ri);
+    uint64_t value;
+    int excp = ri->readfn(env, ri, &value);
+    if (excp) {
+        raise_exception(env, excp);
+    }
+    return value;
 }
 
 void HELPER(set_cp_reg64)(CPUARMState *env, void *rip, uint64_t value)
 {
     const ARMCPRegInfo *ri = rip;
-
-    ri->writefn(env, ri, value);
+    int excp = ri->writefn(env, ri, value);
+    if (excp) {
+        raise_exception(env, excp);
+    }
 }
 
 uint64_t HELPER(get_cp_reg64)(CPUARMState *env, void *rip)
 {
     const ARMCPRegInfo *ri = rip;
-
-    return ri->readfn(env, ri);
-}
-
-void HELPER(msr_i_pstate)(CPUARMState *env, uint32_t op, uint32_t imm)
-{
-    /* MSR_i to update PSTATE. This is OK from EL0 only if UMA is set.
-     * Note that SPSel is never OK from EL0; we rely on handle_msr_i()
-     * to catch that case at translate time.
-     */
-    if (arm_current_pl(env) == 0 && !(env->cp15.c1_sys & SCTLR_UMA)) {
-        raise_exception(env, EXCP_UDEF);
+    uint64_t value;
+    int excp = ri->readfn(env, ri, &value);
+    if (excp) {
+        raise_exception(env, excp);
     }
-
-    switch (op) {
-    case 0x05: /* SPSel */
-        env->pstate = deposit32(env->pstate, 0, 1, imm);
-        break;
-    case 0x1e: /* DAIFSet */
-        env->daif |= (imm << 6) & PSTATE_DAIF;
-        break;
-    case 0x1f: /* DAIFClear */
-        env->daif &= ~((imm << 6) & PSTATE_DAIF);
-        break;
-    default:
-        g_assert_not_reached();
-    }
+    return value;
 }
 
 /* ??? Flag setting arithmetic is awkward because we need to do comparisons.
    The only way to do that in TCG is a conditional branch, which clobbers
    all our temporaries.  For now implement these as helper functions.  */
+
+uint32_t HELPER(adc_cc)(CPUARMState *env, uint32_t a, uint32_t b)
+{
+    uint32_t result;
+    if (!env->CF) {
+        result = a + b;
+        env->CF = result < a;
+    } else {
+        result = a + b + 1;
+        env->CF = result <= a;
+    }
+    env->VF = (a ^ b ^ -1) & (a ^ result);
+    env->NF = env->ZF = result;
+    return result;
+}
+
+uint32_t HELPER(sbc_cc)(CPUARMState *env, uint32_t a, uint32_t b)
+{
+    uint32_t result;
+    if (!env->CF) {
+        result = a - b - 1;
+        env->CF = a > b;
+    } else {
+        result = a - b;
+        env->CF = a >= b;
+    }
+    env->VF = (a ^ b) & (a ^ result);
+    env->NF = env->ZF = result;
+    return result;
+}
 
 /* Similarly for variable shift instructions.  */
 

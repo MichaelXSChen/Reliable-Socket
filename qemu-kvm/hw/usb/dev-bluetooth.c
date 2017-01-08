@@ -19,16 +19,14 @@
  */
 
 #include "qemu-common.h"
-#include "qemu/error-report.h"
 #include "hw/usb.h"
 #include "hw/usb/desc.h"
-#include "sysemu/bt.h"
+#include "net.h"
 #include "hw/bt.h"
 
 struct USBBtState {
     USBDevice dev;
     struct HCIInfo *hci;
-    USBEndpoint *intr;
 
     int config;
 
@@ -230,7 +228,7 @@ static const USBDescDevice desc_device_bluetooth = {
         {
             .bNumInterfaces        = 2,
             .bConfigurationValue   = 1,
-            .bmAttributes          = USB_CFG_ATT_ONE | USB_CFG_ATT_SELFPOWER,
+            .bmAttributes          = 0xc0,
             .bMaxPower             = 0,
             .nif = ARRAY_SIZE(desc_iface_bluetooth),
             .ifs = desc_iface_bluetooth,
@@ -287,12 +285,13 @@ static void usb_bt_fifo_enqueue(struct usb_hci_in_fifo_s *fifo,
     fifo->fifo[off].len = len;
 }
 
-static inline void usb_bt_fifo_dequeue(struct usb_hci_in_fifo_s *fifo,
+static inline int usb_bt_fifo_dequeue(struct usb_hci_in_fifo_s *fifo,
                 USBPacket *p)
 {
     int len;
 
-    assert(fifo->len != 0);
+    if (likely(!fifo->len))
+        return USB_RET_STALL;
 
     len = MIN(p->iov.size, fifo->fifo[fifo->start].len);
     usb_packet_copy(p, fifo->fifo[fifo->start].data, len);
@@ -311,6 +310,8 @@ static inline void usb_bt_fifo_dequeue(struct usb_hci_in_fifo_s *fifo,
         fifo->dstart = 0;
         fifo->dsize = DFIFO_LEN_MASK + 1;
     }
+
+    return len;
 }
 
 static inline void usb_bt_fifo_out_enqueue(struct USBBtState *s,
@@ -362,7 +363,7 @@ static void usb_bt_handle_reset(USBDevice *dev)
     s->outsco.len = 0;
 }
 
-static void usb_bt_handle_control(USBDevice *dev, USBPacket *p,
+static int usb_bt_handle_control(USBDevice *dev, USBPacket *p,
                int request, int value, int index, int length, uint8_t *data)
 {
     struct USBBtState *s = (struct USBBtState *) dev->opaque;
@@ -381,15 +382,16 @@ static void usb_bt_handle_control(USBDevice *dev, USBPacket *p,
             usb_bt_fifo_reset(&s->sco);
             break;
         }
-        return;
+        return ret;
     }
 
+    ret = 0;
     switch (request) {
     case InterfaceRequest | USB_REQ_GET_STATUS:
     case EndpointRequest | USB_REQ_GET_STATUS:
         data[0] = 0x00;
         data[1] = 0x00;
-        p->actual_length = 2;
+        ret = 2;
         break;
     case InterfaceOutRequest | USB_REQ_CLEAR_FEATURE:
     case EndpointOutRequest | USB_REQ_CLEAR_FEATURE:
@@ -405,14 +407,16 @@ static void usb_bt_handle_control(USBDevice *dev, USBPacket *p,
         break;
     default:
     fail:
-        p->status = USB_RET_STALL;
+        ret = USB_RET_STALL;
         break;
     }
+    return ret;
 }
 
-static void usb_bt_handle_data(USBDevice *dev, USBPacket *p)
+static int usb_bt_handle_data(USBDevice *dev, USBPacket *p)
 {
     struct USBBtState *s = (struct USBBtState *) dev->opaque;
+    int ret = 0;
 
     if (!s->config)
         goto fail;
@@ -421,27 +425,15 @@ static void usb_bt_handle_data(USBDevice *dev, USBPacket *p)
     case USB_TOKEN_IN:
         switch (p->ep->nr) {
         case USB_EVT_EP:
-            if (s->evt.len == 0) {
-                p->status = USB_RET_NAK;
-                break;
-            }
-            usb_bt_fifo_dequeue(&s->evt, p);
+            ret = usb_bt_fifo_dequeue(&s->evt, p);
             break;
 
         case USB_ACL_EP:
-            if (s->evt.len == 0) {
-                p->status = USB_RET_STALL;
-                break;
-            }
-            usb_bt_fifo_dequeue(&s->acl, p);
+            ret = usb_bt_fifo_dequeue(&s->acl, p);
             break;
 
         case USB_SCO_EP:
-            if (s->evt.len == 0) {
-                p->status = USB_RET_STALL;
-                break;
-            }
-            usb_bt_fifo_dequeue(&s->sco, p);
+            ret = usb_bt_fifo_dequeue(&s->sco, p);
             break;
 
         default:
@@ -468,9 +460,11 @@ static void usb_bt_handle_data(USBDevice *dev, USBPacket *p)
 
     default:
     fail:
-        p->status = USB_RET_STALL;
+        ret = USB_RET_STALL;
         break;
     }
+
+    return ret;
 }
 
 static void usb_bt_out_hci_packet_event(void *opaque,
@@ -478,9 +472,6 @@ static void usb_bt_out_hci_packet_event(void *opaque,
 {
     struct USBBtState *s = (struct USBBtState *) opaque;
 
-    if (s->evt.len == 0) {
-        usb_wakeup(s->intr, 0);
-    }
     usb_bt_fifo_enqueue(&s->evt, data, len);
 }
 
@@ -503,49 +494,31 @@ static void usb_bt_handle_destroy(USBDevice *dev)
 
 static int usb_bt_initfn(USBDevice *dev)
 {
-    struct USBBtState *s = DO_UPCAST(struct USBBtState, dev, dev);
-
     usb_desc_create_serial(dev);
     usb_desc_init(dev);
-    s->dev.opaque = s;
-    if (!s->hci) {
-        s->hci = bt_new_hci(qemu_find_bt_vlan(0));
-    }
-    s->hci->opaque = s;
-    s->hci->evt_recv = usb_bt_out_hci_packet_event;
-    s->hci->acl_recv = usb_bt_out_hci_packet_acl;
-    usb_bt_handle_reset(&s->dev);
-    s->intr = usb_ep_get(dev, USB_TOKEN_IN, USB_EVT_EP);
-
     return 0;
 }
 
-static USBDevice *usb_bt_init(USBBus *bus, const char *cmdline)
+USBDevice *usb_bt_init(USBBus *bus, HCIInfo *hci)
 {
     USBDevice *dev;
     struct USBBtState *s;
-    HCIInfo *hci;
-    const char *name = "usb-bt-dongle";
-
-    if (*cmdline) {
-        hci = hci_init(cmdline);
-    } else {
-        hci = bt_new_hci(qemu_find_bt_vlan(0));
-    }
 
     if (!hci)
         return NULL;
-    dev = usb_create(bus, name);
+    dev = usb_create_simple(bus, "usb-bt-dongle");
     if (!dev) {
-        error_report("Failed to create USB device '%s'", name);
         return NULL;
     }
     s = DO_UPCAST(struct USBBtState, dev, dev);
+    s->dev.opaque = s;
+
     s->hci = hci;
-    if (qdev_init(&dev->qdev) < 0) {
-        error_report("Failed to initialize USB device '%s'", name);
-        return NULL;
-    }
+    s->hci->opaque = s;
+    s->hci->evt_recv = usb_bt_out_hci_packet_event;
+    s->hci->acl_recv = usb_bt_out_hci_packet_acl;
+
+    usb_bt_handle_reset(&s->dev);
 
     return dev;
 }
@@ -568,10 +541,9 @@ static void usb_bt_class_initfn(ObjectClass *klass, void *data)
     uc->handle_data    = usb_bt_handle_data;
     uc->handle_destroy = usb_bt_handle_destroy;
     dc->vmsd = &vmstate_usb_bt;
-    set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
 }
 
-static const TypeInfo bt_info = {
+static TypeInfo bt_info = {
     .name          = "usb-bt-dongle",
     .parent        = TYPE_USB_DEVICE,
     .instance_size = sizeof(struct USBBtState),
@@ -581,7 +553,6 @@ static const TypeInfo bt_info = {
 static void usb_bt_register_types(void)
 {
     type_register_static(&bt_info);
-    usb_legacy_register("usb-bt-dongle", "bt", usb_bt_init);
 }
 
 type_init(usb_bt_register_types)

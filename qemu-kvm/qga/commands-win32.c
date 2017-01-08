@@ -15,23 +15,16 @@
 #include <wtypes.h>
 #include <powrprof.h>
 #include "qga/guest-agent-core.h"
-#include "qga/vss-win32.h"
 #include "qga-qmp-commands.h"
-#include "qapi/qmp/qerror.h"
+#include "qerror.h"
 
 #ifndef SHTDN_REASON_FLAG_PLANNED
 #define SHTDN_REASON_FLAG_PLANNED 0x80000000
 #endif
 
-/* multiple of 100 nanoseconds elapsed between windows baseline
- *    (1/1/1601) and Unix Epoch (1/1/1970), accounting for leap years */
-#define W32_FT_OFFSET (10000000ULL * 60 * 60 * 24 * \
-                       (365 * (1970 - 1601) +       \
-                        (1970 - 1601) / 4 - 3))
-
 static void acquire_privilege(const char *name, Error **err)
 {
-    HANDLE token = NULL;
+    HANDLE token;
     TOKEN_PRIVILEGES priv;
     Error *local_err = NULL;
 
@@ -57,15 +50,13 @@ static void acquire_privilege(const char *name, Error **err)
             goto out;
         }
 
+        CloseHandle(token);
     } else {
         error_set(&local_err, QERR_QGA_COMMAND_FAILED,
                   "failed to open privilege token");
     }
 
 out:
-    if (token) {
-        CloseHandle(token);
-    }
     if (local_err) {
         error_propagate(err, local_err);
     }
@@ -112,7 +103,7 @@ void qmp_guest_shutdown(bool has_mode, const char *mode, Error **err)
     }
 
     if (!ExitWindowsEx(shutdown_flag, SHTDN_REASON_FLAG_PLANNED)) {
-        slog("guest-shutdown failed: %lu", GetLastError());
+        slog("guest-shutdown failed: %d", GetLastError());
         error_set(err, QERR_UNDEFINED_ERROR);
     }
 }
@@ -159,89 +150,27 @@ void qmp_guest_file_flush(int64_t handle, Error **err)
  */
 GuestFsfreezeStatus qmp_guest_fsfreeze_status(Error **err)
 {
-    if (!vss_initialized()) {
-        error_set(err, QERR_UNSUPPORTED);
-        return 0;
-    }
-
-    if (ga_is_frozen(ga_state)) {
-        return GUEST_FSFREEZE_STATUS_FROZEN;
-    }
-
-    return GUEST_FSFREEZE_STATUS_THAWED;
-}
-
-/*
- * Freeze local file systems using Volume Shadow-copy Service.
- * The frozen state is limited for up to 10 seconds by VSS.
- */
-int64_t qmp_guest_fsfreeze_freeze(Error **err)
-{
-    int i;
-    Error *local_err = NULL;
-
-    if (!vss_initialized()) {
-        error_set(err, QERR_UNSUPPORTED);
-        return 0;
-    }
-
-    slog("guest-fsfreeze called");
-
-    /* cannot risk guest agent blocking itself on a write in this state */
-    ga_set_frozen(ga_state);
-
-    qga_vss_fsfreeze(&i, err, true);
-    if (error_is_set(err)) {
-        goto error;
-    }
-
-    return i;
-
-error:
-    qmp_guest_fsfreeze_thaw(&local_err);
-    if (local_err) {
-        g_debug("cleanup thaw: %s", error_get_pretty(local_err));
-        error_free(local_err);
-    }
+    error_set(err, QERR_UNSUPPORTED);
     return 0;
 }
 
 /*
- * Thaw local file systems using Volume Shadow-copy Service.
+ * Walk list of mounted file systems in the guest, and freeze the ones which
+ * are real local file systems.
+ */
+int64_t qmp_guest_fsfreeze_freeze(Error **err)
+{
+    error_set(err, QERR_UNSUPPORTED);
+    return 0;
+}
+
+/*
+ * Walk list of frozen file systems in the guest, and thaw them.
  */
 int64_t qmp_guest_fsfreeze_thaw(Error **err)
 {
-    int i;
-
-    if (!vss_initialized()) {
-        error_set(err, QERR_UNSUPPORTED);
-        return 0;
-    }
-
-    qga_vss_fsfreeze(&i, err, false);
-
-    ga_unset_frozen(ga_state);
-    return i;
-}
-
-static void guest_fsfreeze_cleanup(void)
-{
-    Error *err = NULL;
-
-    if (!vss_initialized()) {
-        return;
-    }
-
-    if (ga_is_frozen(ga_state) == GUEST_FSFREEZE_STATUS_FROZEN) {
-        qmp_guest_fsfreeze_thaw(&err);
-        if (err) {
-            slog("failed to clean up frozen filesystems: %s",
-                 error_get_pretty(err));
-            error_free(err);
-        }
-    }
-
-    vss_deinit(true);
+    error_set(err, QERR_UNSUPPORTED);
+    return 0;
 }
 
 /*
@@ -303,7 +232,7 @@ static DWORD WINAPI do_suspend(LPVOID opaque)
     DWORD ret = 0;
 
     if (!SetSuspendState(*mode == GUEST_SUSPEND_MODE_DISK, TRUE, TRUE)) {
-        slog("failed to suspend guest, %lu", GetLastError());
+        slog("failed to suspend guest, %s", GetLastError());
         ret = -1;
     }
     g_free(mode);
@@ -349,89 +278,7 @@ GuestNetworkInterfaceList *qmp_guest_network_get_interfaces(Error **err)
     return NULL;
 }
 
-int64_t qmp_guest_get_time(Error **errp)
-{
-    SYSTEMTIME ts = {0};
-    int64_t time_ns;
-    FILETIME tf;
-
-    GetSystemTime(&ts);
-    if (ts.wYear < 1601 || ts.wYear > 30827) {
-        error_setg(errp, "Failed to get time");
-        return -1;
-    }
-
-    if (!SystemTimeToFileTime(&ts, &tf)) {
-        error_setg(errp, "Failed to convert system time: %d", (int)GetLastError());
-        return -1;
-    }
-
-    time_ns = ((((int64_t)tf.dwHighDateTime << 32) | tf.dwLowDateTime)
-                - W32_FT_OFFSET) * 100;
-
-    return time_ns;
-}
-
-void qmp_guest_set_time(bool has_time, int64_t time_ns, Error **errp)
-{
-    SYSTEMTIME ts;
-    FILETIME tf;
-    LONGLONG time;
-
-    if (has_time) {
-        /* Okay, user passed a time to set. Validate it. */
-        if (time_ns < 0 || time_ns / 100 > INT64_MAX - W32_FT_OFFSET) {
-            error_setg(errp, "Time %" PRId64 "is invalid", time_ns);
-            return;
-        }
-
-        time = time_ns / 100 + W32_FT_OFFSET;
-
-        tf.dwLowDateTime = (DWORD) time;
-        tf.dwHighDateTime = (DWORD) (time >> 32);
-
-        if (!FileTimeToSystemTime(&tf, &ts)) {
-            error_setg(errp, "Failed to convert system time %d",
-                       (int)GetLastError());
-            return;
-        }
-    } else {
-        /* Otherwise read the time from RTC which contains the correct value.
-         * Hopefully. */
-        GetSystemTime(&ts);
-        if (ts.wYear < 1601 || ts.wYear > 30827) {
-            error_setg(errp, "Failed to get time");
-            return;
-        }
-    }
-
-    acquire_privilege(SE_SYSTEMTIME_NAME, errp);
-    if (error_is_set(errp)) {
-        return;
-    }
-
-    if (!SetSystemTime(&ts)) {
-        error_setg(errp, "Failed to set time to guest: %d", (int)GetLastError());
-        return;
-    }
-}
-
-GuestLogicalProcessorList *qmp_guest_get_vcpus(Error **errp)
-{
-    error_set(errp, QERR_UNSUPPORTED);
-    return NULL;
-}
-
-int64_t qmp_guest_set_vcpus(GuestLogicalProcessorList *vcpus, Error **errp)
-{
-    error_set(errp, QERR_UNSUPPORTED);
-    return -1;
-}
-
 /* register init/cleanup routines for stateful command groups */
 void ga_command_state_init(GAState *s, GACommandState *cs)
 {
-    if (vss_init(true)) {
-        ga_command_state_add(cs, NULL, guest_fsfreeze_cleanup);
-    }
 }

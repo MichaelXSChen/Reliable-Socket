@@ -6,6 +6,10 @@ HXCOMM construct option structures, enums and help message for specified
 HXCOMM architectures.
 HXCOMM HXCOMM can be used for comments, discarded from both texi and C
 
+HXCOMM TODO : when we are able to change -help output without breaking
+HXCOMM libvirt we should update the help options which refer to -cpu ?,
+HXCOMM -driver ?, etc to use the preferred -cpu help etc instead.
+
 DEFHEADING(Standard options:)
 STEXI
 @table @option
@@ -29,7 +33,7 @@ ETEXI
 
 DEF("machine", HAS_ARG, QEMU_OPTION_machine, \
     "-machine [type=]name[,prop[=value][,...]]\n"
-    "                selects emulated machine ('-machine help' for list)\n"
+    "                selects emulated machine (-machine ? for list)\n"
     "                property accel=accel1[:accel2[:...]] selects accelerator\n"
     "                supported accelerators are kvm, xen, tcg (default: tcg)\n"
     "                kernel_irqchip=on|off controls accelerated irqchip support\n"
@@ -40,7 +44,7 @@ DEF("machine", HAS_ARG, QEMU_OPTION_machine, \
 STEXI
 @item -machine [type=]@var{name}[,prop=@var{value}[,...]]
 @findex -machine
-Select the emulated machine by @var{name}. Use @code{-machine help} to list
+Select the emulated machine by @var{name}. Use @code{-machine ?} to list
 available machines. Supported machine properties are:
 @table @option
 @item accel=@var{accels1}[:@var{accels2}[:...]]
@@ -65,15 +69,15 @@ HXCOMM Deprecated by -machine
 DEF("M", HAS_ARG, QEMU_OPTION_M, "", QEMU_ARCH_ALL)
 
 DEF("cpu", HAS_ARG, QEMU_OPTION_cpu,
-    "-cpu cpu        select CPU ('-cpu help' for list)\n", QEMU_ARCH_ALL)
+    "-cpu cpu        select CPU (-cpu ? for list)\n", QEMU_ARCH_ALL)
 STEXI
 @item -cpu @var{model}
 @findex -cpu
-Select CPU model (@code{-cpu help} for list and additional feature selection)
+Select CPU model (-cpu ? for list and additional feature selection)
 ETEXI
 
 DEF("smp", HAS_ARG, QEMU_OPTION_smp,
-    "-smp [cpus=]n[,maxcpus=cpus][,cores=cores][,threads=threads][,sockets=sockets]\n"
+    "-smp n[,maxcpus=cpus][,cores=cores][,threads=threads][,sockets=sockets]\n"
     "                set the number of CPUs to 'n' [default=1]\n"
     "                maxcpus= maximum number of total cpus, including\n"
     "                offline CPUs for hotplug, etc\n"
@@ -82,7 +86,7 @@ DEF("smp", HAS_ARG, QEMU_OPTION_smp,
     "                sockets= number of discrete sockets in the system\n",
         QEMU_ARCH_ALL)
 STEXI
-@item -smp [cpus=]@var{n}[,cores=@var{cores}][,threads=@var{threads}][,sockets=@var{sockets}][,maxcpus=@var{maxcpus}]
+@item -smp @var{n}[,cores=@var{cores}][,threads=@var{threads}][,sockets=@var{sockets}][,maxcpus=@var{maxcpus}]
 @findex -smp
 Simulate an SMP system with @var{n} CPUs. On the PC target, up to 255
 CPUs are supported. On Sparc32 target, Linux limits the number of usable CPUs
@@ -101,266 +105,6 @@ STEXI
 @findex -numa
 Simulate a multi node NUMA system. If mem and cpus are omitted, resources
 are split equally.
-ETEXI
-
-DEF("add-fd", HAS_ARG, QEMU_OPTION_add_fd,
-    "-add-fd fd=fd,set=set[,opaque=opaque]\n"
-    "                Add 'fd' to fd 'set'\n", QEMU_ARCH_ALL)
-STEXI
-@item -add-fd fd=@var{fd},set=@var{set}[,opaque=@var{opaque}]
-@findex -add-fd
-
-Add a file descriptor to an fd set.  Valid options are:
-
-@table @option
-@item fd=@var{fd}
-This option defines the file descriptor of which a duplicate is added to fd set.
-The file descriptor cannot be stdin, stdout, or stderr.
-@item set=@var{set}
-This option defines the ID of the fd set to add the file descriptor to.
-@item opaque=@var{opaque}
-This option defines a free-form string that can be used to describe @var{fd}.
-@end table
-
-You can open an image using pre-opened file descriptors from an fd set:
-@example
-qemu-system-i386
--add-fd fd=3,set=2,opaque="rdwr:/path/to/file"
--add-fd fd=4,set=2,opaque="rdonly:/path/to/file"
--drive file=/dev/fdset/2,index=0,media=disk
-@end example
-ETEXI
-
-DEF("set", HAS_ARG, QEMU_OPTION_set,
-    "-set group.id.arg=value\n"
-    "                set <arg> parameter for item <id> of type <group>\n"
-    "                i.e. -set drive.$id.file=/path/to/image\n", QEMU_ARCH_ALL)
-STEXI
-@item -set @var{group}.@var{id}.@var{arg}=@var{value}
-@findex -set
-Set parameter @var{arg} for item @var{id} of type @var{group}\n"
-ETEXI
-
-DEF("global", HAS_ARG, QEMU_OPTION_global,
-    "-global driver.prop=value\n"
-    "                set a global default for a driver property\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -global @var{driver}.@var{prop}=@var{value}
-@findex -global
-Set default value of @var{driver}'s property @var{prop} to @var{value}, e.g.:
-
-@example
-qemu-system-i386 -global ide-drive.physical_block_size=4096 -drive file=file,if=ide,index=0,media=disk
-@end example
-
-In particular, you can use this to set driver properties for devices which are 
-created automatically by the machine model. To create a device which is not 
-created automatically and set properties on it, use -@option{device}.
-ETEXI
-
-DEF("boot", HAS_ARG, QEMU_OPTION_boot,
-    "-boot [order=drives][,once=drives][,menu=on|off]\n"
-    "      [,splash=sp_name][,splash-time=sp_time][,reboot-timeout=rb_time][,strict=on|off]\n"
-    "                'drives': floppy (a), hard disk (c), CD-ROM (d), network (n)\n"
-    "                'sp_name': the file's name that would be passed to bios as logo picture, if menu=on\n"
-    "                'sp_time': the period that splash picture last if menu=on, unit is ms\n"
-    "                'rb_timeout': the timeout before guest reboot when boot failed, unit is ms\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -boot [order=@var{drives}][,once=@var{drives}][,menu=on|off][,splash=@var{sp_name}][,splash-time=@var{sp_time}][,reboot-timeout=@var{rb_timeout}][,strict=on|off]
-@findex -boot
-Specify boot order @var{drives} as a string of drive letters. Valid
-drive letters depend on the target achitecture. The x86 PC uses: a, b
-(floppy 1 and 2), c (first hard disk), d (first CD-ROM), n-p (Etherboot
-from network adapter 1-4), hard disk boot is the default. To apply a
-particular boot order only on the first startup, specify it via
-@option{once}.
-
-Interactive boot menus/prompts can be enabled via @option{menu=on} as far
-as firmware/BIOS supports them. The default is non-interactive boot.
-
-A splash picture could be passed to bios, enabling user to show it as logo,
-when option splash=@var{sp_name} is given and menu=on, If firmware/BIOS
-supports them. Currently Seabios for X86 system support it.
-limitation: The splash file could be a jpeg file or a BMP file in 24 BPP
-format(true color). The resolution should be supported by the SVGA mode, so
-the recommended is 320x240, 640x480, 800x640.
-
-A timeout could be passed to bios, guest will pause for @var{rb_timeout} ms
-when boot failed, then reboot. If @var{rb_timeout} is '-1', guest will not
-reboot, qemu passes '-1' to bios by default. Currently Seabios for X86
-system support it.
-
-Do strict boot via @option{strict=on} as far as firmware/BIOS
-supports it. This only effects when boot priority is changed by
-bootindex options. The default is non-strict boot.
-
-@example
-# try to boot from network first, then from hard disk
-qemu-system-i386 -boot order=nc
-# boot from CD-ROM first, switch back to default order after reboot
-qemu-system-i386 -boot once=d
-# boot with a splash picture for 5 seconds.
-qemu-system-i386 -boot menu=on,splash=/root/boot.bmp,splash-time=5000
-@end example
-
-Note: The legacy format '-boot @var{drives}' is still supported but its
-use is discouraged as it may be removed from future versions.
-ETEXI
-
-DEF("m", HAS_ARG, QEMU_OPTION_m,
-    "-m megs         set virtual RAM size to megs MB [default="
-    stringify(DEFAULT_RAM_SIZE) "]\n", QEMU_ARCH_ALL)
-STEXI
-@item -m @var{megs}
-@findex -m
-Set virtual RAM size to @var{megs} megabytes. Default is 128 MiB.  Optionally,
-a suffix of ``M'' or ``G'' can be used to signify a value in megabytes or
-gigabytes respectively.
-ETEXI
-
-DEF("mem-path", HAS_ARG, QEMU_OPTION_mempath,
-    "-mem-path FILE  provide backing storage for guest RAM\n", QEMU_ARCH_ALL)
-STEXI
-@item -mem-path @var{path}
-@findex -mem-path
-Allocate guest RAM from a temporarily created file in @var{path}.
-ETEXI
-
-DEF("mem-prealloc", 0, QEMU_OPTION_mem_prealloc,
-    "-mem-prealloc   preallocate guest memory (use with -mem-path)\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -mem-prealloc
-@findex -mem-prealloc
-Preallocate memory when using -mem-path.
-ETEXI
-
-DEF("k", HAS_ARG, QEMU_OPTION_k,
-    "-k language     use keyboard layout (for example 'fr' for French)\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -k @var{language}
-@findex -k
-Use keyboard layout @var{language} (for example @code{fr} for
-French). This option is only needed where it is not easy to get raw PC
-keycodes (e.g. on Macs, with some X11 servers or with a VNC
-display). You don't normally need to use it on PC/Linux or PC/Windows
-hosts.
-
-The available layouts are:
-@example
-ar  de-ch  es  fo     fr-ca  hu  ja  mk     no  pt-br  sv
-da  en-gb  et  fr     fr-ch  is  lt  nl     pl  ru     th
-de  en-us  fi  fr-be  hr     it  lv  nl-be  pt  sl     tr
-@end example
-
-The default is @code{en-us}.
-ETEXI
-
-
-DEF("audio-help", 0, QEMU_OPTION_audio_help,
-    "-audio-help     print list of audio drivers and their options\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -audio-help
-@findex -audio-help
-Will show the audio subsystem help: list of drivers, tunable
-parameters.
-ETEXI
-
-DEF("soundhw", HAS_ARG, QEMU_OPTION_soundhw,
-    "-soundhw c1,... enable audio support\n"
-    "                and only specified sound cards (comma separated list)\n"
-    "                use '-soundhw help' to get the list of supported cards\n"
-    "                use '-soundhw all' to enable all of them\n", QEMU_ARCH_ALL)
-STEXI
-@item -soundhw @var{card1}[,@var{card2},...] or -soundhw all
-@findex -soundhw
-Enable audio and selected sound hardware. Use 'help' to print all
-available sound hardware.
-
-@example
-qemu-system-i386 -soundhw sb16,adlib disk.img
-qemu-system-i386 -soundhw es1370 disk.img
-qemu-system-i386 -soundhw ac97 disk.img
-qemu-system-i386 -soundhw hda disk.img
-qemu-system-i386 -soundhw all disk.img
-qemu-system-i386 -soundhw help
-@end example
-
-Note that Linux's i810_audio OSS kernel (for AC97) module might
-require manually specifying clocking.
-
-@example
-modprobe i810_audio clocking=48000
-@end example
-ETEXI
-
-DEF("balloon", HAS_ARG, QEMU_OPTION_balloon,
-    "-balloon none   disable balloon device\n"
-    "-balloon virtio[,addr=str]\n"
-    "                enable virtio balloon device (default)\n", QEMU_ARCH_ALL)
-STEXI
-@item -balloon none
-@findex -balloon
-Disable balloon device.
-@item -balloon virtio[,addr=@var{addr}]
-Enable virtio balloon device (default), optionally with PCI address
-@var{addr}.
-ETEXI
-
-DEF("device", HAS_ARG, QEMU_OPTION_device,
-    "-device driver[,prop[=value][,...]]\n"
-    "                add device (based on driver)\n"
-    "                prop=value,... sets driver properties\n"
-    "                use '-device help' to print all possible drivers\n"
-    "                use '-device driver,help' to print all possible properties\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -device @var{driver}[,@var{prop}[=@var{value}][,...]]
-@findex -device
-Add device @var{driver}.  @var{prop}=@var{value} sets driver
-properties.  Valid properties depend on the driver.  To get help on
-possible drivers and properties, use @code{-device help} and
-@code{-device @var{driver},help}.
-ETEXI
-
-DEF("name", HAS_ARG, QEMU_OPTION_name,
-    "-name string1[,process=string2][,debug-threads=on|off]\n"
-    "                set the name of the guest\n"
-    "                string1 sets the window title and string2 the process name (on Linux)\n"
-    "                When debug-threads is enabled, individual threads are given a separate name (on Linux)\n"
-    "                NOTE: The thread names are for debugging and not a stable API.\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -name @var{name}
-@findex -name
-Sets the @var{name} of the guest.
-This name will be displayed in the SDL window caption.
-The @var{name} will also be used for the VNC server.
-Also optionally set the top visible process name in Linux.
-Naming of individual threads can also be enabled on Linux to aid debugging.
-ETEXI
-
-DEF("uuid", HAS_ARG, QEMU_OPTION_uuid,
-    "-uuid %08x-%04x-%04x-%04x-%012x\n"
-    "                specify machine UUID\n", QEMU_ARCH_ALL)
-STEXI
-@item -uuid @var{uuid}
-@findex -uuid
-Set system UUID.
-ETEXI
-
-STEXI
-@end table
-ETEXI
-DEFHEADING()
-
-DEFHEADING(Block device options:)
-STEXI
-@table @option
 ETEXI
 
 DEF("fda", HAS_ARG, QEMU_OPTION_fda,
@@ -410,11 +154,7 @@ DEF("drive", HAS_ARG, QEMU_OPTION_drive,
     "       [,cache=writethrough|writeback|none|directsync|unsafe][,format=f]\n"
     "       [,serial=s][,addr=A][,id=name][,aio=threads|native]\n"
     "       [,readonly=on|off][,copy-on-read=on|off]\n"
-    "       [[,bps=b]|[[,bps_rd=r][,bps_wr=w]]]\n"
-    "       [[,iops=i]|[[,iops_rd=r][,iops_wr=w]]]\n"
-    "       [[,bps_max=bm]|[[,bps_rd_max=rm][,bps_wr_max=wm]]]\n"
-    "       [[,iops_max=im]|[[,iops_rd_max=irm][,iops_wr_max=iwm]]]\n"
-    "       [[,iops_size=is]]\n"
+    "       [[,bps=b]|[[,bps_rd=r][,bps_wr=w]]][[,iops=i]|[[,iops_rd=r][,iops_wr=w]]\n"
     "                use 'file' as a drive image\n", QEMU_ARCH_ALL)
 STEXI
 @item -drive @var{option}[,@var{option}[,@var{option}[,...]]]
@@ -449,8 +189,6 @@ These options have the same definition as they have in @option{-hdachs}.
 @var{cache} is "none", "writeback", "unsafe", "directsync" or "writethrough" and controls how the host cache is used to access block data.
 @item aio=@var{aio}
 @var{aio} is "threads", or "native" and selects between pthread based disk I/O and native Linux AIO.
-@item discard=@var{discard}
-@var{discard} is one of "ignore" (or "off") or "unmap" (or "on") and controls whether @dfn{discard} (also known as @dfn{trim} or @dfn{unmap}) requests are ignored or passed to the filesystem.  Some machine types may not support discard requests.
 @item format=@var{format}
 Specify which disk @var{format} will be used rather than detecting
 the format.  Can be used to specifiy format=raw to avoid interpreting
@@ -472,33 +210,33 @@ Open drive @option{file} as read-only. Guest write attempts will fail.
 file sectors into the image file.
 @end table
 
-By default, the @option{cache=writeback} mode is used. It will report data
-writes as completed as soon as the data is present in the host page cache.
-This is safe as long as your guest OS makes sure to correctly flush disk caches
-where needed. If your guest OS does not handle volatile disk write caches
-correctly and your host crashes or loses power, then the guest may experience
-data corruption.
+By default, writethrough caching is used for all block device.  This means that
+the host page cache will be used to read and write data but write notification
+will be sent to the guest only when the data has been reported as written by
+the storage subsystem.
 
-For such guests, you should consider using @option{cache=writethrough}. This
-means that the host page cache will be used to read and write data, but write
-notification will be sent to the guest only after QEMU has made sure to flush
-each write to the disk. Be aware that this has a major impact on performance.
+Writeback caching will report data writes as completed as soon as the data is
+present in the host page cache.  This is safe as long as you trust your host.
+If your host crashes or loses power, then the guest may experience data
+corruption.
 
 The host page cache can be avoided entirely with @option{cache=none}.  This will
-attempt to do disk IO directly to the guest's memory.  QEMU may still perform
-an internal copy of the data. Note that this is considered a writeback mode and
-the guest OS must handle the disk write cache correctly in order to avoid data
-corruption on host crashes.
+attempt to do disk IO directly to the guests memory.  QEMU may still perform
+an internal copy of the data.
 
 The host page cache can be avoided while only sending write notifications to
-the guest when the data has been flushed to the disk using
-@option{cache=directsync}.
+the guest when the data has been reported as written by the storage subsystem
+using @option{cache=directsync}.
+
+Some block drivers perform badly with @option{cache=writethrough}, most notably,
+qcow2.  If performance is more important than correctness,
+@option{cache=writeback} should be used with qcow2.
 
 In case you don't care about data integrity over host failures, use
-@option{cache=unsafe}. This option tells QEMU that it never needs to write any
-data to the disk but can instead keep things in cache. If anything goes wrong,
+cache=unsafe. This option tells QEMU that it never needs to write any data
+to the disk but can instead keeps things in cache. If anything goes wrong,
 like your host losing power, the disk storage getting disconnected accidentally,
-etc. your image will most probably be rendered unusable.   When using
+etc. you're image will most probably be rendered unusable.   When using
 the @option{-snapshot} option, unsafe caching is always used.
 
 Copy-on-read avoids accessing the same backing file sectors repeatedly and is
@@ -517,14 +255,6 @@ qemu-system-i386 -drive file=file,index=0,media=disk
 qemu-system-i386 -drive file=file,index=1,media=disk
 qemu-system-i386 -drive file=file,index=2,media=disk
 qemu-system-i386 -drive file=file,index=3,media=disk
-@end example
-
-You can open an image using pre-opened file descriptors from an fd set:
-@example
-qemu-system-i386
--add-fd fd=3,set=2,opaque="rdwr:/path/to/file"
--add-fd fd=4,set=2,opaque="rdonly:/path/to/file"
--drive file=/dev/fdset/2,index=0,media=disk
 @end example
 
 You can connect a CDROM to the slave of ide0:
@@ -559,6 +289,34 @@ qemu-system-i386 -hda a -hdb b
 @end example
 ETEXI
 
+DEF("set", HAS_ARG, QEMU_OPTION_set,
+    "-set group.id.arg=value\n"
+    "                set <arg> parameter for item <id> of type <group>\n"
+    "                i.e. -set drive.$id.file=/path/to/image\n", QEMU_ARCH_ALL)
+STEXI
+@item -set
+@findex -set
+TODO
+ETEXI
+
+DEF("global", HAS_ARG, QEMU_OPTION_global,
+    "-global driver.prop=value\n"
+    "                set a global default for a driver property\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -global @var{driver}.@var{prop}=@var{value}
+@findex -global
+Set default value of @var{driver}'s property @var{prop} to @var{value}, e.g.:
+
+@example
+qemu-system-i386 -global ide-drive.physical_block_size=4096 -drive file=file,if=ide,index=0,media=disk
+@end example
+
+In particular, you can use this to set driver properties for devices which are 
+created automatically by the machine model. To create a device which is not 
+created automatically and set properties on it, use -@option{device}.
+ETEXI
+
 DEF("mtdblock", HAS_ARG, QEMU_OPTION_mtdblock,
     "-mtdblock file  use 'file' as on-board Flash memory image\n",
     QEMU_ARCH_ALL)
@@ -584,6 +342,52 @@ STEXI
 Use @var{file} as a parallel flash image.
 ETEXI
 
+DEF("boot", HAS_ARG, QEMU_OPTION_boot,
+    "-boot [order=drives][,once=drives][,menu=on|off]\n"
+    "      [,splash=sp_name][,splash-time=sp_time][,reboot-timeout=rb_time]\n"
+    "                'drives': floppy (a), hard disk (c), CD-ROM (d), network (n)\n"
+    "                'sp_name': the file's name that would be passed to bios as logo picture, if menu=on\n"
+    "                'sp_time': the period that splash picture last if menu=on, unit is ms\n"
+    "                'rb_timeout': the timeout before guest reboot when boot failed, unit is ms\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -boot [order=@var{drives}][,once=@var{drives}][,menu=on|off][,splash=@var{sp_name}][,splash-time=@var{sp_time}][,reboot-timeout=@var{rb_timeout}]
+@findex -boot
+Specify boot order @var{drives} as a string of drive letters. Valid
+drive letters depend on the target achitecture. The x86 PC uses: a, b
+(floppy 1 and 2), c (first hard disk), d (first CD-ROM), n-p (Etherboot
+from network adapter 1-4), hard disk boot is the default. To apply a
+particular boot order only on the first startup, specify it via
+@option{once}.
+
+Interactive boot menus/prompts can be enabled via @option{menu=on} as far
+as firmware/BIOS supports them. The default is non-interactive boot.
+
+A splash picture could be passed to bios, enabling user to show it as logo,
+when option splash=@var{sp_name} is given and menu=on, If firmware/BIOS
+supports them. Currently Seabios for X86 system support it.
+limitation: The splash file could be a jpeg file or a BMP file in 24 BPP
+format(true color). The resolution should be supported by the SVGA mode, so
+the recommended is 320x240, 640x480, 800x640.
+
+A timeout could be passed to bios, guest will pause for @var{rb_timeout} ms
+when boot failed, then reboot. If @var{rb_timeout} is '-1', guest will not
+reboot, qemu passes '-1' to bios by default. Currently Seabios for X86
+system support it.
+
+@example
+# try to boot from network first, then from hard disk
+qemu-system-i386 -boot order=nc
+# boot from CD-ROM first, switch back to default order after reboot
+qemu-system-i386 -boot once=d
+# boot with a splash picture for 5 seconds.
+qemu-system-i386 -boot menu=on,splash=/root/boot.bmp,splash-time=5000
+@end example
+
+Note: The legacy format '-boot @var{drives}' is still supported but its
+use is discouraged as it may be removed from future versions.
+ETEXI
+
 DEF("snapshot", 0, QEMU_OPTION_snapshot,
     "-snapshot       write to temporary files instead of disk image files\n",
     QEMU_ARCH_ALL)
@@ -595,20 +399,188 @@ the raw disk image you use is not written back. You can however force
 the write back by pressing @key{C-a s} (@pxref{disk_images}).
 ETEXI
 
-DEF("hdachs", HAS_ARG, QEMU_OPTION_hdachs, \
-    "-hdachs c,h,s[,t]\n" \
-    "                force hard disk 0 physical geometry and the optional BIOS\n" \
-    "                translation (t=none or lba) (usually QEMU can guess them)\n",
+DEF("m", HAS_ARG, QEMU_OPTION_m,
+    "-m megs         set virtual RAM size to megs MB [default="
+    stringify(DEFAULT_RAM_SIZE) "]\n", QEMU_ARCH_ALL)
+STEXI
+@item -m @var{megs}
+@findex -m
+Set virtual RAM size to @var{megs} megabytes. Default is 128 MiB.  Optionally,
+a suffix of ``M'' or ``G'' can be used to signify a value in megabytes or
+gigabytes respectively.
+ETEXI
+
+DEF("mem-path", HAS_ARG, QEMU_OPTION_mempath,
+    "-mem-path FILE  provide backing storage for guest RAM\n", QEMU_ARCH_ALL)
+STEXI
+@item -mem-path @var{path}
+Allocate guest RAM from a temporarily created file in @var{path}.
+ETEXI
+
+#ifdef MAP_POPULATE
+DEF("mem-prealloc", 0, QEMU_OPTION_mem_prealloc,
+    "-mem-prealloc   preallocate guest memory (use with -mem-path)\n",
     QEMU_ARCH_ALL)
 STEXI
-@item -hdachs @var{c},@var{h},@var{s},[,@var{t}]
-@findex -hdachs
-Force hard disk 0 physical geometry (1 <= @var{c} <= 16383, 1 <=
-@var{h} <= 16, 1 <= @var{s} <= 63) and optionally force the BIOS
-translation mode (@var{t}=none, lba or auto). Usually QEMU can guess
-all those parameters. This option is useful for old MS-DOS disk
-images.
+@item -mem-prealloc
+Preallocate memory when using -mem-path.
 ETEXI
+#endif
+
+DEF("k", HAS_ARG, QEMU_OPTION_k,
+    "-k language     use keyboard layout (for example 'fr' for French)\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -k @var{language}
+@findex -k
+Use keyboard layout @var{language} (for example @code{fr} for
+French). This option is only needed where it is not easy to get raw PC
+keycodes (e.g. on Macs, with some X11 servers or with a VNC
+display). You don't normally need to use it on PC/Linux or PC/Windows
+hosts.
+
+The available layouts are:
+@example
+ar  de-ch  es  fo     fr-ca  hu  ja  mk     no  pt-br  sv
+da  en-gb  et  fr     fr-ch  is  lt  nl     pl  ru     th
+de  en-us  fi  fr-be  hr     it  lv  nl-be  pt  sl     tr
+@end example
+
+The default is @code{en-us}.
+ETEXI
+
+
+DEF("audio-help", 0, QEMU_OPTION_audio_help,
+    "-audio-help     print list of audio drivers and their options\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -audio-help
+@findex -audio-help
+Will show the audio subsystem help: list of drivers, tunable
+parameters.
+ETEXI
+
+DEF("soundhw", HAS_ARG, QEMU_OPTION_soundhw,
+    "-soundhw c1,... enable audio support\n"
+    "                and only specified sound cards (comma separated list)\n"
+    "                use -soundhw ? to get the list of supported cards\n"
+    "                use -soundhw all to enable all of them\n", QEMU_ARCH_ALL)
+STEXI
+@item -soundhw @var{card1}[,@var{card2},...] or -soundhw all
+@findex -soundhw
+Enable audio and selected sound hardware. Use ? to print all
+available sound hardware.
+
+@example
+qemu-system-i386 -soundhw sb16,adlib disk.img
+qemu-system-i386 -soundhw es1370 disk.img
+qemu-system-i386 -soundhw ac97 disk.img
+qemu-system-i386 -soundhw hda disk.img
+qemu-system-i386 -soundhw all disk.img
+qemu-system-i386 -soundhw ?
+@end example
+
+Note that Linux's i810_audio OSS kernel (for AC97) module might
+require manually specifying clocking.
+
+@example
+modprobe i810_audio clocking=48000
+@end example
+ETEXI
+
+DEF("balloon", HAS_ARG, QEMU_OPTION_balloon,
+    "-balloon none   disable balloon device\n"
+    "-balloon virtio[,addr=str]\n"
+    "                enable virtio balloon device (default)\n", QEMU_ARCH_ALL)
+STEXI
+@item -balloon none
+@findex -balloon
+Disable balloon device.
+@item -balloon virtio[,addr=@var{addr}]
+Enable virtio balloon device (default), optionally with PCI address
+@var{addr}.
+ETEXI
+
+STEXI
+@end table
+ETEXI
+
+DEF("usb", 0, QEMU_OPTION_usb,
+    "-usb            enable the USB driver (will be the default soon)\n",
+    QEMU_ARCH_ALL)
+STEXI
+USB options:
+@table @option
+
+@item -usb
+@findex -usb
+Enable the USB driver (will be the default soon)
+ETEXI
+
+DEF("usbdevice", HAS_ARG, QEMU_OPTION_usbdevice,
+    "-usbdevice name add the host or guest USB device 'name'\n",
+    QEMU_ARCH_ALL)
+STEXI
+
+@item -usbdevice @var{devname}
+@findex -usbdevice
+Add the USB device @var{devname}. @xref{usb_devices}.
+
+@table @option
+
+@item mouse
+Virtual Mouse. This will override the PS/2 mouse emulation when activated.
+
+@item tablet
+Pointer device that uses absolute coordinates (like a touchscreen). This
+means QEMU is able to report the mouse position without having to grab the
+mouse. Also overrides the PS/2 mouse emulation when activated.
+
+@item disk:[format=@var{format}]:@var{file}
+Mass storage device based on file. The optional @var{format} argument
+will be used rather than detecting the format. Can be used to specifiy
+@code{format=raw} to avoid interpreting an untrusted format header.
+
+@item host:@var{bus}.@var{addr}
+Pass through the host device identified by @var{bus}.@var{addr} (Linux only).
+
+@item host:@var{vendor_id}:@var{product_id}
+Pass through the host device identified by @var{vendor_id}:@var{product_id}
+(Linux only).
+
+@item serial:[vendorid=@var{vendor_id}][,productid=@var{product_id}]:@var{dev}
+Serial converter to host character device @var{dev}, see @code{-serial} for the
+available devices.
+
+@item braille
+Braille device.  This will use BrlAPI to display the braille output on a real
+or fake device.
+
+@item net:@var{options}
+Network adapter that supports CDC ethernet and RNDIS protocols.
+
+@end table
+ETEXI
+
+DEF("device", HAS_ARG, QEMU_OPTION_device,
+    "-device driver[,prop[=value][,...]]\n"
+    "                add device (based on driver)\n"
+    "                prop=value,... sets driver properties\n"
+    "                use -device ? to print all possible drivers\n"
+    "                use -device driver,? to print all possible properties\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -device @var{driver}[,@var{prop}[=@var{value}][,...]]
+@findex -device
+Add device @var{driver}.  @var{prop}=@var{value} sets driver
+properties.  Valid properties depend on the driver.  To get help on
+possible drivers and properties, use @code{-device ?} and
+@code{-device @var{driver},?}.
+ETEXI
+
+DEFHEADING()
+
+DEFHEADING(File system options:)
 
 DEF("fsdev", HAS_ARG, QEMU_OPTION_fsdev,
     "-fsdev fsdriver,id=id[,path=path,][security_model={mapped-xattr|mapped-file|passthrough|none}]\n"
@@ -672,6 +644,10 @@ Specifies the tag name to be used by the guest to mount this export point
 
 ETEXI
 
+DEFHEADING()
+
+DEFHEADING(Virtual File system pass-through options:)
+
 DEF("virtfs", HAS_ARG, QEMU_OPTION_virtfs,
     "-virtfs local,path=path,mount_tag=tag,security_model=[mapped-xattr|mapped-file|passthrough|none]\n"
     "        [,writeout=immediate][,readonly][,socket=socket|sock_fd=sock_fd]\n",
@@ -733,76 +709,39 @@ STEXI
 Create synthetic file system image
 ETEXI
 
-STEXI
-@end table
-ETEXI
 DEFHEADING()
 
-DEFHEADING(USB options:)
-STEXI
-@table @option
-ETEXI
-
-DEF("usb", 0, QEMU_OPTION_usb,
-    "-usb            enable the USB driver (will be the default soon)\n",
+DEF("name", HAS_ARG, QEMU_OPTION_name,
+    "-name string1[,process=string2]\n"
+    "                set the name of the guest\n"
+    "                string1 sets the window title and string2 the process name (on Linux)\n",
     QEMU_ARCH_ALL)
 STEXI
-@item -usb
-@findex -usb
-Enable the USB driver (will be the default soon)
+@item -name @var{name}
+@findex -name
+Sets the @var{name} of the guest.
+This name will be displayed in the SDL window caption.
+The @var{name} will also be used for the VNC server.
+Also optionally set the top visible process name in Linux.
 ETEXI
 
-DEF("usbdevice", HAS_ARG, QEMU_OPTION_usbdevice,
-    "-usbdevice name add the host or guest USB device 'name'\n",
-    QEMU_ARCH_ALL)
+DEF("uuid", HAS_ARG, QEMU_OPTION_uuid,
+    "-uuid %08x-%04x-%04x-%04x-%012x\n"
+    "                specify machine UUID\n", QEMU_ARCH_ALL)
 STEXI
-
-@item -usbdevice @var{devname}
-@findex -usbdevice
-Add the USB device @var{devname}. @xref{usb_devices}.
-
-@table @option
-
-@item mouse
-Virtual Mouse. This will override the PS/2 mouse emulation when activated.
-
-@item tablet
-Pointer device that uses absolute coordinates (like a touchscreen). This
-means QEMU is able to report the mouse position without having to grab the
-mouse. Also overrides the PS/2 mouse emulation when activated.
-
-@item disk:[format=@var{format}]:@var{file}
-Mass storage device based on file. The optional @var{format} argument
-will be used rather than detecting the format. Can be used to specifiy
-@code{format=raw} to avoid interpreting an untrusted format header.
-
-@item host:@var{bus}.@var{addr}
-Pass through the host device identified by @var{bus}.@var{addr} (Linux only).
-
-@item host:@var{vendor_id}:@var{product_id}
-Pass through the host device identified by @var{vendor_id}:@var{product_id}
-(Linux only).
-
-@item serial:[vendorid=@var{vendor_id}][,productid=@var{product_id}]:@var{dev}
-Serial converter to host character device @var{dev}, see @code{-serial} for the
-available devices.
-
-@item braille
-Braille device.  This will use BrlAPI to display the braille output on a real
-or fake device.
-
-@item net:@var{options}
-Network adapter that supports CDC ethernet and RNDIS protocols.
-
-@end table
+@item -uuid @var{uuid}
+@findex -uuid
+Set system UUID.
 ETEXI
 
 STEXI
 @end table
 ETEXI
+
 DEFHEADING()
 
 DEFHEADING(Display options:)
+
 STEXI
 @table @option
 ETEXI
@@ -810,7 +749,6 @@ ETEXI
 DEF("display", HAS_ARG, QEMU_OPTION_display,
     "-display sdl[,frame=on|off][,alt_grab=on|off][,ctrl_grab=on|off]\n"
     "            [,window_close=on|off]|curses|none|\n"
-    "            gtk[,grab_on_hover=on|off]|\n"
     "            vnc=<display>[,<optargs>]\n"
     "                select display type\n", QEMU_ARCH_ALL)
 STEXI
@@ -834,10 +772,6 @@ graphics card, but its output will not be displayed to the QEMU
 user. This option differs from the -nographic option in that it
 only affects what is done with video output; -nographic also changes
 the destination of the serial and parallel port data.
-@item gtk
-Display video output in a GTK window. This interface provides drop-down
-menus and other UI elements to configure and control the VM during
-runtime.
 @item vnc
 Start a VNC server on display <arg>
 @end table
@@ -852,10 +786,8 @@ STEXI
 Normally, QEMU uses SDL to display the VGA output. With this option,
 you can totally disable graphical output so that QEMU is a simple
 command line application. The emulated serial port is redirected on
-the console and muxed with the monitor (unless redirected elsewhere
-explicitly). Therefore, you can still use QEMU to debug a Linux kernel
-with a serial console.  Use @key{C-a h} for help on switching between
-the console and monitor.
+the console. Therefore, you can still use QEMU to debug a Linux kernel
+with a serial console.
 ETEXI
 
 DEF("curses", 0, QEMU_OPTION_curses,
@@ -863,7 +795,7 @@ DEF("curses", 0, QEMU_OPTION_curses,
     QEMU_ARCH_ALL)
 STEXI
 @item -curses
-@findex -curses
+@findex curses
 Normally, QEMU uses SDL to display the VGA output.  With this option,
 QEMU can display the VGA output when in text mode using a
 curses/ncurses interface.  Nothing is displayed in graphical mode.
@@ -929,8 +861,8 @@ DEF("spice", HAS_ARG, QEMU_OPTION_spice,
     "       [,jpeg-wan-compression=[auto|never|always]]\n"
     "       [,zlib-glz-wan-compression=[auto|never|always]]\n"
     "       [,streaming-video=[off|all|filter]][,disable-copy-paste]\n"
-    "       [,disable-agent-file-xfer][,agent-mouse=[on|off]]\n"
-    "       [,playback-compression=[on|off]][,seamless-migration=[on|off]]\n"
+    "       [,agent-mouse=[on|off]][,playback-compression=[on|off]]\n"
+    "       [,seamless-migration=[on|off]]\n"
     "   enable spice\n"
     "   at least one of {port, tls-port} is mandatory\n",
     QEMU_ARCH_ALL)
@@ -972,9 +904,6 @@ Allow client connects without authentication.
 
 @item disable-copy-paste
 Disable copy paste between the client and the guest.
-
-@item disable-agent-file-xfer
-Disable spice-vdagent based file-xfer between the client and the guest.
 
 @item tls-port=<nr>
 Set the TCP port spice is listening on for encrypted channels.
@@ -1037,13 +966,13 @@ DEF("rotate", HAS_ARG, QEMU_OPTION_rotate,
     "-rotate <deg>   rotate graphical output some deg left (only PXA LCD)\n",
     QEMU_ARCH_ALL)
 STEXI
-@item -rotate @var{deg}
+@item -rotate
 @findex -rotate
 Rotate graphical output some deg left (only PXA LCD).
 ETEXI
 
 DEF("vga", HAS_ARG, QEMU_OPTION_vga,
-    "-vga [std|cirrus|vmware|qxl|xenfb|tcx|cg3|none]\n"
+    "-vga [std|cirrus|vmware|qxl|xenfb|none]\n"
     "                select video card type\n", QEMU_ARCH_ALL)
 STEXI
 @item -vga @var{type}
@@ -1068,14 +997,6 @@ card.
 QXL paravirtual graphic card.  It is VGA compatible (including VESA
 2.0 VBE support).  Works best with qxl guest drivers installed though.
 Recommended choice when using the spice protocol.
-@item tcx
-(sun4m only) Sun TCX framebuffer. This is the default framebuffer for
-sun4m machines and offers both 8-bit and 24-bit colour depths at a
-fixed resolution of 1024x768.
-@item cg3
-(sun4m only) Sun cgthree framebuffer. This is a simple 8-bit framebuffer
-for sun4m machines available in both 1024x768 (OpenBIOS) and 1152x900 (OBP)
-resolutions aimed at people wishing to run older Solaris versions.
 @item none
 Disable VGA card.
 @end table
@@ -1142,16 +1063,6 @@ Connect to a listening VNC client via a ``reverse'' connection. The
 client is specified by the @var{display}. For reverse network
 connections (@var{host}:@var{d},@code{reverse}), the @var{d} argument
 is a TCP port number, not a display number.
-
-@item websocket
-
-Opens an additional TCP listening port dedicated to VNC Websocket connections.
-By definition the Websocket port is 5700+@var{display}. If @var{host} is
-specified connections will only be allowed from this host.
-As an alternative the Websocket port could be specified by using
-@code{websocket}=@var{port}.
-TLS encryption for the Websocket connection is supported if the required
-certificates are specified with the VNC option @option{x509}.
 
 @item password
 
@@ -1264,6 +1175,7 @@ ETEXI
 STEXI
 @end table
 ETEXI
+
 ARCHHEADING(, QEMU_ARCH_I386)
 
 ARCHHEADING(i386 target only:, QEMU_ARCH_I386)
@@ -1291,8 +1203,9 @@ DEF("no-fd-bootchk", 0, QEMU_OPTION_no_fd_bootchk,
 STEXI
 @item -no-fd-bootchk
 @findex -no-fd-bootchk
-Disable boot signature checking for floppy disks in BIOS. May
+Disable boot signature checking for floppy disks in Bochs BIOS. It may
 be needed to boot from old floppy disks.
+TODO: check reference to Bochs BIOS.
 ETEXI
 
 DEF("no-acpi", 0, QEMU_OPTION_no_acpi,
@@ -1341,16 +1254,17 @@ STEXI
 Load SMBIOS entry from binary file.
 
 @item -smbios type=0[,vendor=@var{str}][,version=@var{str}][,date=@var{str}][,release=@var{%d.%d}]
+@findex -smbios
 Specify SMBIOS type 0 fields
 
 @item -smbios type=1[,manufacturer=@var{str}][,product=@var{str}] [,version=@var{str}][,serial=@var{str}][,uuid=@var{uuid}][,sku=@var{str}] [,family=@var{str}]
 Specify SMBIOS type 1 fields
 ETEXI
 
+DEFHEADING()
 STEXI
 @end table
 ETEXI
-DEFHEADING()
 
 DEFHEADING(Network options:)
 STEXI
@@ -1372,8 +1286,8 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "                create a new Network Interface Card and connect it to VLAN 'n'\n"
 #ifdef CONFIG_SLIRP
     "-net user[,vlan=n][,name=str][,net=addr[/mask]][,host=addr][,restrict=on|off]\n"
-    "         [,hostname=host][,dhcpstart=addr][,dns=addr][,dnssearch=domain][,tftp=dir]\n"
-    "         [,bootfile=f][,hostfwd=rule][,guestfwd=rule]"
+    "         [,hostname=host][,dhcpstart=addr][,dns=addr][,tftp=dir][,bootfile=f]\n"
+    "         [,hostfwd=rule][,guestfwd=rule]"
 #ifndef _WIN32
                                              "[,smb=dir[,smbserver=addr]]\n"
 #endif
@@ -1384,8 +1298,8 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "-net tap[,vlan=n][,name=str],ifname=name\n"
     "                connect the host TAP network interface to VLAN 'n'\n"
 #else
-    "-net tap[,vlan=n][,name=str][,fd=h][,fds=x:y:...:z][,ifname=name][,script=file][,downscript=dfile][,helper=helper][,sndbuf=nbytes][,vnet_hdr=on|off][,vhost=on|off][,vhostfd=h][,vhostfds=x:y:...:z][,vhostforce=on|off][,queues=n]\n"
-    "                connect the host TAP network interface to VLAN 'n'\n"
+    "-net tap[,vlan=n][,name=str][,fd=h][,ifname=name][,script=file][,downscript=dfile][,helper=helper][,sndbuf=nbytes][,vnet_hdr=on|off][,vhost=on|off][,vhostfd=h][,vhostforce=on|off]\n"
+    "                connect the host TAP network interface to VLAN 'n' \n"
     "                use network scripts 'file' (default=" DEFAULT_NETWORK_SCRIPT ")\n"
     "                to configure it and 'dfile' (default=" DEFAULT_NETWORK_DOWN_SCRIPT ")\n"
     "                to deconfigure it\n"
@@ -1393,7 +1307,6 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "                use network helper 'helper' (default=" DEFAULT_BRIDGE_HELPER ") to\n"
     "                configure it\n"
     "                use 'fd=h' to connect to an already opened TAP interface\n"
-    "                use 'fds=x:y:...:z' to connect to already opened multiqueue capable TAP interfaces\n"
     "                use 'sndbuf=nbytes' to limit the size of the send buffer (the\n"
     "                default is disabled 'sndbuf=0' to enable flow control set 'sndbuf=1048576')\n"
     "                use vnet_hdr=off to avoid enabling the IFF_VNET_HDR tap flag\n"
@@ -1402,8 +1315,6 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "                    (only has effect for virtio guests which use MSIX)\n"
     "                use vhostforce=on to force vhost on for non-MSIX virtio guests\n"
     "                use 'vhostfd=h' to connect to an already opened vhost net device\n"
-    "                use 'vhostfds=x:y:...:z to connect to multiple already opened vhost net devices\n"
-    "                use 'queues=n' to specify the number of queues to be created for multiqueue TAP\n"
     "-net bridge[,vlan=n][,name=str][,br=bridge][,helper=helper]\n"
     "                connects a host TAP network interface to a host bridge device 'br'\n"
     "                (default=" DEFAULT_BRIDGE_INTERFACE ") using the program 'helper'\n"
@@ -1423,12 +1334,6 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "                Use group 'groupname' and mode 'octalmode' to change default\n"
     "                ownership and permissions for communication port.\n"
 #endif
-#ifdef CONFIG_NETMAP
-    "-net netmap,ifname=name[,devname=nmname]\n"
-    "                attach to the existing netmap-enabled network interface 'name', or to a\n"
-    "                VALE port (created on the fly) called 'name' ('nmname' is name of the \n"
-    "                netmap device, defaults to '/dev/netmap')\n"
-#endif
     "-net dump[,vlan=n][,file=f][,len=n]\n"
     "                dump traffic on vlan 'n' to file 'f' (max n bytes per packet)\n"
     "-net none       use it alone to have zero network devices. If no -net option\n"
@@ -1443,11 +1348,7 @@ DEF("netdev", HAS_ARG, QEMU_OPTION_netdev,
 #ifdef CONFIG_VDE
     "vde|"
 #endif
-#ifdef CONFIG_NETMAP
-    "netmap|"
-#endif
-    "socket|"
-    "hubport],id=str[,option][,option][,...]\n", QEMU_ARCH_ALL)
+    "socket],id=str[,option][,option][,...]\n", QEMU_ARCH_ALL)
 STEXI
 @item -net nic[,vlan=@var{n}][,macaddr=@var{mac}][,model=@var{type}] [,name=@var{name}][,addr=@var{addr}][,vectors=@var{v}]
 @findex -net
@@ -1464,11 +1365,10 @@ Valid values for @var{type} are
 @code{virtio}, @code{i82551}, @code{i82557b}, @code{i82559er},
 @code{ne2k_pci}, @code{ne2k_isa}, @code{pcnet}, @code{rtl8139},
 @code{e1000}, @code{smc91c111}, @code{lance} and @code{mcf_fec}.
-Not all devices are supported on all targets.  Use @code{-net nic,model=help}
+Not all devices are supported on all targets.  Use -net nic,model=?
 for a list of available devices for your target.
 
 @item -netdev user,id=@var{id}[,@var{option}][,@var{option}][,...]
-@findex -netdev
 @item -net user[,@var{option}][,@var{option}][,...]
 Use the user mode network stack which requires no administrator
 privilege to run. Valid options are:
@@ -1496,7 +1396,7 @@ able to contact the host and no guest IP packets will be routed over the host
 to the outside. This option does not affect any explicitly set forwarding rules.
 
 @item hostname=@var{name}
-Specifies the client hostname reported by the built-in DHCP server.
+Specifies the client hostname reported by the builtin DHCP server.
 
 @item dhcpstart=@var{addr}
 Specify the first of the 16 IPs the built-in DHCP server can assign. Default
@@ -1506,18 +1406,6 @@ is the 15th to 31st IP in the guest network, i.e. x.x.x.15 to x.x.x.31.
 Specify the guest-visible address of the virtual nameserver. The address must
 be different from the host address. Default is the 3rd IP in the guest network,
 i.e. x.x.x.3.
-
-@item dnssearch=@var{domain}
-Provides an entry for the domain-search list sent by the built-in
-DHCP server. More than one domain suffix can be transmitted by specifying
-this option multiple times. If supported, this will cause the guest to
-automatically try to append the given domain suffix(es) in case a domain name
-can not be resolved.
-
-Example:
-@example
-qemu -net user,dnssearch=mgmt.example.org,dnssearch=example.org [...]
-@end example
 
 @item tftp=@var{dir}
 When using the user mode network stack, activate a built-in TFTP
@@ -1628,7 +1516,7 @@ to disable script execution.
 
 If running QEMU as an unprivileged user, use the network helper
 @var{helper} to configure the TAP interface. The default network
-helper executable is @file{/path/to/qemu-bridge-helper}.
+helper executable is @file{/usr/local/libexec/qemu-bridge-helper}.
 
 @option{fd}=@var{h} can be used to specify the handle of an already
 opened host TAP interface.
@@ -1652,7 +1540,7 @@ qemu-system-i386 linux.img \
 #launch a QEMU instance with the default network helper to
 #connect a TAP device to bridge br0
 qemu-system-i386 linux.img \
-                 -net nic -net tap,"helper=/path/to/qemu-bridge-helper"
+                 -net nic -net tap,"helper=/usr/local/libexec/qemu-bridge-helper"
 @end example
 
 @item -netdev bridge,id=@var{id}[,br=@var{bridge}][,helper=@var{helper}]
@@ -1661,7 +1549,7 @@ Connect a host TAP network interface to a host bridge device.
 
 Use the network helper @var{helper} to configure the TAP interface and
 attach it to the bridge. The default network helper executable is
-@file{/path/to/qemu-bridge-helper} and the default bridge
+@file{/usr/local/libexec/qemu-bridge-helper} and the default bridge
 device is @file{br0}.
 
 Examples:
@@ -1769,14 +1657,6 @@ vde_switch -F -sock /tmp/myswitch
 qemu-system-i386 linux.img -net nic -net vde,sock=/tmp/myswitch
 @end example
 
-@item -netdev hubport,id=@var{id},hubid=@var{hubid}
-
-Create a hub port on QEMU "vlan" @var{hubid}.
-
-The hubport netdev lets you connect a NIC to a QEMU "vlan" instead of a single
-netdev.  @code{-net} and @code{-device} with parameter @option{vlan} create the
-required hub automatically.
-
 @item -net dump[,vlan=@var{n}][,file=@var{file}][,len=@var{len}]
 Dump network traffic on VLAN @var{n} to file @var{file} (@file{qemu-vlan0.pcap} by default).
 At most @var{len} bytes (64k by default) per packet are stored. The file format is
@@ -1786,19 +1666,13 @@ libpcap, so it can be analyzed with tools such as tcpdump or Wireshark.
 Indicate that no network devices should be configured. It is used to
 override the default configuration (@option{-net nic -net user}) which
 is activated if no @option{-net} options are provided.
-ETEXI
 
-STEXI
 @end table
 ETEXI
+
 DEFHEADING()
 
 DEFHEADING(Character device options:)
-STEXI
-
-The general form of a character device option is:
-@table @option
-ETEXI
 
 DEF("chardev", HAS_ARG, QEMU_OPTION_chardev,
     "-chardev null,id=id[,mux=on|off]\n"
@@ -1810,7 +1684,6 @@ DEF("chardev", HAS_ARG, QEMU_OPTION_chardev,
     "-chardev msmouse,id=id[,mux=on|off]\n"
     "-chardev vc,id=id[[,width=width][,height=height]][[,cols=cols][,rows=rows]]\n"
     "         [,mux=on|off]\n"
-    "-chardev ringbuf,id=id[,size=size]\n"
     "-chardev file,id=id,path=path[,mux=on|off]\n"
     "-chardev pipe,id=id,path=path[,mux=on|off]\n"
 #ifdef _WIN32
@@ -1825,21 +1698,22 @@ DEF("chardev", HAS_ARG, QEMU_OPTION_chardev,
 #endif
 #if defined(__linux__) || defined(__sun__) || defined(__FreeBSD__) \
         || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
-    "-chardev serial,id=id,path=path[,mux=on|off]\n"
     "-chardev tty,id=id,path=path[,mux=on|off]\n"
 #endif
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__DragonFly__)
-    "-chardev parallel,id=id,path=path[,mux=on|off]\n"
     "-chardev parport,id=id,path=path[,mux=on|off]\n"
 #endif
 #if defined(CONFIG_SPICE)
     "-chardev spicevmc,id=id,name=name[,debug=debug]\n"
-    "-chardev spiceport,id=id,name=name[,debug=debug]\n"
 #endif
     , QEMU_ARCH_ALL
 )
 
 STEXI
+
+The general form of a character device option is:
+@table @option
+
 @item -chardev @var{backend} ,id=@var{id} [,mux=on|off] [,@var{options}]
 @findex -chardev
 Backend is one of:
@@ -1848,7 +1722,6 @@ Backend is one of:
 @option{udp},
 @option{msmouse},
 @option{vc},
-@option{ringbuf},
 @option{file},
 @option{pipe},
 @option{console},
@@ -1857,10 +1730,8 @@ Backend is one of:
 @option{stdio},
 @option{braille},
 @option{tty},
-@option{parallel},
 @option{parport},
 @option{spicevmc}.
-@option{spiceport}.
 The specific backend will determine the applicable options.
 
 All devices must have an id, which can be any string up to 127 characters long.
@@ -1957,11 +1828,6 @@ the console, in pixels.
 @option{cols} and @option{rows} specify that the console be sized to fit a text
 console with the given dimensions.
 
-@item -chardev ringbuf ,id=@var{id} [,size=@var{size}]
-
-Create a ring buffer with fixed size @option{size}.
-@var{size} must be a power of two, and defaults to @code{64K}).
-
 @item -chardev file ,id=@var{id} ,path=@var{path}
 
 Log all traffic received from the guest to a file.
@@ -1998,8 +1864,8 @@ take any options.
 
 Send traffic from the guest to a serial device on the host.
 
-On Unix hosts serial will actually accept any tty device,
-not only serial lines.
+@option{serial} is
+only available on Windows hosts.
 
 @option{path} specifies the name of the serial device to open.
 
@@ -2025,15 +1891,16 @@ Connect to a local BrlAPI server. @option{braille} does not take any options.
 
 @item -chardev tty ,id=@var{id} ,path=@var{path}
 
+Connect to a local tty device.
+
 @option{tty} is only available on Linux, Sun, FreeBSD, NetBSD, OpenBSD and
-DragonFlyBSD hosts.  It is an alias for @option{serial}.
+DragonFlyBSD hosts.
 
 @option{path} specifies the path to the tty. @option{path} is required.
 
-@item -chardev parallel ,id=@var{id} ,path=@var{path}
 @item -chardev parport ,id=@var{id} ,path=@var{path}
 
-@option{parallel} is only available on Linux, FreeBSD and DragonFlyBSD hosts.
+@option{parport} is only available on Linux, FreeBSD and DragonFlyBSD hosts.
 
 Connect to a local parallel port.
 
@@ -2050,25 +1917,13 @@ required.
 
 Connect to a spice virtual machine channel, such as vdiport.
 
-@item -chardev spiceport ,id=@var{id} ,debug=@var{debug}, name=@var{name}
-
-@option{spiceport} is only available when spice support is built in.
-
-@option{debug} debug level for spicevmc
-
-@option{name} name of spice port to connect to
-
-Connect to a spice port, allowing a Spice client to handle the traffic
-identified by a name (preferably a fqdn).
-ETEXI
-
-STEXI
 @end table
 ETEXI
+
 DEFHEADING()
 
-DEFHEADING(Device URL Syntax:)
 STEXI
+DEFHEADING(Device URL Syntax:)
 
 In addition to using normal file images for the emulated storage devices,
 QEMU can also use networked resources such as iSCSI devices. These are
@@ -2112,7 +1967,7 @@ ETEXI
 DEF("iscsi", HAS_ARG, QEMU_OPTION_iscsi,
     "-iscsi [user=user][,password=password]\n"
     "       [,header-digest=CRC32C|CR32C-NONE|NONE-CRC32C|NONE\n"
-    "       [,initiator-name=initiator-iqn][,id=target-iqn]\n"
+    "       [,initiator-name=iqn]\n"
     "                iSCSI session parameters\n", QEMU_ARCH_ALL)
 STEXI
 
@@ -2140,62 +1995,37 @@ Example for Unix Domain Sockets
 qemu-system-i386 --drive file=nbd:unix:/tmp/nbd-socket
 @end example
 
-@item SSH
-QEMU supports SSH (Secure Shell) access to remote disks.
-
-Examples:
-@example
-qemu-system-i386 -drive file=ssh://user@@host/path/to/disk.img
-qemu-system-i386 -drive file.driver=ssh,file.user=user,file.host=host,file.port=22,file.path=/path/to/disk.img
-@end example
-
-Currently authentication must be done using ssh-agent.  Other
-authentication methods may be supported in future.
-
 @item Sheepdog
 Sheepdog is a distributed storage system for QEMU.
 QEMU supports using either local sheepdog devices or remote networked
 devices.
 
 Syntax for specifying a sheepdog device
-@example
-sheepdog[+tcp|+unix]://[host:port]/vdiname[?socket=path][#snapid|#tag]
-@end example
+@table @list
+``sheepdog:<vdiname>''
+
+``sheepdog:<vdiname>:<snapid>''
+
+``sheepdog:<vdiname>:<tag>''
+
+``sheepdog:<host>:<port>:<vdiname>''
+
+``sheepdog:<host>:<port>:<vdiname>:<snapid>''
+
+``sheepdog:<host>:<port>:<vdiname>:<tag>''
+@end table
 
 Example
 @example
-qemu-system-i386 --drive file=sheepdog://192.0.2.1:30000/MyVirtualMachine
+qemu-system-i386 --drive file=sheepdog:192.0.2.1:30000:MyVirtualMachine
 @end example
 
 See also @url{http://http://www.osrg.net/sheepdog/}.
 
-@item GlusterFS
-GlusterFS is an user space distributed file system.
-QEMU supports the use of GlusterFS volumes for hosting VM disk images using
-TCP, Unix Domain Sockets and RDMA transport protocols.
-
-Syntax for specifying a VM disk image on GlusterFS volume is
-@example
-gluster[+transport]://[server[:port]]/volname/image[?socket=...]
-@end example
-
-
-Example
-@example
-qemu-system-x86_64 --drive file=gluster://192.0.2.1/testvol/a.img
-@end example
-
-See also @url{http://www.gluster.org}.
-ETEXI
-
-STEXI
 @end table
 ETEXI
 
 DEFHEADING(Bluetooth(R) options:)
-STEXI
-@table @option
-ETEXI
 
 DEF("bt", HAS_ARG, QEMU_OPTION_bt, \
     "-bt hci,null    dumb bluetooth HCI - doesn't respond to commands\n" \
@@ -2209,6 +2039,8 @@ DEF("bt", HAS_ARG, QEMU_OPTION_bt, \
     "                emulate a bluetooth device 'dev' in scatternet 'n'\n",
     QEMU_ARCH_ALL)
 STEXI
+@table @option
+
 @item -bt hci[...]
 @findex -bt
 Defines the function of the corresponding Bluetooth HCI.  -bt options
@@ -2260,87 +2092,10 @@ currently:
 @item keyboard
 Virtual wireless keyboard implementing the HIDP bluetooth profile.
 @end table
-ETEXI
-
-STEXI
 @end table
-ETEXI
-DEFHEADING()
-
-#ifdef CONFIG_TPM
-DEFHEADING(TPM device options:)
-
-DEF("tpmdev", HAS_ARG, QEMU_OPTION_tpmdev, \
-    "-tpmdev passthrough,id=id[,path=path][,cancel-path=path]\n"
-    "                use path to provide path to a character device; default is /dev/tpm0\n"
-    "                use cancel-path to provide path to TPM's cancel sysfs entry; if\n"
-    "                not provided it will be searched for in /sys/class/misc/tpm?/device\n",
-    QEMU_ARCH_ALL)
-STEXI
-
-The general form of a TPM device option is:
-@table @option
-
-@item -tpmdev @var{backend} ,id=@var{id} [,@var{options}]
-@findex -tpmdev
-Backend type must be:
-@option{passthrough}.
-
-The specific backend type will determine the applicable options.
-The @code{-tpmdev} option creates the TPM backend and requires a
-@code{-device} option that specifies the TPM frontend interface model.
-
-Options to each backend are described below.
-
-Use 'help' to print all available TPM backend types.
-@example
-qemu -tpmdev help
-@end example
-
-@item -tpmdev passthrough, id=@var{id}, path=@var{path}, cancel-path=@var{cancel-path}
-
-(Linux-host only) Enable access to the host's TPM using the passthrough
-driver.
-
-@option{path} specifies the path to the host's TPM device, i.e., on
-a Linux host this would be @code{/dev/tpm0}.
-@option{path} is optional and by default @code{/dev/tpm0} is used.
-
-@option{cancel-path} specifies the path to the host TPM device's sysfs
-entry allowing for cancellation of an ongoing TPM command.
-@option{cancel-path} is optional and by default QEMU will search for the
-sysfs entry to use.
-
-Some notes about using the host's TPM with the passthrough driver:
-
-The TPM device accessed by the passthrough driver must not be
-used by any other application on the host.
-
-Since the host's firmware (BIOS/UEFI) has already initialized the TPM,
-the VM's firmware (BIOS/UEFI) will not be able to initialize the
-TPM again and may therefore not show a TPM-specific menu that would
-otherwise allow the user to configure the TPM, e.g., allow the user to
-enable/disable or activate/deactivate the TPM.
-Further, if TPM ownership is released from within a VM then the host's TPM
-will get disabled and deactivated. To enable and activate the
-TPM again afterwards, the host has to be rebooted and the user is
-required to enter the firmware's menu to enable and activate the TPM.
-If the TPM is left disabled and/or deactivated most TPM commands will fail.
-
-To create a passthrough TPM use the following two options:
-@example
--tpmdev passthrough,id=tpm0 -device tpm-tis,tpmdev=tpm0
-@end example
-Note that the @code{-tpmdev} id is @code{tpm0} and is referenced by
-@code{tpmdev=tpm0} in the device option.
-
-@end table
-
 ETEXI
 
 DEFHEADING()
-
-#endif
 
 DEFHEADING(Linux/Multiboot boot specific:)
 STEXI
@@ -2396,9 +2151,11 @@ ETEXI
 STEXI
 @end table
 ETEXI
+
 DEFHEADING()
 
 DEFHEADING(Debug/Expert options:)
+
 STEXI
 @table @option
 ETEXI
@@ -2435,8 +2192,6 @@ vc:80Cx24C
 No device is allocated.
 @item null
 void device
-@item chardev:@var{id}
-Use a named character device defined with the @code{-chardev} option.
 @item /dev/XXX
 [Linux only] Use host tty, e.g. @file{/dev/ttyS0}. The host serial port
 parameters are set according to the emulated ones.
@@ -2516,15 +2271,14 @@ same as if you had specified @code{-serial tcp} except the unix domain socket
 @item mon:@var{dev_string}
 This is a special option to allow the monitor to be multiplexed onto
 another serial port.  The monitor is accessed with key sequence of
-@key{Control-a} and then pressing @key{c}.
+@key{Control-a} and then pressing @key{c}. See monitor access
+@ref{pcsys_keys} in the -nographic section for more keys.
 @var{dev_string} should be any one of the serial devices specified
 above.  An example to multiplex the monitor onto a telnet server
 listening on port 4444 would be:
 @table @code
 @item -serial mon:telnet::4444,server,nowait
 @end table
-When the monitor is multiplexed to stdio in this way, Ctrl+C will not terminate
-QEMU any more but will be passed to the guest instead.
 
 @item braille
 Braille device.  This will use BrlAPI to display the braille output on a real
@@ -2562,7 +2316,6 @@ Redirect the monitor to host device @var{dev} (same devices as the
 serial port).
 The default device is @code{vc} in graphical mode and @code{stdio} in
 non graphical mode.
-Use @code{-monitor none} to disable the default monitor.
 ETEXI
 DEF("qmp", HAS_ARG, QEMU_OPTION_qmp, \
     "-qmp dev        like -monitor but opens in 'control' mode\n",
@@ -2574,9 +2327,9 @@ Like -monitor but opens in 'control' mode.
 ETEXI
 
 DEF("mon", HAS_ARG, QEMU_OPTION_mon, \
-    "-mon [chardev=]name[,mode=readline|control][,default]\n", QEMU_ARCH_ALL)
+    "-mon chardev=[name][,mode=readline|control][,default]\n", QEMU_ARCH_ALL)
 STEXI
-@item -mon [chardev=]name[,mode=readline|control][,default]
+@item -mon chardev=[name][,mode=readline|control][,default]
 @findex -mon
 Setup monitor on chardev @var{name}.
 ETEXI
@@ -2620,19 +2373,6 @@ STEXI
 Do not start CPU at startup (you must type 'c' in the monitor).
 ETEXI
 
-DEF("realtime", HAS_ARG, QEMU_OPTION_realtime,
-    "-realtime [mlock=on|off]\n"
-    "                run qemu with realtime features\n"
-    "                mlock=on|off controls mlock support (default: on)\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -realtime mlock=on|off
-@findex -realtime
-Run qemu with realtime features.
-mlocking qemu and guest memory can be enabled via @option{mlock=on}
-(enabled by default).
-ETEXI
-
 DEF("gdb", HAS_ARG, QEMU_OPTION_gdb, \
     "-gdb dev        wait for gdb connection on 'dev'\n", QEMU_ARCH_ALL)
 STEXI
@@ -2658,21 +2398,36 @@ Shorthand for -gdb tcp::1234, i.e. open a gdbserver on TCP port 1234
 ETEXI
 
 DEF("d", HAS_ARG, QEMU_OPTION_d, \
-    "-d item1,...    enable logging of specified items (use '-d help' for a list of log items)\n",
+    "-d item1,...    output log to /tmp/qemu.log (use -d ? for a list of log items)\n",
     QEMU_ARCH_ALL)
 STEXI
-@item -d @var{item1}[,...]
+@item -d
 @findex -d
-Enable logging of specified items. Use '-d help' for a list of log items.
+Output log in /tmp/qemu.log
 ETEXI
 
 DEF("D", HAS_ARG, QEMU_OPTION_D, \
-    "-D logfile      output log to logfile (default stderr)\n",
+    "-D logfile      output log to logfile (instead of the default /tmp/qemu.log)\n",
     QEMU_ARCH_ALL)
 STEXI
 @item -D @var{logfile}
 @findex -D
-Output log in @var{logfile} instead of to stderr
+Output log in @var{logfile} instead of /tmp/qemu.log
+ETEXI
+
+DEF("hdachs", HAS_ARG, QEMU_OPTION_hdachs, \
+    "-hdachs c,h,s[,t]\n" \
+    "                force hard disk 0 physical geometry and the optional BIOS\n" \
+    "                translation (t=none or lba) (usually QEMU can guess them)\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -hdachs @var{c},@var{h},@var{s},[,@var{t}]
+@findex -hdachs
+Force hard disk 0 physical geometry (1 <= @var{c} <= 16383, 1 <=
+@var{h} <= 16, 1 <= @var{s} <= 63) and optionally force the BIOS
+translation mode (@var{t}=none, lba or auto). Usually QEMU can guess
+all those parameters. This option is useful for old MS-DOS disk
+images.
 ETEXI
 
 DEF("L", HAS_ARG, QEMU_OPTION_L, \
@@ -2778,13 +2533,13 @@ ETEXI
 
 DEF("clock", HAS_ARG, QEMU_OPTION_clock, \
     "-clock          force the use of the given methods for timer alarm.\n" \
-    "                To see what timers are available use '-clock help'\n",
+    "                To see what timers are available use -clock ?\n",
     QEMU_ARCH_ALL)
 STEXI
 @item -clock @var{method}
 @findex -clock
 Force the use of the given methods for timer alarm. To see what timers
-are available use @code{-clock help}.
+are available use -clock ?.
 ETEXI
 
 HXCOMM Options deprecated by -rtc
@@ -2853,7 +2608,7 @@ watchdog with a single timer, or @code{i6300esb} (Intel 6300ESB I/O
 controller hub) which is a much more featureful PCI-based dual-timer
 watchdog.  Choose a model for which your guest has drivers.
 
-Use @code{-watchdog help} to list available hardware models.  Only one
+Use @code{-watchdog ?} to list available hardware models.  Only one
 watchdog can be enabled for a guest.
 ETEXI
 
@@ -2863,7 +2618,6 @@ DEF("watchdog-action", HAS_ARG, QEMU_OPTION_watchdog_action, \
     QEMU_ARCH_ALL)
 STEXI
 @item -watchdog-action @var{action}
-@findex -watchdog-action
 
 The @var{action} controls what QEMU will do when the watchdog timer
 expires.
@@ -3010,7 +2764,7 @@ DEF("sandbox", HAS_ARG, QEMU_OPTION_sandbox, \
     "-sandbox <arg>  Enable seccomp mode 2 system call filter (default 'off').\n",
     QEMU_ARCH_ALL)
 STEXI
-@item -sandbox @var{arg}
+@item -sandbox
 @findex -sandbox
 Enable Seccomp mode 2 system call filter. 'on' will enable syscall filtering and 'off' will
 disable it.  The default is 'off'.
@@ -3083,9 +2837,13 @@ the @var{simple} tracing backend.
 @end table
 ETEXI
 
-HXCOMM Internal use
-DEF("qtest", HAS_ARG, QEMU_OPTION_qtest, "", QEMU_ARCH_ALL)
-DEF("qtest-log", HAS_ARG, QEMU_OPTION_qtest_log, "", QEMU_ARCH_ALL)
+DEF("qtest", HAS_ARG, QEMU_OPTION_qtest,
+    "-qtest CHR      specify tracing options\n",
+    QEMU_ARCH_ALL)
+
+DEF("qtest-log", HAS_ARG, QEMU_OPTION_qtest_log,
+    "-qtest-log LOG  specify tracing options\n",
+    QEMU_ARCH_ALL)
 
 #ifdef __linux__
 DEF("enable-fips", 0, QEMU_OPTION_enablefips,
@@ -3098,48 +2856,21 @@ STEXI
 Enable FIPS 140-2 compliance mode.
 ETEXI
 
-HXCOMM Deprecated by -machine accel=tcg property
-DEF("no-kvm", 0, QEMU_OPTION_no_kvm, "", QEMU_ARCH_I386)
-
-HXCOMM Deprecated by kvm-pit driver properties
+DEF("no-kvm", 0, QEMU_OPTION_no_kvm,
+    "-no-kvm         disable KVM hardware virtualization\n",
+    QEMU_ARCH_ALL)
+DEF("no-kvm-irqchip", 0, QEMU_OPTION_no_kvm_irqchip,
+    "-no-kvm-irqchip disable KVM kernel mode PIC/IOAPIC/LAPIC\n",
+    QEMU_ARCH_I386)
+DEF("no-kvm-pit", 0, QEMU_OPTION_no_kvm_pit,
+    "-no-kvm-pit     disable KVM kernel mode PIT\n",
+    QEMU_ARCH_I386)
 DEF("no-kvm-pit-reinjection", 0, QEMU_OPTION_no_kvm_pit_reinjection,
-    "", QEMU_ARCH_I386)
-
-HXCOMM Deprecated (ignored)
-DEF("no-kvm-pit", 0, QEMU_OPTION_no_kvm_pit, "", QEMU_ARCH_I386)
-
-HXCOMM Deprecated by -machine kernel_irqchip=on|off property
-DEF("no-kvm-irqchip", 0, QEMU_OPTION_no_kvm_irqchip, "", QEMU_ARCH_I386)
-
-HXCOMM Deprecated (ignored)
-DEF("tdf", 0, QEMU_OPTION_tdf,"", QEMU_ARCH_ALL)
-
-DEF("object", HAS_ARG, QEMU_OPTION_object,
-    "-object TYPENAME[,PROP1=VALUE1,...]\n"
-    "                create an new object of type TYPENAME setting properties\n"
-    "                in the order they are specified.  Note that the 'id'\n"
-    "                property must be set.  These objects are placed in the\n"
-    "                '/objects' path.\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -object @var{typename}[,@var{prop1}=@var{value1},...]
-@findex -object
-Create an new object of type @var{typename} setting properties
-in the order they are specified.  Note that the 'id'
-property must be set.  These objects are placed in the
-'/objects' path.
-ETEXI
-
-DEF("msg", HAS_ARG, QEMU_OPTION_msg,
-    "-msg timestamp[=on|off]\n"
-    "                change the format of messages\n"
-    "                on|off controls leading timestamps (default:on)\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -msg timestamp[=on|off]
-@findex -msg
-prepend a timestamp to each log message.(default:on)
-ETEXI
+    "-no-kvm-pit-reinjection\n"
+    "                disable KVM kernel mode PIT interrupt reinjection\n",
+    QEMU_ARCH_I386)
+HXCOMM -tdf is deprecated and ignored today
+DEF("tdf", 0, QEMU_OPTION_tdf, "", QEMU_ARCH_ALL)
 
 HXCOMM This is the last statement. Insert new options before this line!
 STEXI

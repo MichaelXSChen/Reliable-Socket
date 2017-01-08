@@ -12,30 +12,37 @@
 #include "config.h"
 #include "qemu-common.h"
 #include "e500.h"
-#include "hw/boards.h"
-#include "sysemu/device_tree.h"
-#include "hw/ppc/openpic.h"
+#include "../boards.h"
+#include "device_tree.h"
 
 static void mpc8544ds_fixup_devtree(PPCE500Params *params, void *fdt)
 {
     const char model[] = "MPC8544DS";
     const char compatible[] = "MPC8544DS\0MPC85xxDS";
 
-    qemu_fdt_setprop(fdt, "/", "model", model, sizeof(model));
-    qemu_fdt_setprop(fdt, "/", "compatible", compatible,
-                     sizeof(compatible));
+    qemu_devtree_setprop(fdt, "/", "model", model, sizeof(model));
+    qemu_devtree_setprop(fdt, "/", "compatible", compatible,
+                         sizeof(compatible));
 }
 
-static void mpc8544ds_init(QEMUMachineInitArgs *args)
+static void mpc8544ds_init(ram_addr_t ram_size,
+                           const char *boot_device,
+                           const char *kernel_filename,
+                           const char *kernel_cmdline,
+                           const char *initrd_filename,
+                           const char *cpu_model)
 {
     PPCE500Params params = {
-        .pci_first_slot = 0x11,
-        .pci_nr_slots = 2,
+        .ram_size = ram_size,
+        .boot_device = boot_device,
+        .kernel_filename = kernel_filename,
+        .kernel_cmdline = kernel_cmdline,
+        .initrd_filename = initrd_filename,
+        .cpu_model = cpu_model,
         .fixup_devtree = mpc8544ds_fixup_devtree,
-        .mpic_version = OPENPIC_MODEL_FSL_MPIC_20,
     };
 
-    ppce500_init(args, &params);
+    ppce500_init(&params);
 }
 
 

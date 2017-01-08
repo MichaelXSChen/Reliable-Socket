@@ -28,26 +28,26 @@
 
 #include "vnc.h"
 #include "vnc-jobs.h"
-#include "qemu/sockets.h"
+#include "qemu_socket.h"
 
 /*
  * Locking:
  *
- * There are three levels of locking:
+ * There is three levels of locking:
  * - jobs queue lock: for each operation on the queue (push, pop, isEmpty?)
  * - VncDisplay global lock: mainly used for framebuffer updates to avoid
  *                      screen corruption if the framebuffer is updated
- *                      while the worker is doing something.
+ *			while the worker is doing something.
  * - VncState::output lock: used to make sure the output buffer is not corrupted
- *                          if two threads try to write on it at the same time
+ * 		   	 if two threads try to write on it at the same time
  *
- * While the VNC worker thread is working, the VncDisplay global lock is held
- * to avoid screen corruption (this does not block vnc_refresh() because it
- * uses trylock()) but the output lock is not held because the thread works on
+ * While the VNC worker thread is working, the VncDisplay global lock is hold
+ * to avoid screen corruptions (this does not block vnc_refresh() because it
+ * uses trylock()) but the output lock is not hold because the thread work on
  * its own output buffer.
  * When the encoding job is done, the worker thread will hold the output lock
  * and copy its output buffer in vs->output.
- */
+*/
 
 struct VncJobQueue {
     QemuCond cond;
@@ -62,7 +62,7 @@ typedef struct VncJobQueue VncJobQueue;
 
 /*
  * We use a single global queue, but most of the functions are
- * already reentrant, so we can easily add more than one encoding thread
+ * already reetrant, so we can easilly add more than one encoding thread
  */
 static VncJobQueue *queue;
 
@@ -183,11 +183,11 @@ static void vnc_async_encoding_start(VncState *orig, VncState *local)
 {
     local->vnc_encoding = orig->vnc_encoding;
     local->features = orig->features;
+    local->ds = orig->ds;
     local->vd = orig->vd;
     local->lossy_rect = orig->lossy_rect;
     local->write_pixels = orig->write_pixels;
-    local->client_pf = orig->client_pf;
-    local->client_be = orig->client_be;
+    local->clientds = orig->clientds;
     local->tight = orig->tight;
     local->zlib = orig->zlib;
     local->hextile = orig->hextile;
@@ -252,8 +252,6 @@ static int vnc_worker_thread_loop(VncJobQueue *queue)
 
         if (job->vs->csock == -1) {
             vnc_unlock_display(job->vs->vd);
-            /* Copy persistent encoding data */
-            vnc_async_encoding_end(job->vs, &vs);
             goto disconnected;
         }
 
@@ -280,9 +278,6 @@ static int vnc_worker_thread_loop(VncJobQueue *queue)
         vnc_async_encoding_end(job->vs, &vs);
 
 	qemu_bh_schedule(job->vs->bh);
-    }  else {
-        /* Copy persistent encoding data */
-        vnc_async_encoding_end(job->vs, &vs);
     }
     vnc_unlock_output(job->vs);
 
@@ -325,11 +320,6 @@ static void *vnc_worker_thread(void *arg)
     return NULL;
 }
 
-static bool vnc_worker_thread_running(void)
-{
-    return queue; /* Check global queue */
-}
-
 void vnc_start_worker_thread(void)
 {
     VncJobQueue *q;
@@ -338,9 +328,13 @@ void vnc_start_worker_thread(void)
         return ;
 
     q = vnc_queue_init();
-    qemu_thread_create(&q->thread, "vnc_worker", vnc_worker_thread, q,
-                       QEMU_THREAD_DETACHED);
+    qemu_thread_create(&q->thread, vnc_worker_thread, q, QEMU_THREAD_DETACHED);
     queue = q; /* Set global queue */
+}
+
+bool vnc_worker_thread_running(void)
+{
+    return queue; /* Check global queue */
 }
 
 void vnc_stop_worker_thread(void)

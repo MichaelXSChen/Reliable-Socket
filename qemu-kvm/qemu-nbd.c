@@ -17,12 +17,8 @@
  */
 
 #include "qemu-common.h"
-#include "block/block.h"
-#include "block/nbd.h"
-#include "qemu/main-loop.h"
-#include "qemu/sockets.h"
-#include "qemu/error-report.h"
-#include "block/snapshot.h"
+#include "block.h"
+#include "nbd.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -37,10 +33,9 @@
 #include <libgen.h>
 #include <pthread.h>
 
-#define SOCKET_PATH          "/var/lock/qemu-nbd-%s"
-#define QEMU_NBD_OPT_CACHE   1
-#define QEMU_NBD_OPT_AIO     2
-#define QEMU_NBD_OPT_DISCARD 3
+#define SOCKET_PATH         "/var/lock/qemu-nbd-%s"
+#define QEMU_NBD_OPT_CACHE  1
+#define QEMU_NBD_OPT_AIO    2
 
 static NBDExport *exp;
 static int verbose;
@@ -81,16 +76,8 @@ static void usage(const char *name)
 #endif
 "\n"
 "Block device options:\n"
-"  -f, --format=FORMAT  set image format (raw, qcow2, ...)\n"
 "  -r, --read-only      export read-only\n"
-"  -s, --snapshot       use FILE as an external snapshot, create a temporary\n"
-"                       file with backing_file=FILE, redirect the write to\n"
-"                       the temporary one\n"
-"  -l, --load-snapshot=SNAPSHOT_PARAM\n"
-"                       load an internal snapshot inside FILE and export it\n"
-"                       as an read-only device, SNAPSHOT_PARAM format is\n"
-"                       'snapshot.id=[ID],snapshot.name=[NAME]', or\n"
-"                       '[ID_OR_NAME]'\n"
+"  -s, --snapshot       use snapshot file\n"
 "  -n, --nocache        disable host cache\n"
 "      --cache=MODE     set cache mode (none, writeback, ...)\n"
 #ifdef CONFIG_LINUX_AIO
@@ -203,56 +190,6 @@ static void termsig_handler(int signum)
     qemu_notify_event();
 }
 
-static void combine_addr(char *buf, size_t len, const char* address,
-                         uint16_t port)
-{
-    /* If the address-part contains a colon, it's an IPv6 IP so needs [] */
-    if (strstr(address, ":")) {
-        snprintf(buf, len, "[%s]:%u", address, port);
-    } else {
-        snprintf(buf, len, "%s:%u", address, port);
-    }
-}
-
-static int tcp_socket_incoming(const char *address, uint16_t port)
-{
-    char address_and_port[128];
-    Error *local_err = NULL;
-
-    combine_addr(address_and_port, 128, address, port);
-    int fd = inet_listen(address_and_port, NULL, 0, SOCK_STREAM, 0, &local_err);
-
-    if (local_err != NULL) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-    }
-    return fd;
-}
-
-static int unix_socket_incoming(const char *path)
-{
-    Error *local_err = NULL;
-    int fd = unix_listen(path, NULL, 0, &local_err);
-
-    if (local_err != NULL) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-    }
-    return fd;
-}
-
-static int unix_socket_outgoing(const char *path)
-{
-    Error *local_err = NULL;
-    int fd = unix_connect(path, &local_err);
-
-    if (local_err != NULL) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-    }
-    return fd;
-}
-
 static void *show_parts(void *arg)
 {
     char *device = arg;
@@ -288,19 +225,19 @@ static void *nbd_client_thread(void *arg)
     ret = nbd_receive_negotiate(sock, NULL, &nbdflags,
                                 &size, &blocksize);
     if (ret < 0) {
-        goto out_socket;
+        goto out;
     }
 
     fd = open(device, O_RDWR);
     if (fd < 0) {
         /* Linux-only, we can use %m in printf.  */
         fprintf(stderr, "Failed to open %s: %m", device);
-        goto out_socket;
+        goto out;
     }
 
     ret = nbd_init(fd, sock, nbdflags, size, blocksize);
     if (ret < 0) {
-        goto out_fd;
+        goto out;
     }
 
     /* update partition table */
@@ -316,16 +253,12 @@ static void *nbd_client_thread(void *arg)
 
     ret = nbd_client(fd);
     if (ret) {
-        goto out_fd;
+        goto out;
     }
     close(fd);
     kill(getpid(), SIGTERM);
     return (void *) EXIT_SUCCESS;
 
-out_fd:
-    close(fd);
-out_socket:
-    closesocket(sock);
 out:
     kill(getpid(), SIGTERM);
     return (void *) EXIT_FAILURE;
@@ -359,28 +292,19 @@ static void nbd_accept(void *opaque)
     socklen_t addr_len = sizeof(addr);
 
     int fd = accept(server_fd, (struct sockaddr *)&addr, &addr_len);
-    if (fd < 0) {
-        perror("accept");
-        return;
-    }
-
     if (state >= TERMINATE) {
         close(fd);
         return;
     }
 
-    if (nbd_client_new(exp, fd, nbd_client_closed)) {
+    if (fd >= 0 && nbd_client_new(exp, fd, nbd_client_closed)) {
         nb_fds++;
-    } else {
-        shutdown(fd, 2);
-        close(fd);
     }
 }
 
 int main(int argc, char **argv)
 {
     BlockDriverState *bs;
-    BlockDriver *drv;
     off_t dev_offset = 0;
     uint32_t nbdflags = 0;
     bool disconnect = false;
@@ -388,9 +312,7 @@ int main(int argc, char **argv)
     char *device = NULL;
     int port = NBD_DEFAULT_PORT;
     off_t fd_size;
-    QemuOpts *sn_opts = NULL;
-    const char *sn_id_or_name = NULL;
-    const char *sopt = "hVb:o:p:rsnP:c:dvk:e:f:tl:";
+    const char *sopt = "hVb:o:p:rsnP:c:dvk:e:t";
     struct option lopt[] = {
         { "help", 0, NULL, 'h' },
         { "version", 0, NULL, 'V' },
@@ -403,15 +325,12 @@ int main(int argc, char **argv)
         { "connect", 1, NULL, 'c' },
         { "disconnect", 0, NULL, 'd' },
         { "snapshot", 0, NULL, 's' },
-        { "load-snapshot", 1, NULL, 'l' },
         { "nocache", 0, NULL, 'n' },
         { "cache", 1, NULL, QEMU_NBD_OPT_CACHE },
 #ifdef CONFIG_LINUX_AIO
         { "aio", 1, NULL, QEMU_NBD_OPT_AIO },
 #endif
-        { "discard", 1, NULL, QEMU_NBD_OPT_DISCARD },
         { "shared", 1, NULL, 'e' },
-        { "format", 1, NULL, 'f' },
         { "persistent", 0, NULL, 't' },
         { "verbose", 0, NULL, 'v' },
         { NULL, 0, NULL, 0 }
@@ -425,13 +344,10 @@ int main(int argc, char **argv)
     int ret;
     int fd;
     bool seen_cache = false;
-    bool seen_discard = false;
 #ifdef CONFIG_LINUX_AIO
     bool seen_aio = false;
 #endif
     pthread_t client_thread;
-    const char *fmt = NULL;
-    Error *local_err = NULL;
 
     /* The client thread uses SIGTERM to interrupt the server.  A signal
      * handler ensures that "qemu-nbd -v -c" exits with a nice status code.
@@ -440,7 +356,6 @@ int main(int argc, char **argv)
     memset(&sa_sigterm, 0, sizeof(sa_sigterm));
     sa_sigterm.sa_handler = termsig_handler;
     sigaction(SIGTERM, &sa_sigterm, NULL);
-    qemu_init_exec_dir(argv[0]);
 
     while ((ch = getopt_long(argc, argv, sopt, lopt, &opt_ind)) != -1) {
         switch (ch) {
@@ -474,15 +389,6 @@ int main(int argc, char **argv)
             }
             break;
 #endif
-        case QEMU_NBD_OPT_DISCARD:
-            if (seen_discard) {
-                errx(EXIT_FAILURE, "--discard can only be specified once");
-            }
-            seen_discard = true;
-            if (bdrv_parse_discard_flags(optarg, &flags) == -1) {
-                errx(EXIT_FAILURE, "Invalid discard mode `%s'", optarg);
-            }
-            break;
         case 'b':
             bindto = optarg;
             break;
@@ -505,17 +411,6 @@ int main(int argc, char **argv)
                 errx(EXIT_FAILURE, "Offset must be positive `%s'", optarg);
             }
             break;
-        case 'l':
-            if (strstart(optarg, SNAPSHOT_OPT_BASE, NULL)) {
-                sn_opts = qemu_opts_parse(&internal_snapshot_opts, optarg, 0);
-                if (!sn_opts) {
-                    errx(EXIT_FAILURE, "Failed in parsing snapshot param `%s'",
-                         optarg);
-                }
-            } else {
-                sn_id_or_name = optarg;
-            }
-            /* fall through */
         case 'r':
             nbdflags |= NBD_FLAG_READ_ONLY;
             flags &= ~BDRV_O_RDWR;
@@ -546,9 +441,6 @@ int main(int argc, char **argv)
             if (shared < 1) {
                 errx(EXIT_FAILURE, "Shared device number must be greater than 0\n");
             }
-            break;
-        case 'f':
-            fmt = optarg;
             break;
 	case 't':
 	    persistent = 1;
@@ -647,42 +539,14 @@ int main(int argc, char **argv)
         snprintf(sockpath, 128, SOCKET_PATH, basename(device));
     }
 
-    qemu_init_main_loop();
     bdrv_init();
     atexit(bdrv_close_all);
 
-    if (fmt) {
-        drv = bdrv_find_format(fmt);
-        if (!drv) {
-            errx(EXIT_FAILURE, "Unknown file format '%s'", fmt);
-        }
-    } else {
-        drv = NULL;
-    }
-
     bs = bdrv_new("hda");
     srcpath = argv[optind];
-    ret = bdrv_open(&bs, srcpath, NULL, NULL, flags, drv, &local_err);
-    if (ret < 0) {
+    if ((ret = bdrv_open(bs, srcpath, flags, NULL)) < 0) {
         errno = -ret;
-        err(EXIT_FAILURE, "Failed to bdrv_open '%s': %s", argv[optind],
-            error_get_pretty(local_err));
-    }
-
-    if (sn_opts) {
-        ret = bdrv_snapshot_load_tmp(bs,
-                                     qemu_opt_get(sn_opts, SNAPSHOT_OPT_ID),
-                                     qemu_opt_get(sn_opts, SNAPSHOT_OPT_NAME),
-                                     &local_err);
-    } else if (sn_id_or_name) {
-        ret = bdrv_snapshot_load_tmp_by_id_or_name(bs, sn_id_or_name,
-                                                   &local_err);
-    }
-    if (ret < 0) {
-        errno = -ret;
-        err(EXIT_FAILURE,
-            "Failed to load snapshot: %s",
-            error_get_pretty(local_err));
+        err(EXIT_FAILURE, "Failed to bdrv_open '%s'", argv[optind]);
     }
 
     fd_size = bdrv_getlength(bs);
@@ -720,6 +584,7 @@ int main(int argc, char **argv)
         memset(&client_thread, 0, sizeof(client_thread));
     }
 
+    qemu_init_main_loop();
     qemu_set_fd_handler2(fd, nbd_can_accept, nbd_accept, NULL,
                          (void *)(uintptr_t)fd);
 
@@ -743,10 +608,6 @@ int main(int argc, char **argv)
     bdrv_close(bs);
     if (sockpath) {
         unlink(sockpath);
-    }
-
-    if (sn_opts) {
-        qemu_opts_del(sn_opts);
     }
 
     if (device) {

@@ -9,8 +9,8 @@
  */
 
 #include "qemu-common.h"
-#include "hw/xen/xen.h"
-#include "exec/memory.h"
+#include "hw/xen.h"
+#include "memory.h"
 #include "qmp-commands.h"
 
 void xenstore_store_pv_console_info(int i, CharDriverState *chr)
@@ -47,7 +47,7 @@ qemu_irq *xen_interrupt_controller_init(void)
     return NULL;
 }
 
-int xen_init(QEMUMachine *machine)
+int xen_init(void)
 {
     return -ENOSYS;
 }
@@ -62,9 +62,4 @@ void qmp_xen_set_global_dirty_log(bool enable, Error **errp)
 
 void xen_modified_memory(ram_addr_t start, ram_addr_t length)
 {
-}
-
-int xen_hvm_init(MemoryRegion **ram_memory)
-{
-    return 0;
 }

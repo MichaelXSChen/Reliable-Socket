@@ -348,6 +348,7 @@ void mixeng_clear (struct st_sample *buf, int len)
 
 void mixeng_volume (struct st_sample *buf, int len, struct mixeng_volume *vol)
 {
+#ifdef CONFIG_MIXEMU
     if (vol->mute) {
         mixeng_clear (buf, len);
         return;
@@ -363,4 +364,9 @@ void mixeng_volume (struct st_sample *buf, int len, struct mixeng_volume *vol)
 #endif
         buf += 1;
     }
+#else
+    (void) buf;
+    (void) len;
+    (void) vol;
+#endif
 }

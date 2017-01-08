@@ -31,12 +31,21 @@
 #include <pthread.h>
 #include <signal.h>
 #include "qemu-common.h"
-#include "block/coroutine_int.h"
+#include "qemu-coroutine-int.h"
+
+enum {
+    /* Maximum free pool size prevents holding too many freed coroutines */
+    POOL_MAX_SIZE = 64,
+};
+
+/** Free list to speed up creation */
+static QSLIST_HEAD(, Coroutine) pool = QSLIST_HEAD_INITIALIZER(pool);
+static unsigned int pool_size;
 
 typedef struct {
     Coroutine base;
     void *stack;
-    sigjmp_buf env;
+    jmp_buf env;
 } CoroutineUContext;
 
 /**
@@ -50,7 +59,7 @@ typedef struct {
     CoroutineUContext leader;
 
     /** Information for the signal handler (trampoline) */
-    sigjmp_buf tr_reenter;
+    jmp_buf tr_reenter;
     volatile sig_atomic_t tr_called;
     void *tr_handler;
 } CoroutineThreadState;
@@ -76,6 +85,17 @@ static void qemu_coroutine_thread_cleanup(void *opaque)
     g_free(s);
 }
 
+static void __attribute__((destructor)) coroutine_cleanup(void)
+{
+    Coroutine *co;
+    Coroutine *tmp;
+
+    QSLIST_FOREACH_SAFE(co, &pool, pool_next, tmp) {
+        g_free(DO_UPCAST(CoroutineUContext, base, co)->stack);
+        g_free(co);
+    }
+}
+
 static void __attribute__((constructor)) coroutine_init(void)
 {
     int ret;
@@ -95,8 +115,8 @@ static void __attribute__((constructor)) coroutine_init(void)
 static void coroutine_bootstrap(CoroutineUContext *self, Coroutine *co)
 {
     /* Initialize longjmp environment and switch back the caller */
-    if (!sigsetjmp(self->env, 0)) {
-        siglongjmp(*(sigjmp_buf *)co->entry_arg, 1);
+    if (!setjmp(self->env)) {
+        longjmp(*(jmp_buf *)co->entry_arg, 1);
     }
 
     while (true) {
@@ -125,14 +145,14 @@ static void coroutine_trampoline(int signal)
     /*
      * Here we have to do a bit of a ping pong between the caller, given that
      * this is a signal handler and we have to do a return "soon". Then the
-     * caller can reestablish everything and do a siglongjmp here again.
+     * caller can reestablish everything and do a longjmp here again.
      */
-    if (!sigsetjmp(coTS->tr_reenter, 0)) {
+    if (!setjmp(coTS->tr_reenter)) {
         return;
     }
 
     /*
-     * Ok, the caller has siglongjmp'ed back to us, so now prepare
+     * Ok, the caller has longjmp'ed back to us, so now prepare
      * us for the real machine state switching. We have to jump
      * into another function here to get a new stack context for
      * the auto variables (which have to be auto-variables
@@ -144,22 +164,22 @@ static void coroutine_trampoline(int signal)
     coroutine_bootstrap(self, co);
 }
 
-Coroutine *qemu_coroutine_new(void)
+static Coroutine *coroutine_new(void)
 {
     const size_t stack_size = 1 << 20;
     CoroutineUContext *co;
     CoroutineThreadState *coTS;
     struct sigaction sa;
     struct sigaction osa;
-    stack_t ss;
-    stack_t oss;
+    struct sigaltstack ss;
+    struct sigaltstack oss;
     sigset_t sigs;
     sigset_t osigs;
     jmp_buf old_env;
 
     /* The way to manipulate stack is with the sigaltstack function. We
      * prepare a stack, with it delivering a signal to ourselves and then
-     * put sigsetjmp/siglongjmp where needed.
+     * put setjmp/longjmp where needed.
      * This has been done keeping coroutine-ucontext as a model and with the
      * pth ideas (GNU Portable Threads). See coroutine-ucontext for the basics
      * of the coroutines and see pth_mctx.c (from the pth project) for the
@@ -200,7 +220,7 @@ Coroutine *qemu_coroutine_new(void)
 
     /*
      * Now transfer control onto the signal stack and set it up.
-     * It will return immediately via "return" after the sigsetjmp()
+     * It will return immediately via "return" after the setjmp()
      * was performed. Be careful here with race conditions.  The
      * signal can be delivered the first time sigsuspend() is
      * called.
@@ -241,8 +261,8 @@ Coroutine *qemu_coroutine_new(void)
      * type-conversion warnings related to the `volatile' qualifier and
      * the fact that `jmp_buf' usually is an array type.
      */
-    if (!sigsetjmp(old_env, 0)) {
-        siglongjmp(coTS->tr_reenter, 1);
+    if (!setjmp(old_env)) {
+        longjmp(coTS->tr_reenter, 1);
     }
 
     /*
@@ -252,9 +272,30 @@ Coroutine *qemu_coroutine_new(void)
     return &co->base;
 }
 
+Coroutine *qemu_coroutine_new(void)
+{
+    Coroutine *co;
+
+    co = QSLIST_FIRST(&pool);
+    if (co) {
+        QSLIST_REMOVE_HEAD(&pool, pool_next);
+        pool_size--;
+    } else {
+        co = coroutine_new();
+    }
+    return co;
+}
+
 void qemu_coroutine_delete(Coroutine *co_)
 {
     CoroutineUContext *co = DO_UPCAST(CoroutineUContext, base, co_);
+
+    if (pool_size < POOL_MAX_SIZE) {
+        QSLIST_INSERT_HEAD(&pool, &co->base, pool_next);
+        co->base.caller = NULL;
+        pool_size++;
+        return;
+    }
 
     g_free(co->stack);
     g_free(co);
@@ -270,9 +311,9 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
 
     s->current = to_;
 
-    ret = sigsetjmp(from->env, 0);
+    ret = setjmp(from->env);
     if (ret == 0) {
-        siglongjmp(to->env, action);
+        longjmp(to->env, action);
     }
     return ret;
 }

@@ -13,11 +13,10 @@
 #include <glib.h>
 #include <stdarg.h>
 
-#include "qemu-common.h"
 #include "qapi/string-input-visitor.h"
 #include "test-qapi-types.h"
 #include "test-qapi-visit.h"
-#include "qapi/qmp/types.h"
+#include "qemu-objects.h"
 
 typedef struct TestInputVisitorData {
     StringInputVisitor *siv;
@@ -60,7 +59,7 @@ static void test_visitor_in_int(TestInputVisitorData *data,
     v = visitor_input_test_init(data, "-42");
 
     visit_type_int(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, value);
 }
 
@@ -74,42 +73,42 @@ static void test_visitor_in_bool(TestInputVisitorData *data,
     v = visitor_input_test_init(data, "true");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, true);
     visitor_input_teardown(data, unused);
 
     v = visitor_input_test_init(data, "yes");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, true);
     visitor_input_teardown(data, unused);
 
     v = visitor_input_test_init(data, "on");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, true);
     visitor_input_teardown(data, unused);
 
     v = visitor_input_test_init(data, "false");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, false);
     visitor_input_teardown(data, unused);
 
     v = visitor_input_test_init(data, "no");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, false);
     visitor_input_teardown(data, unused);
 
     v = visitor_input_test_init(data, "off");
 
     visit_type_bool(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpint(res, ==, false);
 }
 
@@ -123,7 +122,7 @@ static void test_visitor_in_number(TestInputVisitorData *data,
     v = visitor_input_test_init(data, "3.14");
 
     visit_type_number(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpfloat(res, ==, value);
 }
 
@@ -137,7 +136,7 @@ static void test_visitor_in_string(TestInputVisitorData *data,
     v = visitor_input_test_init(data, value);
 
     visit_type_str(v, &res, NULL, &errp);
-    g_assert(!errp);
+    g_assert(!error_is_set(&errp));
     g_assert_cmpstr(res, ==, value);
 
     g_free(res);
@@ -156,60 +155,13 @@ static void test_visitor_in_enum(TestInputVisitorData *data,
         v = visitor_input_test_init(data, EnumOne_lookup[i]);
 
         visit_type_EnumOne(v, &res, NULL, &errp);
-        g_assert(!errp);
+        g_assert(!error_is_set(&errp));
         g_assert_cmpint(i, ==, res);
 
         visitor_input_teardown(data, NULL);
     }
 
     data->siv = NULL;
-}
-
-/* Try to crash the visitors */
-static void test_visitor_in_fuzz(TestInputVisitorData *data,
-                                 const void *unused)
-{
-    int64_t ires;
-    bool bres;
-    double nres;
-    char *sres;
-    EnumOne eres;
-    Visitor *v;
-    unsigned int i;
-    char buf[10000];
-
-    for (i = 0; i < 100; i++) {
-        unsigned int j;
-
-        j = g_test_rand_int_range(0, sizeof(buf) - 1);
-
-        buf[j] = '\0';
-
-        if (j != 0) {
-            for (j--; j != 0; j--) {
-                buf[j - 1] = (char)g_test_rand_int_range(0, 256);
-            }
-        }
-
-        v = visitor_input_test_init(data, buf);
-        visit_type_int(v, &ires, NULL, NULL);
-
-        v = visitor_input_test_init(data, buf);
-        visit_type_bool(v, &bres, NULL, NULL);
-        visitor_input_teardown(data, NULL);
-
-        v = visitor_input_test_init(data, buf);
-        visit_type_number(v, &nres, NULL, NULL);
-
-        v = visitor_input_test_init(data, buf);
-        sres = NULL;
-        visit_type_str(v, &sres, NULL, NULL);
-        g_free(sres);
-
-        v = visitor_input_test_init(data, buf);
-        visit_type_EnumOne(v, &eres, NULL, NULL);
-        visitor_input_teardown(data, NULL);
-    }
 }
 
 static void input_visitor_test_add(const char *testpath,
@@ -236,8 +188,6 @@ int main(int argc, char **argv)
                             &in_visitor_data, test_visitor_in_string);
     input_visitor_test_add("/string-visitor/input/enum",
                             &in_visitor_data, test_visitor_in_enum);
-    input_visitor_test_add("/string-visitor/input/fuzz",
-                            &in_visitor_data, test_visitor_in_fuzz);
 
     g_test_run();
 

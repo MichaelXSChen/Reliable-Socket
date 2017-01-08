@@ -19,21 +19,20 @@
  */
 
 #include "cpu.h"
-#include "exec/memory.h"
-#include "qemu/host-utils.h"
+#include "memory.h"
+#include "cputlb.h"
+#include "host-utils.h"
 #include "helper.h"
 #include <string.h>
-#include "sysemu/kvm.h"
-#include "qemu/timer.h"
+#include "kvm.h"
+#include "qemu-timer.h"
 #ifdef CONFIG_KVM
 #include <linux/kvm.h>
 #endif
 
 #if !defined(CONFIG_USER_ONLY)
-#include "exec/softmmu_exec.h"
-#include "sysemu/cpus.h"
-#include "sysemu/sysemu.h"
-#include "hw/s390x/ebcdic.h"
+#include "softmmu_exec.h"
+#include "sysemu.h"
 #endif
 
 /* #define DEBUG_HELPER */
@@ -43,165 +42,87 @@
 #define HELPER_LOG(x...)
 #endif
 
-/* Raise an exception dynamically from a helper function.  */
-void QEMU_NORETURN runtime_exception(CPUS390XState *env, int excp,
-                                     uintptr_t retaddr)
-{
-    CPUState *cs = CPU(s390_env_get_cpu(env));
-    int t;
-
-    cs->exception_index = EXCP_PGM;
-    env->int_pgm_code = excp;
-
-    /* Use the (ultimate) callers address to find the insn that trapped.  */
-    cpu_restore_state(cs, retaddr);
-
-    /* Advance past the insn.  */
-    t = cpu_ldub_code(env, env->psw.addr);
-    env->int_pgm_ilen = t = get_ilen(t);
-    env->psw.addr += 2 * t;
-
-    cpu_loop_exit(cs);
-}
-
-/* Raise an exception statically from a TB.  */
+/* raise an exception */
 void HELPER(exception)(CPUS390XState *env, uint32_t excp)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
-
     HELPER_LOG("%s: exception %d\n", __func__, excp);
-    cs->exception_index = excp;
-    cpu_loop_exit(cs);
+    env->exception_index = excp;
+    cpu_loop_exit(env);
 }
 
 #ifndef CONFIG_USER_ONLY
-
-void program_interrupt(CPUS390XState *env, uint32_t code, int ilen)
+void program_interrupt(CPUS390XState *env, uint32_t code, int ilc)
 {
-    S390CPU *cpu = s390_env_get_cpu(env);
-
     qemu_log_mask(CPU_LOG_INT, "program interrupt at %#" PRIx64 "\n",
                   env->psw.addr);
 
     if (kvm_enabled()) {
 #ifdef CONFIG_KVM
-        kvm_s390_interrupt(cpu, KVM_S390_PROGRAM_INT, code);
+        kvm_s390_interrupt(env, KVM_S390_PROGRAM_INT, code);
 #endif
     } else {
-        CPUState *cs = CPU(cpu);
-
         env->int_pgm_code = code;
-        env->int_pgm_ilen = ilen;
-        cs->exception_index = EXCP_PGM;
-        cpu_loop_exit(cs);
+        env->int_pgm_ilc = ilc;
+        env->exception_index = EXCP_PGM;
+        cpu_loop_exit(env);
     }
 }
 
-/* SCLP service call */
-uint32_t HELPER(servc)(CPUS390XState *env, uint64_t r1, uint64_t r2)
+/*
+ * ret < 0 indicates program check, ret = 0, 1, 2, 3 -> cc
+ */
+int sclp_service_call(CPUS390XState *env, uint32_t sccb, uint64_t code)
 {
-    int r = sclp_service_call(env, r1, r2);
+    int r = 0;
+    int shift = 0;
+
+#ifdef DEBUG_HELPER
+    printf("sclp(0x%x, 0x%" PRIx64 ")\n", sccb, code);
+#endif
+
+    /* basic checks */
+    if (!memory_region_is_ram(phys_page_find(sccb >> TARGET_PAGE_BITS)->mr)) {
+        return -PGM_ADDRESSING;
+    }
+    if (sccb & ~0x7ffffff8ul) {
+        return -PGM_SPECIFICATION;
+    }
+
+    switch (code) {
+    case SCLP_CMDW_READ_SCP_INFO:
+    case SCLP_CMDW_READ_SCP_INFO_FORCED:
+        while ((ram_size >> (20 + shift)) > 65535) {
+            shift++;
+        }
+        stw_phys(sccb + SCP_MEM_CODE, ram_size >> (20 + shift));
+        stb_phys(sccb + SCP_INCREMENT, 1 << shift);
+        stw_phys(sccb + SCP_RESPONSE_CODE, 0x10);
+
+        s390_sclp_extint(sccb & ~3);
+        break;
+    default:
+#ifdef DEBUG_HELPER
+        printf("KVM: invalid sclp call 0x%x / 0x%" PRIx64 "x\n", sccb, code);
+#endif
+        r = 3;
+        break;
+    }
+
+    return r;
+}
+
+/* SCLP service call */
+uint32_t HELPER(servc)(CPUS390XState *env, uint32_t r1, uint64_t r2)
+{
+    int r;
+
+    r = sclp_service_call(env, r1, r2);
     if (r < 0) {
         program_interrupt(env, -r, 4);
         return 0;
     }
     return r;
 }
-
-#ifndef CONFIG_USER_ONLY
-static void cpu_reset_all(void)
-{
-    CPUState *cs;
-    S390CPUClass *scc;
-
-    CPU_FOREACH(cs) {
-        scc = S390_CPU_GET_CLASS(cs);
-        scc->cpu_reset(cs);
-    }
-}
-
-static void cpu_full_reset_all(void)
-{
-    CPUState *cpu;
-
-    CPU_FOREACH(cpu) {
-        cpu_reset(cpu);
-    }
-}
-
-static int modified_clear_reset(S390CPU *cpu)
-{
-    S390CPUClass *scc = S390_CPU_GET_CLASS(cpu);
-
-    pause_all_vcpus();
-    cpu_synchronize_all_states();
-    cpu_full_reset_all();
-    io_subsystem_reset();
-    scc->load_normal(CPU(cpu));
-    cpu_synchronize_all_post_reset();
-    resume_all_vcpus();
-    return 0;
-}
-
-static int load_normal_reset(S390CPU *cpu)
-{
-    S390CPUClass *scc = S390_CPU_GET_CLASS(cpu);
-
-    pause_all_vcpus();
-    cpu_synchronize_all_states();
-    cpu_reset_all();
-    io_subsystem_reset();
-    scc->initial_cpu_reset(CPU(cpu));
-    scc->load_normal(CPU(cpu));
-    cpu_synchronize_all_post_reset();
-    resume_all_vcpus();
-    return 0;
-}
-
-#define DIAG_308_RC_NO_CONF         0x0102
-#define DIAG_308_RC_INVALID         0x0402
-void handle_diag_308(CPUS390XState *env, uint64_t r1, uint64_t r3)
-{
-    uint64_t addr =  env->regs[r1];
-    uint64_t subcode = env->regs[r3];
-
-    if (env->psw.mask & PSW_MASK_PSTATE) {
-        program_interrupt(env, PGM_PRIVILEGED, ILEN_LATER_INC);
-        return;
-    }
-
-    if ((subcode & ~0x0ffffULL) || (subcode > 6)) {
-        program_interrupt(env, PGM_SPECIFICATION, ILEN_LATER_INC);
-        return;
-    }
-
-    switch (subcode) {
-    case 0:
-        modified_clear_reset(s390_env_get_cpu(env));
-        break;
-    case 1:
-        load_normal_reset(s390_env_get_cpu(env));
-        break;
-    case 5:
-        if ((r1 & 1) || (addr & 0x0fffULL)) {
-            program_interrupt(env, PGM_SPECIFICATION, ILEN_LATER_INC);
-            return;
-        }
-        env->regs[r1+1] = DIAG_308_RC_INVALID;
-        return;
-    case 6:
-        if ((r1 & 1) || (addr & 0x0fffULL)) {
-            program_interrupt(env, PGM_SPECIFICATION, ILEN_LATER_INC);
-            return;
-        }
-        env->regs[r1+1] = DIAG_308_RC_NO_CONF;
-        return;
-    default:
-        hw_error("Unhandled diag308 subcode %" PRIx64, subcode);
-        break;
-    }
-}
-#endif
 
 /* DIAG */
 uint64_t HELPER(diag)(CPUS390XState *env, uint32_t num, uint64_t mem,
@@ -212,7 +133,7 @@ uint64_t HELPER(diag)(CPUS390XState *env, uint32_t num, uint64_t mem,
     switch (num) {
     case 0x500:
         /* KVM hypercall */
-        r = s390_virtio_hypercall(env);
+        r = s390_virtio_hypercall(env, mem, code);
         break;
     case 0x44:
         /* yield */
@@ -228,22 +149,36 @@ uint64_t HELPER(diag)(CPUS390XState *env, uint32_t num, uint64_t mem,
     }
 
     if (r) {
-        program_interrupt(env, PGM_OPERATION, ILEN_LATER_INC);
+        program_interrupt(env, PGM_OPERATION, ILC_LATER_INC);
     }
 
     return r;
 }
 
+/* Store CPU ID */
+void HELPER(stidp)(CPUS390XState *env, uint64_t a1)
+{
+    cpu_stq_data(env, a1, env->cpu_num);
+}
+
 /* Set Prefix */
 void HELPER(spx)(CPUS390XState *env, uint64_t a1)
 {
-    CPUState *cs = CPU(s390_env_get_cpu(env));
-    uint32_t prefix = a1 & 0x7fffe000;
+    uint32_t prefix;
 
-    env->psa = prefix;
+    prefix = cpu_ldl_data(env, a1);
+    env->psa = prefix & 0xfffff000;
     qemu_log("prefix: %#x\n", prefix);
-    tlb_flush_page(cs, 0);
-    tlb_flush_page(cs, TARGET_PAGE_SIZE);
+    tlb_flush_page(env, 0);
+    tlb_flush_page(env, TARGET_PAGE_SIZE);
+}
+
+/* Set Clock */
+uint32_t HELPER(sck)(uint64_t a1)
+{
+    /* XXX not implemented - is it necessary? */
+
+    return 0;
 }
 
 static inline uint64_t clock_value(CPUS390XState *env)
@@ -251,20 +186,38 @@ static inline uint64_t clock_value(CPUS390XState *env)
     uint64_t time;
 
     time = env->tod_offset +
-        time2tod(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - env->tod_basetime);
+        time2tod(qemu_get_clock_ns(vm_clock) - env->tod_basetime);
 
     return time;
 }
 
 /* Store Clock */
-uint64_t HELPER(stck)(CPUS390XState *env)
+uint32_t HELPER(stck)(CPUS390XState *env, uint64_t a1)
 {
-    return clock_value(env);
+    cpu_stq_data(env, a1, clock_value(env));
+
+    return 0;
+}
+
+/* Store Clock Extended */
+uint32_t HELPER(stcke)(CPUS390XState *env, uint64_t a1)
+{
+    cpu_stb_data(env, a1, 0);
+    /* basically the same value as stck */
+    cpu_stq_data(env, a1 + 1, clock_value(env) | env->cpu_num);
+    /* more fine grained than stck */
+    cpu_stq_data(env, a1 + 9, 0);
+    /* XXX programmable fields */
+    cpu_stw_data(env, a1 + 17, 0);
+
+    return 0;
 }
 
 /* Set Clock Comparator */
-void HELPER(sckc)(CPUS390XState *env, uint64_t time)
+void HELPER(sckc)(CPUS390XState *env, uint64_t a1)
 {
+    uint64_t time = cpu_ldq_data(env, a1);
+
     if (time == -1ULL) {
         return;
     }
@@ -274,19 +227,21 @@ void HELPER(sckc)(CPUS390XState *env, uint64_t time)
     /* nanoseconds */
     time = (time * 125) >> 9;
 
-    timer_mod(env->tod_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + time);
+    qemu_mod_timer(env->tod_timer, qemu_get_clock_ns(vm_clock) + time);
 }
 
 /* Store Clock Comparator */
-uint64_t HELPER(stckc)(CPUS390XState *env)
+void HELPER(stckc)(CPUS390XState *env, uint64_t a1)
 {
     /* XXX implement */
-    return 0;
+    cpu_stq_data(env, a1, 0);
 }
 
 /* Set CPU Timer */
-void HELPER(spt)(CPUS390XState *env, uint64_t time)
+void HELPER(spt)(CPUS390XState *env, uint64_t a1)
 {
+    uint64_t time = cpu_ldq_data(env, a1);
+
     if (time == -1ULL) {
         return;
     }
@@ -294,19 +249,19 @@ void HELPER(spt)(CPUS390XState *env, uint64_t time)
     /* nanoseconds */
     time = (time * 125) >> 9;
 
-    timer_mod(env->cpu_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + time);
+    qemu_mod_timer(env->cpu_timer, qemu_get_clock_ns(vm_clock) + time);
 }
 
 /* Store CPU Timer */
-uint64_t HELPER(stpt)(CPUS390XState *env)
+void HELPER(stpt)(CPUS390XState *env, uint64_t a1)
 {
     /* XXX implement */
-    return 0;
+    cpu_stq_data(env, a1, 0);
 }
 
 /* Store System Information */
-uint32_t HELPER(stsi)(CPUS390XState *env, uint64_t a0,
-                      uint64_t r0, uint64_t r1)
+uint32_t HELPER(stsi)(CPUS390XState *env, uint64_t a0, uint32_t r0,
+                      uint32_t r1)
 {
     int cc = 0;
     int sel1, sel2;
@@ -458,11 +413,11 @@ uint32_t HELPER(sigp)(CPUS390XState *env, uint64_t order_code, uint32_t r1,
 #if !defined(CONFIG_USER_ONLY)
     case SIGP_RESTART:
         qemu_system_reset_request();
-        cpu_loop_exit(CPU(s390_env_get_cpu(env)));
+        cpu_loop_exit(env);
         break;
     case SIGP_STOP:
         qemu_system_shutdown_request();
-        cpu_loop_exit(CPU(s390_env_get_cpu(env)));
+        cpu_loop_exit(env);
         break;
 #endif
     default:

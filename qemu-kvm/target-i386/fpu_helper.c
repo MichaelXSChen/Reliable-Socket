@@ -20,11 +20,9 @@
 #include <math.h>
 #include "cpu.h"
 #include "helper.h"
-#include "qemu/aes.h"
-#include "qemu/host-utils.h"
 
 #if !defined(CONFIG_USER_ONLY)
-#include "exec/softmmu_exec.h"
+#include "softmmu_exec.h"
 #endif /* !defined(CONFIG_USER_ONLY) */
 
 #define FPU_RC_MASK         0xc00
@@ -1179,7 +1177,7 @@ void helper_fxrstor(CPUX86State *env, target_ulong ptr, int data64)
 
     if (env->cr[4] & CR4_OSFXSR_MASK) {
         /* XXX: finish it */
-        cpu_set_mxcsr(env, cpu_ldl_data(env, ptr + 0x18));
+        env->mxcsr = cpu_ldl_data(env, ptr + 0x18);
         /* cpu_ldl_data(env, ptr + 0x1c); */
         if (env->hflags & HF_CS64_MASK) {
             nb_xmm_regs = 16;
@@ -1229,14 +1227,12 @@ floatx80 cpu_set_fp80(uint64_t mant, uint16_t upper)
 #define SSE_RC_CHOP         0x6000
 #define SSE_FZ              0x8000
 
-void cpu_set_mxcsr(CPUX86State *env, uint32_t mxcsr)
+static void update_sse_status(CPUX86State *env)
 {
     int rnd_type;
 
-    env->mxcsr = mxcsr;
-
     /* set rounding mode */
-    switch (mxcsr & SSE_RC_MASK) {
+    switch (env->mxcsr & SSE_RC_MASK) {
     default:
     case SSE_RC_NEAR:
         rnd_type = float_round_nearest_even;
@@ -1254,15 +1250,16 @@ void cpu_set_mxcsr(CPUX86State *env, uint32_t mxcsr)
     set_float_rounding_mode(rnd_type, &env->sse_status);
 
     /* set denormals are zero */
-    set_flush_inputs_to_zero((mxcsr & SSE_DAZ) ? 1 : 0, &env->sse_status);
+    set_flush_inputs_to_zero((env->mxcsr & SSE_DAZ) ? 1 : 0, &env->sse_status);
 
     /* set flush to zero */
-    set_flush_to_zero((mxcsr & SSE_FZ) ? 1 : 0, &env->fp_status);
+    set_flush_to_zero((env->mxcsr & SSE_FZ) ? 1 : 0, &env->fp_status);
 }
 
 void helper_ldmxcsr(CPUX86State *env, uint32_t val)
 {
-    cpu_set_mxcsr(env, val);
+    env->mxcsr = val;
+    update_sse_status(env);
 }
 
 void helper_enter_mmx(CPUX86State *env)

@@ -11,15 +11,16 @@
  *
  */
 
-#include "hw/virtio/virtio.h"
-#include "hw/i386/pc.h"
-#include "qemu/sockets.h"
+#include "hw/virtio.h"
+#include "hw/pc.h"
+#include "qemu_socket.h"
+#include "hw/virtio-pci.h"
 #include "virtio-9p.h"
 #include "fsdev/qemu-fsdev.h"
 #include "virtio-9p-xattr.h"
 #include "virtio-9p-coth.h"
 #include "trace.h"
-#include "migration/migration.h"
+#include "migration.h"
 
 int open_fd_hw;
 int total_open_fd;
@@ -326,7 +327,7 @@ static int free_fid(V9fsPDU *pdu, V9fsFidState *fidp)
     return retval;
 }
 
-static int put_fid(V9fsPDU *pdu, V9fsFidState *fidp)
+static void put_fid(V9fsPDU *pdu, V9fsFidState *fidp)
 {
     BUG_ON(!fidp->ref);
     fidp->ref--;
@@ -347,9 +348,8 @@ static int put_fid(V9fsPDU *pdu, V9fsFidState *fidp)
                 pdu->s->migration_blocker = NULL;
             }
         }
-        return free_fid(pdu, fidp);
+        free_fid(pdu, fidp);
     }
-    return 0;
 }
 
 static V9fsFidState *clunk_fid(V9fsState *s, int32_t fid)
@@ -631,7 +631,7 @@ static void complete_pdu(V9fsState *s, V9fsPDU *pdu, ssize_t len)
     virtqueue_push(s->vq, &pdu->elem, len);
 
     /* FIXME: we should batch these completions */
-    virtio_notify(VIRTIO_DEVICE(s), s->vq);
+    virtio_notify(&s->vdev, s->vq);
 
     /* Now wakeup anybody waiting in flush for this request */
     qemu_co_queue_next(&pdu->complete);
@@ -658,7 +658,7 @@ static mode_t v9mode_to_mode(uint32_t mode, V9fsString *extension)
         ret |= S_IFIFO;
     }
     if (mode & P9_STAT_MODE_DEVICE) {
-        if (extension->size && extension->data[0] == 'c') {
+        if (extension && extension->data[0] == 'c') {
             ret |= S_IFCHR;
         } else {
             ret |= S_IFBLK;
@@ -1080,18 +1080,10 @@ static void v9fs_getattr(void *opaque)
     /*  fill st_gen if requested and supported by underlying fs */
     if (request_mask & P9_STATS_GEN) {
         retval = v9fs_co_st_gen(pdu, &fidp->path, stbuf.st_mode, &v9stat_dotl);
-        switch (retval) {
-        case 0:
-            /* we have valid st_gen: update result mask */
-            v9stat_dotl.st_result_mask |= P9_STATS_GEN;
-            break;
-        case -EINTR:
-            /* request cancelled, e.g. by Tflush */
+        if (retval < 0) {
             goto out;
-        default:
-            /* failed to get st_gen: not fatal, ignore */
-            break;
         }
+        v9stat_dotl.st_result_mask |= P9_STATS_GEN;
     }
     retval = pdu_marshal(pdu, offset, "A", &v9stat_dotl);
     if (retval < 0) {
@@ -1545,10 +1537,9 @@ static void v9fs_clunk(void *opaque)
      * free the fid.
      */
     fidp->ref++;
-    err = put_fid(pdu, fidp);
-    if (!err) {
-        err = offset;
-    }
+    err = offset;
+
+    put_fid(pdu, fidp);
 out_nofid:
     complete_pdu(s, pdu, err);
 }
@@ -3110,7 +3101,11 @@ static void v9fs_xattrcreate(void *opaque)
     xattr_fidp->fs.xattr.flags = flags;
     v9fs_string_init(&xattr_fidp->fs.xattr.name);
     v9fs_string_copy(&xattr_fidp->fs.xattr.name, &name);
-    xattr_fidp->fs.xattr.value = g_malloc(size);
+    if (size) {
+        xattr_fidp->fs.xattr.value = g_malloc(size);
+    } else {
+        xattr_fidp->fs.xattr.value = NULL;
+    }
     err = offset;
     put_fid(pdu, file_fidp);
 out_nofid:
@@ -3276,7 +3271,7 @@ void handle_9p_output(VirtIODevice *vdev, VirtQueue *vq)
     free_pdu(s, pdu);
 }
 
-static void __attribute__((__constructor__)) virtio_9p_set_fd_limit(void)
+void virtio_9p_set_fd_limit(void)
 {
     struct rlimit rlim;
     if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {

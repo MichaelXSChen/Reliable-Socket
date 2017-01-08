@@ -15,9 +15,9 @@
 #include <inttypes.h>
 
 #include "cpu.h"
-#include "disas/disas.h"
+#include "disas.h"
 #include "tcg-op.h"
-#include "qemu/log.h"
+#include "qemu-log.h"
 
 #include "helper.h"
 #define GEN_HELPER 1
@@ -55,7 +55,7 @@ static TCGv_i32 cpu_R[32];
 static TCGv cpu_F0s, cpu_F1s;
 static TCGv_i64 cpu_F0d, cpu_F1d;
 
-#include "exec/gen-icount.h"
+#include "gen-icount.h"
 
 static const char *regnames[] = {
       "r00", "r01", "r02", "r03", "r04", "r05", "r06", "r07",
@@ -74,6 +74,9 @@ void uc32_translate_init(void)
         cpu_R[i] = tcg_global_mem_new_i32(TCG_AREG0,
                                 offsetof(CPUUniCore32State, regs[i]), regnames[i]);
     }
+
+#define GEN_HELPER 2
+#include "helper.h"
 }
 
 static int num_temps;
@@ -176,7 +179,7 @@ static void store_reg(DisasContext *s, int reg, TCGv var)
 #define UCOP_SET_L              UCOP_SET(24)
 #define UCOP_SET_S              UCOP_SET(24)
 
-#define ILLEGAL         cpu_abort(CPU(cpu),                             \
+#define ILLEGAL         cpu_abort(env,                                  \
                         "Illegal UniCore32 instruction %x at line %d!", \
                         insn, __LINE__)
 
@@ -184,7 +187,6 @@ static void store_reg(DisasContext *s, int reg, TCGv var)
 static void disas_cp0_insn(CPUUniCore32State *env, DisasContext *s,
         uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv tmp, tmp2, tmp3;
     if ((insn & 0xfe000000) == 0xe0000000) {
         tmp2 = new_tmp();
@@ -210,7 +212,6 @@ static void disas_cp0_insn(CPUUniCore32State *env, DisasContext *s,
 static void disas_ocd_insn(CPUUniCore32State *env, DisasContext *s,
         uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv tmp;
 
     if ((insn & 0xff003fff) == 0xe1000400) {
@@ -264,6 +265,37 @@ static void gen_exception(int excp)
     tcg_gen_movi_i32(tmp, excp);
     gen_helper_exception(cpu_env, tmp);
     dead_tmp(tmp);
+}
+
+/* FIXME: Most targets have native widening multiplication.
+   It would be good to use that instead of a full wide multiply.  */
+/* 32x32->64 multiply.  Marks inputs as dead.  */
+static TCGv_i64 gen_mulu_i64_i32(TCGv a, TCGv b)
+{
+    TCGv_i64 tmp1 = tcg_temp_new_i64();
+    TCGv_i64 tmp2 = tcg_temp_new_i64();
+
+    tcg_gen_extu_i32_i64(tmp1, a);
+    dead_tmp(a);
+    tcg_gen_extu_i32_i64(tmp2, b);
+    dead_tmp(b);
+    tcg_gen_mul_i64(tmp1, tmp1, tmp2);
+    tcg_temp_free_i64(tmp2);
+    return tmp1;
+}
+
+static TCGv_i64 gen_muls_i64_i32(TCGv a, TCGv b)
+{
+    TCGv_i64 tmp1 = tcg_temp_new_i64();
+    TCGv_i64 tmp2 = tcg_temp_new_i64();
+
+    tcg_gen_ext_i32_i64(tmp1, a);
+    dead_tmp(a);
+    tcg_gen_ext_i32_i64(tmp2, b);
+    dead_tmp(b);
+    tcg_gen_mul_i64(tmp1, tmp1, tmp2);
+    tcg_temp_free_i64(tmp2);
+    return tmp1;
 }
 
 #define gen_set_CF(var) tcg_gen_st_i32(var, cpu_env, offsetof(CPUUniCore32State, CF))
@@ -691,7 +723,6 @@ static inline long ucf64_reg_offset(int reg)
 /* UniCore-F64 single load/store I_offset */
 static void do_ucf64_ldst_i(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     int offset;
     TCGv tmp;
     TCGv addr;
@@ -738,7 +769,6 @@ static void do_ucf64_ldst_i(CPUUniCore32State *env, DisasContext *s, uint32_t in
 /* UniCore-F64 load/store multiple words */
 static void do_ucf64_ldst_m(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     unsigned int i;
     int j, n, freg;
     TCGv tmp;
@@ -824,7 +854,6 @@ static void do_ucf64_ldst_m(CPUUniCore32State *env, DisasContext *s, uint32_t in
 /* UniCore-F64 mrc/mcr */
 static void do_ucf64_trans(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv tmp;
 
     if ((insn & 0xfe0003ff) == 0xe2000000) {
@@ -889,8 +918,6 @@ static void do_ucf64_trans(CPUUniCore32State *env, DisasContext *s, uint32_t ins
 /* UniCore-F64 convert instructions */
 static void do_ucf64_fcvt(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     if (UCOP_UCF64_FMT == 3) {
         ILLEGAL;
     }
@@ -957,8 +984,6 @@ static void do_ucf64_fcvt(CPUUniCore32State *env, DisasContext *s, uint32_t insn
 /* UniCore-F64 compare instructions */
 static void do_ucf64_fcmp(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     if (UCOP_SET(25)) {
         ILLEGAL;
     }
@@ -1037,8 +1062,6 @@ static void do_ucf64_fcmp(CPUUniCore32State *env, DisasContext *s, uint32_t insn
 /* UniCore-F64 data processing */
 static void do_ucf64_datap(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     if (UCOP_UCF64_FMT == 3) {
         ILLEGAL;
     }
@@ -1072,8 +1095,6 @@ static void do_ucf64_datap(CPUUniCore32State *env, DisasContext *s, uint32_t ins
 /* Disassemble an F64 instruction */
 static void disas_ucf64_insn(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     if (!UCOP_SET(29)) {
         if (UCOP_SET(26)) {
             do_ucf64_ldst_m(env, s, insn);
@@ -1110,7 +1131,7 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint32_t dest)
     if ((tb->pc & TARGET_PAGE_MASK) == (dest & TARGET_PAGE_MASK)) {
         tcg_gen_goto_tb(n);
         gen_set_pc_im(dest);
-        tcg_gen_exit_tb((uintptr_t)tb + n);
+        tcg_gen_exit_tb((tcg_target_long)tb + n);
     } else {
         gen_set_pc_im(dest);
         tcg_gen_exit_tb(0);
@@ -1180,8 +1201,6 @@ static void gen_exception_return(DisasContext *s, TCGv pc)
 static void disas_coproc_insn(CPUUniCore32State *env, DisasContext *s,
         uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     switch (UCOP_CPNUM) {
 #ifndef CONFIG_USER_ONLY
     case 0:
@@ -1196,14 +1215,45 @@ static void disas_coproc_insn(CPUUniCore32State *env, DisasContext *s,
         break;
     default:
         /* Unknown coprocessor. */
-        cpu_abort(CPU(cpu), "Unknown coprocessor!");
+        cpu_abort(env, "Unknown coprocessor!");
     }
+}
+
+
+/* Store a 64-bit value to a register pair.  Clobbers val.  */
+static void gen_storeq_reg(DisasContext *s, int rlow, int rhigh, TCGv_i64 val)
+{
+    TCGv tmp;
+    tmp = new_tmp();
+    tcg_gen_trunc_i64_i32(tmp, val);
+    store_reg(s, rlow, tmp);
+    tmp = new_tmp();
+    tcg_gen_shri_i64(val, val, 32);
+    tcg_gen_trunc_i64_i32(tmp, val);
+    store_reg(s, rhigh, tmp);
+}
+
+/* load and add a 64-bit value from a register pair.  */
+static void gen_addq(DisasContext *s, TCGv_i64 val, int rlow, int rhigh)
+{
+    TCGv_i64 tmp;
+    TCGv tmpl;
+    TCGv tmph;
+
+    /* Load 64-bit value rd:rn.  */
+    tmpl = load_reg(s, rlow);
+    tmph = load_reg(s, rhigh);
+    tmp = tcg_temp_new_i64();
+    tcg_gen_concat_i32_i64(tmp, tmpl, tmph);
+    dead_tmp(tmpl);
+    dead_tmp(tmph);
+    tcg_gen_add_i64(val, val, tmp);
+    tcg_temp_free_i64(tmp);
 }
 
 /* data processing instructions */
 static void do_datap(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv tmp;
     TCGv tmp2;
     int logic_cc;
@@ -1395,26 +1445,24 @@ static void do_datap(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* multiply */
 static void do_mult(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    TCGv tmp, tmp2, tmp3, tmp4;
+    TCGv tmp;
+    TCGv tmp2;
+    TCGv_i64 tmp64;
 
     if (UCOP_SET(27)) {
         /* 64 bit mul */
         tmp = load_reg(s, UCOP_REG_M);
         tmp2 = load_reg(s, UCOP_REG_N);
         if (UCOP_SET(26)) {
-            tcg_gen_muls2_i32(tmp, tmp2, tmp, tmp2);
+            tmp64 = gen_muls_i64_i32(tmp, tmp2);
         } else {
-            tcg_gen_mulu2_i32(tmp, tmp2, tmp, tmp2);
+            tmp64 = gen_mulu_i64_i32(tmp, tmp2);
         }
         if (UCOP_SET(25)) { /* mult accumulate */
-            tmp3 = load_reg(s, UCOP_REG_LO);
-            tmp4 = load_reg(s, UCOP_REG_HI);
-            tcg_gen_add2_i32(tmp, tmp2, tmp, tmp2, tmp3, tmp4);
-            dead_tmp(tmp3);
-            dead_tmp(tmp4);
+            gen_addq(s, tmp64, UCOP_REG_LO, UCOP_REG_HI);
         }
-        store_reg(s, UCOP_REG_LO, tmp);
-        store_reg(s, UCOP_REG_HI, tmp2);
+        gen_storeq_reg(s, UCOP_REG_LO, UCOP_REG_HI, tmp64);
+        tcg_temp_free_i64(tmp64);
     } else {
         /* 32 bit mul */
         tmp = load_reg(s, UCOP_REG_M);
@@ -1437,7 +1485,6 @@ static void do_mult(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* miscellaneous instructions */
 static void do_misc(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     unsigned int val;
     TCGv tmp;
 
@@ -1563,7 +1610,6 @@ static void do_ldst_ir(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* SWP instruction */
 static void do_swap(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv addr;
     TCGv tmp;
     TCGv tmp2;
@@ -1591,7 +1637,6 @@ static void do_swap(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* load/store hw/sb */
 static void do_ldst_hwsb(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     TCGv addr;
     TCGv tmp;
 
@@ -1644,7 +1689,6 @@ static void do_ldst_hwsb(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* load/store multiple words */
 static void do_ldst_m(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     unsigned int val, i, mmu_idx;
     int j, n, reg, user, loaded_base;
     TCGv tmp;
@@ -1786,7 +1830,6 @@ static void do_ldst_m(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 /* branch (and link) */
 static void do_branch(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     unsigned int val;
     int32_t offset;
     TCGv tmp;
@@ -1816,7 +1859,6 @@ static void do_branch(CPUUniCore32State *env, DisasContext *s, uint32_t insn)
 
 static void disas_uc32_insn(CPUUniCore32State *env, DisasContext *s)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
     unsigned int insn;
 
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT))) {
@@ -1895,11 +1937,9 @@ static void disas_uc32_insn(CPUUniCore32State *env, DisasContext *s)
 /* generate intermediate code in gen_opc_buf and gen_opparam_buf for
    basic block 'tb'. If search_pc is TRUE, also generate PC
    information for each intermediate instruction. */
-static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
-        TranslationBlock *tb, bool search_pc)
+static inline void gen_intermediate_code_internal(CPUUniCore32State *env,
+        TranslationBlock *tb, int search_pc)
 {
-    CPUState *cs = CPU(cpu);
-    CPUUniCore32State *env = &cpu->env;
     DisasContext dc1, *dc = &dc1;
     CPUBreakpoint *bp;
     uint16_t *gen_opc_end;
@@ -1916,11 +1956,11 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
 
     dc->tb = tb;
 
-    gen_opc_end = tcg_ctx.gen_opc_buf + OPC_MAX_SIZE;
+    gen_opc_end = gen_opc_buf + OPC_MAX_SIZE;
 
     dc->is_jmp = DISAS_NEXT;
     dc->pc = pc_start;
-    dc->singlestep_enabled = cs->singlestep_enabled;
+    dc->singlestep_enabled = env->singlestep_enabled;
     dc->condjmp = 0;
     cpu_F0s = tcg_temp_new_i32();
     cpu_F1s = tcg_temp_new_i32();
@@ -1942,10 +1982,10 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
     }
 #endif
 
-    gen_tb_start();
+    gen_icount_start();
     do {
-        if (unlikely(!QTAILQ_EMPTY(&cs->breakpoints))) {
-            QTAILQ_FOREACH(bp, &cs->breakpoints, entry) {
+        if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
+            QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == dc->pc) {
                     gen_set_pc_im(dc->pc);
                     gen_exception(EXCP_DEBUG);
@@ -1954,20 +1994,21 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
                        invalidate this TB.  */
                     dc->pc += 2; /* FIXME */
                     goto done_generating;
+                    break;
                 }
             }
         }
         if (search_pc) {
-            j = tcg_ctx.gen_opc_ptr - tcg_ctx.gen_opc_buf;
+            j = gen_opc_ptr - gen_opc_buf;
             if (lj < j) {
                 lj++;
                 while (lj < j) {
-                    tcg_ctx.gen_opc_instr_start[lj++] = 0;
+                    gen_opc_instr_start[lj++] = 0;
                 }
             }
-            tcg_ctx.gen_opc_pc[lj] = dc->pc;
-            tcg_ctx.gen_opc_instr_start[lj] = 1;
-            tcg_ctx.gen_opc_icount[lj] = num_insns;
+            gen_opc_pc[lj] = dc->pc;
+            gen_opc_instr_start[lj] = 1;
+            gen_opc_icount[lj] = num_insns;
         }
 
         if (num_insns + 1 == max_insns && (tb->cflags & CF_LAST_IO)) {
@@ -1990,8 +2031,8 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
          * Also stop translation when a page boundary is reached.  This
          * ensures prefetch aborts occur at the right place.  */
         num_insns++;
-    } while (!dc->is_jmp && tcg_ctx.gen_opc_ptr < gen_opc_end &&
-             !cs->singlestep_enabled &&
+    } while (!dc->is_jmp && gen_opc_ptr < gen_opc_end &&
+             !env->singlestep_enabled &&
              !singlestep &&
              dc->pc < next_page_start &&
              num_insns < max_insns);
@@ -2000,7 +2041,7 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
         if (dc->condjmp) {
             /* FIXME:  This can theoretically happen with self-modifying
                code.  */
-            cpu_abort(cs, "IO on conditional branch instruction");
+            cpu_abort(env, "IO on conditional branch instruction");
         }
         gen_io_end();
     }
@@ -2008,7 +2049,7 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
     /* At this stage dc->condjmp will only be set when the skipped
        instruction was a conditional branch or trap, and the PC has
        already been written.  */
-    if (unlikely(cs->singlestep_enabled)) {
+    if (unlikely(env->singlestep_enabled)) {
         /* Make sure the pc is updated, and raise a debug exception.  */
         if (dc->condjmp) {
             if (dc->is_jmp == DISAS_SYSCALL) {
@@ -2061,22 +2102,22 @@ static inline void gen_intermediate_code_internal(UniCore32CPU *cpu,
     }
 
 done_generating:
-    gen_tb_end(tb, num_insns);
-    *tcg_ctx.gen_opc_ptr = INDEX_op_end;
+    gen_icount_end(tb, num_insns);
+    *gen_opc_ptr = INDEX_op_end;
 
 #ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
         qemu_log("----------------\n");
         qemu_log("IN: %s\n", lookup_symbol(pc_start));
-        log_target_disas(env, pc_start, dc->pc - pc_start, 0);
+        log_target_disas(pc_start, dc->pc - pc_start, 0);
         qemu_log("\n");
     }
 #endif
     if (search_pc) {
-        j = tcg_ctx.gen_opc_ptr - tcg_ctx.gen_opc_buf;
+        j = gen_opc_ptr - gen_opc_buf;
         lj++;
         while (lj <= j) {
-            tcg_ctx.gen_opc_instr_start[lj++] = 0;
+            gen_opc_instr_start[lj++] = 0;
         }
     } else {
         tb->size = dc->pc - pc_start;
@@ -2086,12 +2127,12 @@ done_generating:
 
 void gen_intermediate_code(CPUUniCore32State *env, TranslationBlock *tb)
 {
-    gen_intermediate_code_internal(uc32_env_get_cpu(env), tb, false);
+    gen_intermediate_code_internal(env, tb, 0);
 }
 
 void gen_intermediate_code_pc(CPUUniCore32State *env, TranslationBlock *tb)
 {
-    gen_intermediate_code_internal(uc32_env_get_cpu(env), tb, true);
+    gen_intermediate_code_internal(env, tb, 1);
 }
 
 static const char *cpu_mode_names[16] = {
@@ -2134,11 +2175,9 @@ static void cpu_dump_state_ucf64(CPUUniCore32State *env, FILE *f,
 #define cpu_dump_state_ucf64(env, file, pr, flags)      do { } while (0)
 #endif
 
-void uc32_cpu_dump_state(CPUState *cs, FILE *f,
-                         fprintf_function cpu_fprintf, int flags)
+void cpu_dump_state(CPUUniCore32State *env, FILE *f,
+        fprintf_function cpu_fprintf, int flags)
 {
-    UniCore32CPU *cpu = UNICORE32_CPU(cs);
-    CPUUniCore32State *env = &cpu->env;
     int i;
     uint32_t psr;
 
@@ -2164,5 +2203,5 @@ void uc32_cpu_dump_state(CPUState *cs, FILE *f,
 
 void restore_state_to_opc(CPUUniCore32State *env, TranslationBlock *tb, int pc_pos)
 {
-    env->regs[31] = tcg_ctx.gen_opc_pc[pc_pos];
+    env->regs[31] = gen_opc_pc[pc_pos];
 }

@@ -336,10 +336,11 @@ int tcp_fconnect(struct socket *so)
     int opt, s=so->s;
     struct sockaddr_in addr;
 
-    qemu_set_nonblock(s);
-    socket_set_fast_reuse(s);
+    socket_set_nonblock(s);
     opt = 1;
-    qemu_setsockopt(s, SOL_SOCKET, SO_OOBINLINE, &opt, sizeof(opt));
+    setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char *)&opt,sizeof(opt ));
+    opt = 1;
+    setsockopt(s,SOL_SOCKET,SO_OOBINLINE,(char *)&opt,sizeof(opt ));
 
     addr.sin_family = AF_INET;
     if ((so->so_faddr.s_addr & slirp->vnetwork_mask.s_addr) ==
@@ -383,85 +384,83 @@ int tcp_fconnect(struct socket *so)
  * the time it gets to accept(), so... We simply accept
  * here and SYN the local-host.
  */
-void tcp_connect(struct socket *inso)
+void
+tcp_connect(struct socket *inso)
 {
-    Slirp *slirp = inso->slirp;
-    struct socket *so;
-    struct sockaddr_in addr;
-    socklen_t addrlen = sizeof(struct sockaddr_in);
-    struct tcpcb *tp;
-    int s, opt;
+	Slirp *slirp = inso->slirp;
+	struct socket *so;
+	struct sockaddr_in addr;
+	socklen_t addrlen = sizeof(struct sockaddr_in);
+	struct tcpcb *tp;
+	int s, opt;
 
-    DEBUG_CALL("tcp_connect");
-    DEBUG_ARG("inso = %lx", (long)inso);
+	DEBUG_CALL("tcp_connect");
+	DEBUG_ARG("inso = %lx", (long)inso);
 
-    /*
-     * If it's an SS_ACCEPTONCE socket, no need to socreate()
-     * another socket, just use the accept() socket.
-     */
-    if (inso->so_state & SS_FACCEPTONCE) {
-        /* FACCEPTONCE already have a tcpcb */
-        so = inso;
-    } else {
-        so = socreate(slirp);
-        if (so == NULL) {
-            /* If it failed, get rid of the pending connection */
-            closesocket(accept(inso->s, (struct sockaddr *)&addr, &addrlen));
-            return;
+	/*
+	 * If it's an SS_ACCEPTONCE socket, no need to socreate()
+	 * another socket, just use the accept() socket.
+	 */
+	if (inso->so_state & SS_FACCEPTONCE) {
+		/* FACCEPTONCE already have a tcpcb */
+		so = inso;
+	} else {
+		if ((so = socreate(slirp)) == NULL) {
+			/* If it failed, get rid of the pending connection */
+			closesocket(accept(inso->s,(struct sockaddr *)&addr,&addrlen));
+			return;
+		}
+		if (tcp_attach(so) < 0) {
+			free(so); /* NOT sofree */
+			return;
+		}
+		so->so_laddr = inso->so_laddr;
+		so->so_lport = inso->so_lport;
+	}
+
+	(void) tcp_mss(sototcpcb(so), 0);
+
+	if ((s = accept(inso->s,(struct sockaddr *)&addr,&addrlen)) < 0) {
+		tcp_close(sototcpcb(so)); /* This will sofree() as well */
+		return;
+	}
+	socket_set_nonblock(s);
+	opt = 1;
+	setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char *)&opt,sizeof(int));
+	opt = 1;
+	setsockopt(s,SOL_SOCKET,SO_OOBINLINE,(char *)&opt,sizeof(int));
+	opt = 1;
+	setsockopt(s,IPPROTO_TCP,TCP_NODELAY,(char *)&opt,sizeof(int));
+
+	so->so_fport = addr.sin_port;
+	so->so_faddr = addr.sin_addr;
+	/* Translate connections from localhost to the real hostname */
+        if (so->so_faddr.s_addr == 0 ||
+            (so->so_faddr.s_addr & loopback_mask) ==
+            (loopback_addr.s_addr & loopback_mask)) {
+            so->so_faddr = slirp->vhost_addr;
         }
-        if (tcp_attach(so) < 0) {
-            free(so); /* NOT sofree */
-            return;
-        }
-        so->so_laddr = inso->so_laddr;
-        so->so_lport = inso->so_lport;
-    }
 
-    tcp_mss(sototcpcb(so), 0);
+	/* Close the accept() socket, set right state */
+	if (inso->so_state & SS_FACCEPTONCE) {
+		closesocket(so->s); /* If we only accept once, close the accept() socket */
+		so->so_state = SS_NOFDREF; /* Don't select it yet, even though we have an FD */
+					   /* if it's not FACCEPTONCE, it's already NOFDREF */
+	}
+	so->s = s;
+	so->so_state |= SS_INCOMING;
 
-    s = accept(inso->s, (struct sockaddr *)&addr, &addrlen);
-    if (s < 0) {
-        tcp_close(sototcpcb(so)); /* This will sofree() as well */
-        return;
-    }
-    qemu_set_nonblock(s);
-    socket_set_fast_reuse(s);
-    opt = 1;
-    qemu_setsockopt(s, SOL_SOCKET, SO_OOBINLINE, &opt, sizeof(int));
-    socket_set_nodelay(s);
+	so->so_iptos = tcp_tos(so);
+	tp = sototcpcb(so);
 
-    so->so_fport = addr.sin_port;
-    so->so_faddr = addr.sin_addr;
-    /* Translate connections from localhost to the real hostname */
-    if (so->so_faddr.s_addr == 0 ||
-        (so->so_faddr.s_addr & loopback_mask) ==
-        (loopback_addr.s_addr & loopback_mask)) {
-        so->so_faddr = slirp->vhost_addr;
-    }
+	tcp_template(tp);
 
-    /* Close the accept() socket, set right state */
-    if (inso->so_state & SS_FACCEPTONCE) {
-        /* If we only accept once, close the accept() socket */
-        closesocket(so->s);
-
-        /* Don't select it yet, even though we have an FD */
-        /* if it's not FACCEPTONCE, it's already NOFDREF */
-        so->so_state = SS_NOFDREF;
-    }
-    so->s = s;
-    so->so_state |= SS_INCOMING;
-
-    so->so_iptos = tcp_tos(so);
-    tp = sototcpcb(so);
-
-    tcp_template(tp);
-
-    tp->t_state = TCPS_SYN_SENT;
-    tp->t_timer[TCPT_KEEP] = TCPTV_KEEP_INIT;
-    tp->iss = slirp->tcp_iss;
-    slirp->tcp_iss += TCP_ISSINCR/2;
-    tcp_sendseqinit(tp);
-    tcp_output(tp);
+	tp->t_state = TCPS_SYN_SENT;
+	tp->t_timer[TCPT_KEEP] = TCPTV_KEEP_INIT;
+	tp->iss = slirp->tcp_iss;
+	slirp->tcp_iss += TCP_ISSINCR/2;
+	tcp_sendseqinit(tp);
+	tcp_output(tp);
 }
 
 /*
@@ -645,7 +644,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 			n4 =  (laddr & 0xff);
 
 			m->m_len = bptr - m->m_data; /* Adjust length */
-                        m->m_len += snprintf(bptr, m->m_size - m->m_len,
+                        m->m_len += snprintf(bptr, m->m_hdr.mh_size - m->m_len,
                                              "ORT %d,%d,%d,%d,%d,%d\r\n%s",
                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
 			return 1;
@@ -678,7 +677,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 			n4 =  (laddr & 0xff);
 
 			m->m_len = bptr - m->m_data; /* Adjust length */
-			m->m_len += snprintf(bptr, m->m_size - m->m_len,
+			m->m_len += snprintf(bptr, m->m_hdr.mh_size - m->m_len,
                                              "27 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n%s",
                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
 
@@ -704,7 +703,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 		if (m->m_data[m->m_len-1] == '\0' && lport != 0 &&
 		    (so = tcp_listen(slirp, INADDR_ANY, 0, so->so_laddr.s_addr,
 		                     htons(lport), SS_FACCEPTONCE)) != NULL)
-                    m->m_len = snprintf(m->m_data, m->m_size, "%d",
+                    m->m_len = snprintf(m->m_data, m->m_hdr.mh_size, "%d",
                                         ntohs(so->so_fport)) + 1;
 		return 1;
 
@@ -724,7 +723,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 				return 1;
 			}
 			m->m_len = bptr - m->m_data; /* Adjust length */
-                        m->m_len += snprintf(bptr, m->m_size,
+                        m->m_len += snprintf(bptr, m->m_hdr.mh_size,
                                              "DCC CHAT chat %lu %u%c\n",
                                              (unsigned long)ntohl(so->so_faddr.s_addr),
                                              ntohs(so->so_fport), 1);
@@ -735,7 +734,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 				return 1;
 			}
 			m->m_len = bptr - m->m_data; /* Adjust length */
-                        m->m_len += snprintf(bptr, m->m_size,
+                        m->m_len += snprintf(bptr, m->m_hdr.mh_size,
                                              "DCC SEND %s %lu %u %u%c\n", buff,
                                              (unsigned long)ntohl(so->so_faddr.s_addr),
                                              ntohs(so->so_fport), n1, 1);
@@ -746,7 +745,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
 				return 1;
 			}
 			m->m_len = bptr - m->m_data; /* Adjust length */
-                        m->m_len += snprintf(bptr, m->m_size,
+                        m->m_len += snprintf(bptr, m->m_hdr.mh_size,
                                              "DCC MOVE %s %lu %u %u%c\n", buff,
                                              (unsigned long)ntohl(so->so_faddr.s_addr),
                                              ntohs(so->so_fport), n1, 1);

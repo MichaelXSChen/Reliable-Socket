@@ -1,6 +1,4 @@
 /* tftp defines */
-#ifndef SLIRP_TFTP_H
-#define SLIRP_TFTP_H 1
 
 #define TFTP_SESSIONS_MAX 3
 
@@ -45,5 +43,3 @@ struct tftp_session {
 };
 
 void tftp_input(struct mbuf *m);
-
-#endif

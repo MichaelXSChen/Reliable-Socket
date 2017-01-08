@@ -12,11 +12,10 @@
 
 #include <glib.h>
 
-#include "qemu-common.h"
 #include "qapi/string-output-visitor.h"
 #include "test-qapi-types.h"
 #include "test-qapi-visit.h"
-#include "qapi/qmp/types.h"
+#include "qemu-objects.h"
 
 typedef struct TestOutputVisitorData {
     StringOutputVisitor *sov;
@@ -26,7 +25,7 @@ typedef struct TestOutputVisitorData {
 static void visitor_output_setup(TestOutputVisitorData *data,
                                  const void *unused)
 {
-    data->sov = string_output_visitor_new(false);
+    data->sov = string_output_visitor_new();
     g_assert(data->sov != NULL);
 
     data->ov = string_output_get_visitor(data->sov);
@@ -49,7 +48,7 @@ static void test_visitor_out_int(TestOutputVisitorData *data,
     char *str;
 
     visit_type_int(data->ov, &value, NULL, &errp);
-    g_assert(!errp);
+    g_assert(error_is_set(&errp) == 0);
 
     str = string_output_get_string(data->sov);
     g_assert(str != NULL);
@@ -65,7 +64,7 @@ static void test_visitor_out_bool(TestOutputVisitorData *data,
     char *str;
 
     visit_type_bool(data->ov, &value, NULL, &errp);
-    g_assert(!errp);
+    g_assert(error_is_set(&errp) == 0);
 
     str = string_output_get_string(data->sov);
     g_assert(str != NULL);
@@ -81,7 +80,7 @@ static void test_visitor_out_number(TestOutputVisitorData *data,
     char *str;
 
     visit_type_number(data->ov, &value, NULL, &errp);
-    g_assert(!errp);
+    g_assert(error_is_set(&errp) == 0);
 
     str = string_output_get_string(data->sov);
     g_assert(str != NULL);
@@ -97,7 +96,7 @@ static void test_visitor_out_string(TestOutputVisitorData *data,
     char *str;
 
     visit_type_str(data->ov, &string, NULL, &errp);
-    g_assert(!errp);
+    g_assert(error_is_set(&errp) == 0);
 
     str = string_output_get_string(data->sov);
     g_assert(str != NULL);
@@ -114,7 +113,7 @@ static void test_visitor_out_no_string(TestOutputVisitorData *data,
 
     /* A null string should return "" */
     visit_type_str(data->ov, &string, NULL, &errp);
-    g_assert(!errp);
+    g_assert(error_is_set(&errp) == 0);
 
     str = string_output_get_string(data->sov);
     g_assert(str != NULL);
@@ -131,7 +130,7 @@ static void test_visitor_out_enum(TestOutputVisitorData *data,
 
     for (i = 0; i < ENUM_ONE_MAX; i++) {
         visit_type_EnumOne(data->ov, &i, "unused", &errp);
-        g_assert(!errp);
+        g_assert(!error_is_set(&errp));
 
         str = string_output_get_string(data->sov);
         g_assert(str != NULL);
@@ -149,7 +148,7 @@ static void test_visitor_out_enum_errors(TestOutputVisitorData *data,
     for (i = 0; i < ARRAY_SIZE(bad_values) ; i++) {
         errp = NULL;
         visit_type_EnumOne(data->ov, &bad_values[i], "unused", &errp);
-        g_assert(errp);
+        g_assert(error_is_set(&errp) == true);
         error_free(errp);
     }
 }

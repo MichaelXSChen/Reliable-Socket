@@ -24,17 +24,14 @@
 #include <spice/enums.h>
 
 #include "qemu-common.h"
-#include "ui/qemu-spice.h"
-#include "ui/console.h"
-#include "ui/keymaps.h"
-#include "ui/input.h"
+#include "qemu-spice.h"
+#include "console.h"
 
 /* keyboard bits */
 
 typedef struct QemuSpiceKbd {
     SpiceKbdInstance sin;
     int ledstate;
-    bool emul0;
 } QemuSpiceKbd;
 
 static void kbd_push_key(SpiceKbdInstance *sin, uint8_t frag);
@@ -50,24 +47,9 @@ static const SpiceKbdInterface kbd_interface = {
     .get_leds           = kbd_get_leds,
 };
 
-static void kbd_push_key(SpiceKbdInstance *sin, uint8_t scancode)
+static void kbd_push_key(SpiceKbdInstance *sin, uint8_t frag)
 {
-    QemuSpiceKbd *kbd = container_of(sin, QemuSpiceKbd, sin);
-    int keycode;
-    bool up;
-
-    if (scancode == SCANCODE_EMUL0) {
-        kbd->emul0 = true;
-        return;
-    }
-    keycode = scancode & ~SCANCODE_UP;
-    up = scancode & SCANCODE_UP;
-    if (kbd->emul0) {
-        kbd->emul0 = false;
-        keycode |= SCANCODE_GREY;
-    }
-
-    qemu_input_event_send_key_number(NULL, keycode, !up);
+    kbd_put_keycode(frag);
 }
 
 static uint8_t kbd_get_leds(SpiceKbdInstance *sin)
@@ -98,52 +80,41 @@ static void kbd_leds(void *opaque, int ledstate)
 typedef struct QemuSpicePointer {
     SpiceMouseInstance  mouse;
     SpiceTabletInstance tablet;
-    int width, height;
-    uint32_t last_bmask;
+    int width, height, x, y;
     Notifier mouse_mode;
     bool absolute;
 } QemuSpicePointer;
 
-static void spice_update_buttons(QemuSpicePointer *pointer,
-                                 int wheel, uint32_t button_mask)
+static int map_buttons(int spice_buttons)
 {
-    static uint32_t bmap[INPUT_BUTTON_MAX] = {
-        [INPUT_BUTTON_LEFT]        = 0x01,
-        [INPUT_BUTTON_MIDDLE]      = 0x04,
-        [INPUT_BUTTON_RIGHT]       = 0x02,
-        [INPUT_BUTTON_WHEEL_UP]    = 0x10,
-        [INPUT_BUTTON_WHEEL_DOWN]  = 0x20,
-    };
+    int qemu_buttons = 0;
 
-    if (wheel < 0) {
-        button_mask |= 0x10;
+    /*
+     * Note: SPICE_MOUSE_BUTTON_* specifies the wire protocol but this
+     * isn't what we get passed in via interface callbacks for the
+     * middle and right button ...
+     */
+    if (spice_buttons & SPICE_MOUSE_BUTTON_MASK_LEFT) {
+        qemu_buttons |= MOUSE_EVENT_LBUTTON;
     }
-    if (wheel > 0) {
-        button_mask |= 0x20;
+    if (spice_buttons & 0x04 /* SPICE_MOUSE_BUTTON_MASK_MIDDLE */) {
+        qemu_buttons |= MOUSE_EVENT_MBUTTON;
     }
-
-    if (pointer->last_bmask == button_mask) {
-        return;
+    if (spice_buttons & 0x02 /* SPICE_MOUSE_BUTTON_MASK_RIGHT */) {
+        qemu_buttons |= MOUSE_EVENT_RBUTTON;
     }
-    qemu_input_update_buttons(NULL, bmap, pointer->last_bmask, button_mask);
-    pointer->last_bmask = button_mask;
+    return qemu_buttons;
 }
 
 static void mouse_motion(SpiceMouseInstance *sin, int dx, int dy, int dz,
                          uint32_t buttons_state)
 {
-    QemuSpicePointer *pointer = container_of(sin, QemuSpicePointer, mouse);
-    spice_update_buttons(pointer, dz, buttons_state);
-    qemu_input_queue_rel(NULL, INPUT_AXIS_X, dx);
-    qemu_input_queue_rel(NULL, INPUT_AXIS_Y, dy);
-    qemu_input_event_sync();
+    kbd_mouse_event(dx, dy, dz, map_buttons(buttons_state));
 }
 
 static void mouse_buttons(SpiceMouseInstance *sin, uint32_t buttons_state)
 {
-    QemuSpicePointer *pointer = container_of(sin, QemuSpicePointer, mouse);
-    spice_update_buttons(pointer, 0, buttons_state);
-    qemu_input_event_sync();
+    kbd_mouse_event(0, 0, 0, map_buttons(buttons_state));
 }
 
 static const SpiceMouseInterface mouse_interface = {
@@ -174,10 +145,9 @@ static void tablet_position(SpiceTabletInstance* sin, int x, int y,
 {
     QemuSpicePointer *pointer = container_of(sin, QemuSpicePointer, tablet);
 
-    spice_update_buttons(pointer, 0, buttons_state);
-    qemu_input_queue_abs(NULL, INPUT_AXIS_X, x, pointer->width);
-    qemu_input_queue_abs(NULL, INPUT_AXIS_Y, y, pointer->height);
-    qemu_input_event_sync();
+    pointer->x = x * 0x7FFF / (pointer->width - 1);
+    pointer->y = y * 0x7FFF / (pointer->height - 1);
+    kbd_mouse_event(pointer->x, pointer->y, 0, map_buttons(buttons_state));
 }
 
 
@@ -186,8 +156,7 @@ static void tablet_wheel(SpiceTabletInstance* sin, int wheel,
 {
     QemuSpicePointer *pointer = container_of(sin, QemuSpicePointer, tablet);
 
-    spice_update_buttons(pointer, wheel, buttons_state);
-    qemu_input_event_sync();
+    kbd_mouse_event(pointer->x, pointer->y, wheel, map_buttons(buttons_state));
 }
 
 static void tablet_buttons(SpiceTabletInstance *sin,
@@ -195,8 +164,7 @@ static void tablet_buttons(SpiceTabletInstance *sin,
 {
     QemuSpicePointer *pointer = container_of(sin, QemuSpicePointer, tablet);
 
-    spice_update_buttons(pointer, 0, buttons_state);
-    qemu_input_event_sync();
+    kbd_mouse_event(pointer->x, pointer->y, 0, map_buttons(buttons_state));
 }
 
 static const SpiceTabletInterface tablet_interface = {
@@ -213,7 +181,7 @@ static const SpiceTabletInterface tablet_interface = {
 static void mouse_mode_notifier(Notifier *notifier, void *data)
 {
     QemuSpicePointer *pointer = container_of(notifier, QemuSpicePointer, mouse_mode);
-    bool is_absolute  = qemu_input_is_absolute();
+    bool is_absolute  = kbd_mouse_is_absolute();
 
     if (pointer->absolute == is_absolute) {
         return;

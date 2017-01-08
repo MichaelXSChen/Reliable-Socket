@@ -200,7 +200,6 @@ static const name2keysym_t name2keysym[]={
 { "yacute",               0x0fd},
 { "thorn",                0x0fe},
 { "ydiaeresis",           0x0ff},
-#if SDL_MAJOR_VERSION == 1
 {"EuroSign", SDLK_EURO},
 
     /* modifiers */
@@ -273,6 +272,6 @@ static const name2keysym_t name2keysym[]={
 {"Num_Lock", SDLK_NUMLOCK},
 {"Pause", SDLK_PAUSE},
 {"Escape", SDLK_ESCAPE},
-#endif
+
 {NULL, 0},
 };

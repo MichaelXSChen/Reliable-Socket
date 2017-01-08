@@ -21,7 +21,7 @@
 
 #include "qemu.h"
 #include "qemu-common.h"
-#include "exec/ioport.h"
+#include "ioport.h"
 
 void cpu_outb(pio_addr_t addr, uint8_t val)
 {

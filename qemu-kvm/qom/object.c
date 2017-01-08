@@ -10,21 +10,19 @@
  * See the COPYING file in the top-level directory.
  */
 
-#include "qom/object.h"
+#include "qemu/object.h"
 #include "qemu-common.h"
-#include "qapi/visitor.h"
+#include "qapi/qapi-visit-core.h"
 #include "qapi/string-input-visitor.h"
 #include "qapi/string-output-visitor.h"
-#include "qapi/qmp/qerror.h"
-#include "trace.h"
 
 /* TODO: replace QObject with a simpler visitor to avoid a dependency
  * of the QOM core on QObject?  */
-#include "qom/qom-qobject.h"
-#include "qapi/qmp/qobject.h"
-#include "qapi/qmp/qbool.h"
-#include "qapi/qmp/qint.h"
-#include "qapi/qmp/qstring.h"
+#include "qemu/qom-qobject.h"
+#include "qobject.h"
+#include "qbool.h"
+#include "qint.h"
+#include "qstring.h"
 
 #define MAX_INTERFACES 32
 
@@ -51,7 +49,6 @@ struct TypeImpl
     void *class_data;
 
     void (*instance_init)(Object *obj);
-    void (*instance_post_init)(Object *obj);
     void (*instance_finalize)(Object *obj);
 
     bool abstract;
@@ -78,11 +75,8 @@ static GHashTable *type_table_get(void)
     return type_table;
 }
 
-static bool enumerating_types;
-
 static void type_table_add(TypeImpl *ti)
 {
-    assert(!enumerating_types);
     g_hash_table_insert(type_table_get(), (void *)ti->name, ti);
 }
 
@@ -91,7 +85,7 @@ static TypeImpl *type_table_lookup(const char *name)
     return g_hash_table_lookup(type_table_get(), name);
 }
 
-static TypeImpl *type_new(const TypeInfo *info)
+static TypeImpl *type_register_internal(const TypeInfo *info)
 {
     TypeImpl *ti = g_malloc0(sizeof(*ti));
     int i;
@@ -115,7 +109,6 @@ static TypeImpl *type_new(const TypeInfo *info)
     ti->class_data = info->class_data;
 
     ti->instance_init = info->instance_init;
-    ti->instance_post_init = info->instance_post_init;
     ti->instance_finalize = info->instance_finalize;
 
     ti->abstract = info->abstract;
@@ -125,15 +118,8 @@ static TypeImpl *type_new(const TypeInfo *info)
     }
     ti->num_interfaces = i;
 
-    return ti;
-}
-
-static TypeImpl *type_register_internal(const TypeInfo *info)
-{
-    TypeImpl *ti;
-    ti = type_new(info);
-
     type_table_add(ti);
+
     return ti;
 }
 
@@ -216,25 +202,22 @@ static bool type_is_ancestor(TypeImpl *type, TypeImpl *target_type)
 
 static void type_initialize(TypeImpl *ti);
 
-static void type_initialize_interface(TypeImpl *ti, TypeImpl *interface_type,
-                                      TypeImpl *parent_type)
+static void type_initialize_interface(TypeImpl *ti, const char *parent)
 {
     InterfaceClass *new_iface;
     TypeInfo info = { };
     TypeImpl *iface_impl;
 
-    info.parent = parent_type->name;
-    info.name = g_strdup_printf("%s::%s", ti->name, interface_type->name);
+    info.parent = parent;
+    info.name = g_strdup_printf("%s::%s", ti->name, info.parent);
     info.abstract = true;
 
-    iface_impl = type_new(&info);
-    iface_impl->parent_type = parent_type;
+    iface_impl = type_register(&info);
     type_initialize(iface_impl);
     g_free((char *)info.name);
 
     new_iface = (InterfaceClass *)iface_impl->class;
     new_iface->concrete_class = ti->class;
-    new_iface->interface_type = interface_type;
 
     ti->class->interfaces = g_slist_append(ti->class->interfaces,
                                            iface_impl->class);
@@ -261,13 +244,10 @@ static void type_initialize(TypeImpl *ti)
 
         g_assert(parent->class_size <= ti->class_size);
         memcpy(ti->class, parent->class, parent->class_size);
-        ti->class->interfaces = NULL;
 
         for (e = parent->class->interfaces; e; e = e->next) {
-            InterfaceClass *iface = e->data;
-            ObjectClass *klass = OBJECT_CLASS(iface);
-
-            type_initialize_interface(ti, iface->interface_type, klass->type);
+            ObjectClass *iface = e->data;
+            type_initialize_interface(ti, object_class_get_name(iface));
         }
 
         for (i = 0; i < ti->num_interfaces; i++) {
@@ -284,7 +264,7 @@ static void type_initialize(TypeImpl *ti)
                 continue;
             }
 
-            type_initialize_interface(ti, t, t);
+            type_initialize_interface(ti, ti->interfaces[i].typename);
         }
     }
 
@@ -300,6 +280,8 @@ static void type_initialize(TypeImpl *ti)
     if (ti->class_init) {
         ti->class_init(ti->class, ti->class_data);
     }
+
+
 }
 
 static void object_init_with_type(Object *obj, TypeImpl *ti)
@@ -313,18 +295,7 @@ static void object_init_with_type(Object *obj, TypeImpl *ti)
     }
 }
 
-static void object_post_init_with_type(Object *obj, TypeImpl *ti)
-{
-    if (ti->instance_post_init) {
-        ti->instance_post_init(obj);
-    }
-
-    if (type_has_parent(ti)) {
-        object_post_init_with_type(obj, type_get_parent(ti));
-    }
-}
-
-void object_initialize_with_type(void *data, size_t size, TypeImpl *type)
+void object_initialize_with_type(void *data, TypeImpl *type)
 {
     Object *obj = data;
 
@@ -333,21 +304,18 @@ void object_initialize_with_type(void *data, size_t size, TypeImpl *type)
 
     g_assert(type->instance_size >= sizeof(Object));
     g_assert(type->abstract == false);
-    g_assert(size >= type->instance_size);
 
     memset(obj, 0, type->instance_size);
     obj->class = type->class;
-    object_ref(obj);
     QTAILQ_INIT(&obj->properties);
     object_init_with_type(obj, type);
-    object_post_init_with_type(obj, type);
 }
 
-void object_initialize(void *data, size_t size, const char *typename)
+void object_initialize(void *data, const char *typename)
 {
     TypeImpl *type = type_get_by_name(typename);
 
-    object_initialize_with_type(data, size, type);
+    object_initialize_with_type(data, type);
 }
 
 static inline bool object_property_is_child(ObjectProperty *prop)
@@ -391,18 +359,9 @@ static void object_property_del_child(Object *obj, Object *child, Error **errp)
 
 void object_unparent(Object *obj)
 {
-    if (!obj->parent) {
-        return;
-    }
-
-    object_ref(obj);
-    if (obj->class->unparent) {
-        (obj->class->unparent)(obj);
-    }
     if (obj->parent) {
         object_property_del_child(obj->parent, obj, NULL);
     }
-    object_unref(obj);
 }
 
 static void object_deinit(Object *obj, TypeImpl *type)
@@ -416,7 +375,7 @@ static void object_deinit(Object *obj, TypeImpl *type)
     }
 }
 
-static void object_finalize(void *data)
+void object_finalize(void *data)
 {
     Object *obj = data;
     TypeImpl *ti = obj->class->type;
@@ -425,9 +384,6 @@ static void object_finalize(void *data)
     object_property_del_all(obj);
 
     g_assert(obj->ref == 0);
-    if (obj->free) {
-        obj->free(obj);
-    }
 }
 
 Object *object_new_with_type(Type type)
@@ -438,8 +394,8 @@ Object *object_new_with_type(Type type)
     type_initialize(type);
 
     obj = g_malloc(type->instance_size);
-    object_initialize_with_type(obj, type->instance_size, type);
-    obj->free = g_free;
+    object_initialize_with_type(obj, type);
+    object_ref(obj);
 
     return obj;
 }
@@ -451,79 +407,46 @@ Object *object_new(const char *typename)
     return object_new_with_type(ti);
 }
 
+void object_delete(Object *obj)
+{
+    object_unparent(obj);
+    g_assert(obj->ref == 1);
+    object_unref(obj);
+    g_free(obj);
+}
+
 Object *object_dynamic_cast(Object *obj, const char *typename)
 {
-    if (obj && object_class_dynamic_cast(object_get_class(obj), typename)) {
+    if (object_class_dynamic_cast(object_get_class(obj), typename)) {
         return obj;
     }
 
     return NULL;
 }
 
-Object *object_dynamic_cast_assert(Object *obj, const char *typename,
-                                   const char *file, int line, const char *func)
+Object *object_dynamic_cast_assert(Object *obj, const char *typename)
 {
-    trace_object_dynamic_cast_assert(obj ? obj->class->type->name : "(null)",
-                                     typename, file, line, func);
-
-#ifdef CONFIG_QOM_CAST_DEBUG
-    int i;
     Object *inst;
-
-    for (i = 0; obj && i < OBJECT_CLASS_CAST_CACHE; i++) {
-        if (obj->class->object_cast_cache[i] == typename) {
-            goto out;
-        }
-    }
 
     inst = object_dynamic_cast(obj, typename);
 
-    if (!inst && obj) {
-        fprintf(stderr, "%s:%d:%s: Object %p is not an instance of type %s\n",
-                file, line, func, obj, typename);
+    if (!inst) {
+        fprintf(stderr, "Object %p is not an instance of type %s\n",
+                obj, typename);
         abort();
     }
 
-    assert(obj == inst);
-
-    if (obj && obj == inst) {
-        for (i = 1; i < OBJECT_CLASS_CAST_CACHE; i++) {
-            obj->class->object_cast_cache[i - 1] =
-                    obj->class->object_cast_cache[i];
-        }
-        obj->class->object_cast_cache[i - 1] = typename;
-    }
-
-out:
-#endif
-    return obj;
+    return inst;
 }
 
 ObjectClass *object_class_dynamic_cast(ObjectClass *class,
                                        const char *typename)
 {
+    TypeImpl *target_type = type_get_by_name(typename);
+    TypeImpl *type = class->type;
     ObjectClass *ret = NULL;
-    TypeImpl *target_type;
-    TypeImpl *type;
 
-    if (!class) {
-        return NULL;
-    }
-
-    /* A simple fast path that can trigger a lot for leaf classes.  */
-    type = class->type;
-    if (type->name == typename) {
-        return class;
-    }
-
-    target_type = type_get_by_name(typename);
-    if (!target_type) {
-        /* target class type unknown, so fail the cast */
-        return NULL;
-    }
-
-    if (type->class->interfaces &&
-            type_is_ancestor(target_type, type_interface)) {
+    if (type->num_interfaces && type_is_ancestor(target_type, type_interface)) {
         int found = 0;
         GSList *i;
 
@@ -548,46 +471,16 @@ ObjectClass *object_class_dynamic_cast(ObjectClass *class,
 }
 
 ObjectClass *object_class_dynamic_cast_assert(ObjectClass *class,
-                                              const char *typename,
-                                              const char *file, int line,
-                                              const char *func)
+                                              const char *typename)
 {
-    ObjectClass *ret;
+    ObjectClass *ret = object_class_dynamic_cast(class, typename);
 
-    trace_object_class_dynamic_cast_assert(class ? class->type->name : "(null)",
-                                           typename, file, line, func);
-
-#ifdef CONFIG_QOM_CAST_DEBUG
-    int i;
-
-    for (i = 0; class && i < OBJECT_CLASS_CAST_CACHE; i++) {
-        if (class->class_cast_cache[i] == typename) {
-            ret = class;
-            goto out;
-        }
-    }
-#else
-    if (!class || !class->interfaces) {
-        return class;
-    }
-#endif
-
-    ret = object_class_dynamic_cast(class, typename);
-    if (!ret && class) {
-        fprintf(stderr, "%s:%d:%s: Object %p is not an instance of type %s\n",
-                file, line, func, class, typename);
+    if (!ret) {
+        fprintf(stderr, "Object %p is not an instance of type %s\n",
+                class, typename);
         abort();
     }
 
-#ifdef CONFIG_QOM_CAST_DEBUG
-    if (class && ret == class) {
-        for (i = 1; i < OBJECT_CLASS_CAST_CACHE; i++) {
-            class->class_cast_cache[i - 1] = class->class_cast_cache[i];
-        }
-        class->class_cast_cache[i - 1] = typename;
-    }
-out:
-#endif
     return ret;
 }
 
@@ -599,11 +492,6 @@ const char *object_get_typename(Object *obj)
 ObjectClass *object_get_class(Object *obj)
 {
     return obj->class;
-}
-
-bool object_class_is_abstract(ObjectClass *klass)
-{
-    return klass->type->abstract;
 }
 
 const char *object_class_get_name(ObjectClass *klass)
@@ -673,9 +561,7 @@ void object_class_foreach(void (*fn)(ObjectClass *klass, void *opaque),
 {
     OCFData data = { fn, implements_type, include_abstract, opaque };
 
-    enumerating_types = true;
     g_hash_table_foreach(type_table_get(), object_class_foreach_tramp, &data);
-    enumerating_types = false;
 }
 
 int object_child_foreach(Object *obj, int (*fn)(Object *child, void *opaque),
@@ -714,15 +600,16 @@ GSList *object_class_get_list(const char *implements_type,
 
 void object_ref(Object *obj)
 {
-     atomic_inc(&obj->ref);
+    obj->ref++;
 }
 
 void object_unref(Object *obj)
 {
     g_assert(obj->ref > 0);
+    obj->ref--;
 
     /* parent always holds a reference to its children */
-    if (atomic_fetch_dec(&obj->ref) == 1) {
+    if (obj->ref == 0) {
         object_finalize(obj);
     }
 }
@@ -733,18 +620,7 @@ void object_property_add(Object *obj, const char *name, const char *type,
                          ObjectPropertyRelease *release,
                          void *opaque, Error **errp)
 {
-    ObjectProperty *prop;
-
-    QTAILQ_FOREACH(prop, &obj->properties, node) {
-        if (strcmp(prop->name, name) == 0) {
-            error_setg(errp, "attempt to add duplicate property '%s'"
-                       " to object (type '%s')", name,
-                       object_get_typename(obj));
-            return;
-        }
-    }
-
-    prop = g_malloc0(sizeof(*prop));
+    ObjectProperty *prop = g_malloc0(sizeof(*prop));
 
     prop->name = g_strdup(name);
     prop->type = g_strdup(type);
@@ -854,9 +730,8 @@ char *object_property_get_str(Object *obj, const char *name,
 void object_property_set_link(Object *obj, Object *value,
                               const char *name, Error **errp)
 {
-    gchar *path = object_get_canonical_path(value);
-    object_property_set_str(obj, path, name, errp);
-    g_free(path);
+    object_property_set_str(obj, object_get_canonical_path(value),
+                            name, errp);
 }
 
 Object *object_property_get_link(Object *obj, const char *name,
@@ -948,13 +823,13 @@ void object_property_parse(Object *obj, const char *string,
     string_input_visitor_cleanup(mi);
 }
 
-char *object_property_print(Object *obj, const char *name, bool human,
+char *object_property_print(Object *obj, const char *name,
                             Error **errp)
 {
     StringOutputVisitor *mo;
     char *string;
 
-    mo = string_output_visitor_new(human);
+    mo = string_output_visitor_new();
     object_property_get(obj, string_output_get_visitor(mo), name, errp);
     string = string_output_get_string(mo);
     string_output_visitor_cleanup(mo);
@@ -1004,42 +879,24 @@ static void object_finalize_child_property(Object *obj, const char *name,
 void object_property_add_child(Object *obj, const char *name,
                                Object *child, Error **errp)
 {
-    Error *local_err = NULL;
     gchar *type;
 
     type = g_strdup_printf("child<%s>", object_get_typename(OBJECT(child)));
 
-    object_property_add(obj, name, type, object_get_child_property, NULL,
-                        object_finalize_child_property, child, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        goto out;
-    }
+    object_property_add(obj, name, type, object_get_child_property,
+                        NULL, object_finalize_child_property, child, errp);
+
     object_ref(child);
     g_assert(child->parent == NULL);
     child->parent = obj;
 
-out:
     g_free(type);
 }
-
-void object_property_allow_set_link(Object *obj, const char *name,
-                                    Object *val, Error **errp)
-{
-    /* Allow the link to be set, always */
-}
-
-typedef struct {
-    Object **child;
-    void (*check)(Object *, const char *, Object *, Error **);
-    ObjectPropertyLinkFlags flags;
-} LinkProperty;
 
 static void object_get_link_property(Object *obj, Visitor *v, void *opaque,
                                      const char *name, Error **errp)
 {
-    LinkProperty *lprop = opaque;
-    Object **child = lprop->child;
+    Object **child = opaque;
     gchar *path;
 
     if (*child) {
@@ -1052,172 +909,108 @@ static void object_get_link_property(Object *obj, Visitor *v, void *opaque,
     }
 }
 
-/*
- * object_resolve_link:
- *
- * Lookup an object and ensure its type matches the link property type.  This
- * is similar to object_resolve_path() except type verification against the
- * link property is performed.
- *
- * Returns: The matched object or NULL on path lookup failures.
- */
-static Object *object_resolve_link(Object *obj, const char *name,
-                                   const char *path, Error **errp)
-{
-    const char *type;
-    gchar *target_type;
-    bool ambiguous = false;
-    Object *target;
-
-    /* Go from link<FOO> to FOO.  */
-    type = object_property_get_type(obj, name, NULL);
-    target_type = g_strndup(&type[5], strlen(type) - 6);
-    target = object_resolve_path_type(path, target_type, &ambiguous);
-
-    if (ambiguous) {
-        error_set(errp, QERR_AMBIGUOUS_PATH, path);
-    } else if (!target) {
-        target = object_resolve_path(path, &ambiguous);
-        if (target || ambiguous) {
-            error_set(errp, QERR_INVALID_PARAMETER_TYPE, name, target_type);
-        } else {
-            error_set(errp, QERR_DEVICE_NOT_FOUND, path);
-        }
-        target = NULL;
-    }
-    g_free(target_type);
-
-    return target;
-}
-
 static void object_set_link_property(Object *obj, Visitor *v, void *opaque,
                                      const char *name, Error **errp)
 {
-    Error *local_err = NULL;
-    LinkProperty *prop = opaque;
-    Object **child = prop->child;
-    Object *old_target = *child;
-    Object *new_target = NULL;
-    char *path = NULL;
+    Object **child = opaque;
+    Object *old_target;
+    bool ambiguous = false;
+    const char *type;
+    char *path;
+    gchar *target_type;
 
-    visit_type_str(v, &path, name, &local_err);
+    type = object_property_get_type(obj, name, NULL);
 
-    if (!local_err && strcmp(path, "") != 0) {
-        new_target = object_resolve_link(obj, name, path, &local_err);
+    visit_type_str(v, &path, name, errp);
+
+    old_target = *child;
+    *child = NULL;
+
+    if (strcmp(path, "") != 0) {
+        Object *target;
+
+        /* Go from link<FOO> to FOO.  */
+        target_type = g_strndup(&type[5], strlen(type) - 6);
+        target = object_resolve_path_type(path, target_type, &ambiguous);
+
+        if (ambiguous) {
+            error_set(errp, QERR_AMBIGUOUS_PATH, path);
+        } else if (target) {
+            object_ref(target);
+            *child = target;
+        } else {
+            target = object_resolve_path(path, &ambiguous);
+            if (target || ambiguous) {
+                error_set(errp, QERR_INVALID_PARAMETER_TYPE, name, target_type);
+            } else {
+                error_set(errp, QERR_DEVICE_NOT_FOUND, path);
+            }
+        }
+        g_free(target_type);
     }
 
     g_free(path);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        return;
-    }
 
-    prop->check(obj, name, new_target, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        return;
-    }
-
-    if (new_target) {
-        object_ref(new_target);
-    }
-    *child = new_target;
     if (old_target != NULL) {
         object_unref(old_target);
     }
 }
 
-static void object_release_link_property(Object *obj, const char *name,
-                                         void *opaque)
-{
-    LinkProperty *prop = opaque;
-
-    if ((prop->flags & OBJ_PROP_LINK_UNREF_ON_RELEASE) && *prop->child) {
-        object_unref(*prop->child);
-    }
-    g_free(prop);
-}
-
 void object_property_add_link(Object *obj, const char *name,
                               const char *type, Object **child,
-                              void (*check)(Object *, const char *,
-                                            Object *, Error **),
-                              ObjectPropertyLinkFlags flags,
                               Error **errp)
 {
-    Error *local_err = NULL;
-    LinkProperty *prop = g_malloc(sizeof(*prop));
     gchar *full_type;
-
-    prop->child = child;
-    prop->check = check;
-    prop->flags = flags;
 
     full_type = g_strdup_printf("link<%s>", type);
 
     object_property_add(obj, name, full_type,
                         object_get_link_property,
-                        check ? object_set_link_property : NULL,
-                        object_release_link_property,
-                        prop,
-                        &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        g_free(prop);
-    }
+                        object_set_link_property,
+                        NULL, child, errp);
 
     g_free(full_type);
-}
-
-gchar *object_get_canonical_path_component(Object *obj)
-{
-    ObjectProperty *prop = NULL;
-
-    g_assert(obj);
-    g_assert(obj->parent != NULL);
-
-    QTAILQ_FOREACH(prop, &obj->parent->properties, node) {
-        if (!object_property_is_child(prop)) {
-            continue;
-        }
-
-        if (prop->opaque == obj) {
-            return g_strdup(prop->name);
-        }
-    }
-
-    /* obj had a parent but was not a child, should never happen */
-    g_assert_not_reached();
-    return NULL;
 }
 
 gchar *object_get_canonical_path(Object *obj)
 {
     Object *root = object_get_root();
-    char *newpath, *path = NULL;
+    char *newpath = NULL, *path = NULL;
 
     while (obj != root) {
-        char *component = object_get_canonical_path_component(obj);
+        ObjectProperty *prop = NULL;
 
-        if (path) {
-            newpath = g_strdup_printf("%s/%s", component, path);
-            g_free(component);
-            g_free(path);
-            path = newpath;
-        } else {
-            path = component;
+        g_assert(obj->parent != NULL);
+
+        QTAILQ_FOREACH(prop, &obj->parent->properties, node) {
+            if (!object_property_is_child(prop)) {
+                continue;
+            }
+
+            if (prop->opaque == obj) {
+                if (path) {
+                    newpath = g_strdup_printf("%s/%s", prop->name, path);
+                    g_free(path);
+                    path = newpath;
+                } else {
+                    path = g_strdup(prop->name);
+                }
+                break;
+            }
         }
+
+        g_assert(prop != NULL);
 
         obj = obj->parent;
     }
 
-    newpath = g_strdup_printf("/%s", path ? path : "");
+    newpath = g_strdup_printf("/%s", path);
     g_free(path);
 
     return newpath;
 }
 
-Object *object_resolve_path_component(Object *parent, const gchar *part)
+Object *object_resolve_path_component(Object *parent, gchar *part)
 {
     ObjectProperty *prop = object_property_find(parent, part, NULL);
     if (prop == NULL) {
@@ -1225,8 +1018,7 @@ Object *object_resolve_path_component(Object *parent, const gchar *part)
     }
 
     if (object_property_is_link(prop)) {
-        LinkProperty *lprop = prop->opaque;
-        return *lprop->child;
+        return *(Object **)prop->opaque;
     } else if (object_property_is_child(prop)) {
         return prop->opaque;
     } else {
@@ -1297,13 +1089,21 @@ static Object *object_resolve_partial_path(Object *parent,
 Object *object_resolve_path_type(const char *path, const char *typename,
                                  bool *ambiguous)
 {
+    bool partial_path = true;
     Object *obj;
     gchar **parts;
 
     parts = g_strsplit(path, "/", 0);
-    assert(parts);
+    if (parts == NULL || parts[0] == NULL) {
+        g_strfreev(parts);
+        return object_get_root();
+    }
 
-    if (parts[0] == NULL || strcmp(parts[0], "") != 0) {
+    if (strcmp(parts[0], "") == 0) {
+        partial_path = false;
+    }
+
+    if (partial_path) {
         if (ambiguous) {
             *ambiguous = false;
         }
@@ -1371,7 +1171,6 @@ void object_property_add_str(Object *obj, const char *name,
                            void (*set)(Object *, const char *, Error **),
                            Error **errp)
 {
-    Error *local_err = NULL;
     StringProperty *prop = g_malloc0(sizeof(*prop));
 
     prop->get = get;
@@ -1381,137 +1180,12 @@ void object_property_add_str(Object *obj, const char *name,
                         get ? property_get_str : NULL,
                         set ? property_set_str : NULL,
                         property_release_str,
-                        prop, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        g_free(prop);
-    }
-}
-
-typedef struct BoolProperty
-{
-    bool (*get)(Object *, Error **);
-    void (*set)(Object *, bool, Error **);
-} BoolProperty;
-
-static void property_get_bool(Object *obj, Visitor *v, void *opaque,
-                              const char *name, Error **errp)
-{
-    BoolProperty *prop = opaque;
-    bool value;
-
-    value = prop->get(obj, errp);
-    visit_type_bool(v, &value, name, errp);
-}
-
-static void property_set_bool(Object *obj, Visitor *v, void *opaque,
-                              const char *name, Error **errp)
-{
-    BoolProperty *prop = opaque;
-    bool value;
-    Error *local_err = NULL;
-
-    visit_type_bool(v, &value, name, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        return;
-    }
-
-    prop->set(obj, value, errp);
-}
-
-static void property_release_bool(Object *obj, const char *name,
-                                  void *opaque)
-{
-    BoolProperty *prop = opaque;
-    g_free(prop);
-}
-
-void object_property_add_bool(Object *obj, const char *name,
-                              bool (*get)(Object *, Error **),
-                              void (*set)(Object *, bool, Error **),
-                              Error **errp)
-{
-    Error *local_err = NULL;
-    BoolProperty *prop = g_malloc0(sizeof(*prop));
-
-    prop->get = get;
-    prop->set = set;
-
-    object_property_add(obj, name, "bool",
-                        get ? property_get_bool : NULL,
-                        set ? property_set_bool : NULL,
-                        property_release_bool,
-                        prop, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        g_free(prop);
-    }
+                        prop, errp);
 }
 
 static char *qdev_get_type(Object *obj, Error **errp)
 {
     return g_strdup(object_get_typename(obj));
-}
-
-static void property_get_uint8_ptr(Object *obj, Visitor *v,
-                                   void *opaque, const char *name,
-                                   Error **errp)
-{
-    uint8_t value = *(uint8_t *)opaque;
-    visit_type_uint8(v, &value, name, errp);
-}
-
-static void property_get_uint16_ptr(Object *obj, Visitor *v,
-                                   void *opaque, const char *name,
-                                   Error **errp)
-{
-    uint16_t value = *(uint16_t *)opaque;
-    visit_type_uint16(v, &value, name, errp);
-}
-
-static void property_get_uint32_ptr(Object *obj, Visitor *v,
-                                   void *opaque, const char *name,
-                                   Error **errp)
-{
-    uint32_t value = *(uint32_t *)opaque;
-    visit_type_uint32(v, &value, name, errp);
-}
-
-static void property_get_uint64_ptr(Object *obj, Visitor *v,
-                                   void *opaque, const char *name,
-                                   Error **errp)
-{
-    uint64_t value = *(uint64_t *)opaque;
-    visit_type_uint64(v, &value, name, errp);
-}
-
-void object_property_add_uint8_ptr(Object *obj, const char *name,
-                                   const uint8_t *v, Error **errp)
-{
-    object_property_add(obj, name, "uint8", property_get_uint8_ptr,
-                        NULL, NULL, (void *)v, errp);
-}
-
-void object_property_add_uint16_ptr(Object *obj, const char *name,
-                                    const uint16_t *v, Error **errp)
-{
-    object_property_add(obj, name, "uint16", property_get_uint16_ptr,
-                        NULL, NULL, (void *)v, errp);
-}
-
-void object_property_add_uint32_ptr(Object *obj, const char *name,
-                                    const uint32_t *v, Error **errp)
-{
-    object_property_add(obj, name, "uint32", property_get_uint32_ptr,
-                        NULL, NULL, (void *)v, errp);
-}
-
-void object_property_add_uint64_ptr(Object *obj, const char *name,
-                                    const uint64_t *v, Error **errp)
-{
-    object_property_add(obj, name, "uint64", property_get_uint64_ptr,
-                        NULL, NULL, (void *)v, errp);
 }
 
 static void object_instance_init(Object *obj)

@@ -1,18 +1,19 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/config-comp/config-comp.c \
-../src/config-comp/config-mgr.c 
+../src/config-comp/config-dare.c \
+../src/config-comp/config-proxy.c 
+
 
 OBJS += \
-./src/config-comp/config-comp.o \
-./src/config-comp/config-mgr.o 
+./src/config-comp/config-dare.o \
+./src/config-comp/config-proxy.o 
 
 
 # Each subdirectory must supply rules for building sources it contributes
 src/config-comp/%.o: ../src/config-comp/%.c
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C Compiler'
-	gcc-4.8 -fPIC -rdynamic -std=gnu11 -DDEBUG=$(DEBUGOPT) -I"$(ROOT_DIR)/../.local/include" -O0 -g3 -Wall -c -o "$@" "$<"
+	gcc -fPIC -rdynamic -std=gnu99 -DDEBUG=$(DEBUGOPT) -O0 -g3 -Wall -c -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

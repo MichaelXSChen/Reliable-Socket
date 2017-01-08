@@ -1,7 +1,7 @@
 /* public domain */
 
 #include "qemu-common.h"
-#include "sysemu/sysemu.h"
+#include "sysemu.h"
 #include "audio.h"
 
 #define AUDIO_CAP "winwave"

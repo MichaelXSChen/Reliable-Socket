@@ -16,9 +16,6 @@ __email__      = "stefanha@linux.vnet.ibm.com"
 from tracetool import out
 
 
-PUBLIC = True
-
-
 PROBEPREFIX = None
 
 def _probeprefix():
@@ -40,7 +37,7 @@ def c(events):
 
 
 def h(events):
-    out('#include "trace/generated-tracers-dtrace.h"',
+    out('#include "trace-dtrace.h"',
         '')
 
     for e in events:
@@ -76,15 +73,6 @@ def d(events):
         '};')
 
 
-# Technically 'self' is not used by systemtap yet, but
-# they recommended we keep it in the reserved list anyway
-RESERVED_WORDS = (
-    'break', 'catch', 'continue', 'delete', 'else', 'for',
-    'foreach', 'function', 'global', 'if', 'in', 'limit',
-    'long', 'next', 'probe', 'return', 'self', 'string',
-    'try', 'while'
-    )
-
 def stap(events):
     for e in events:
         # Define prototype for probe arguments
@@ -99,7 +87,7 @@ def stap(events):
         if len(e.args) > 0:
             for name in e.args.names():
                 # Append underscore to reserved keywords
-                if name in RESERVED_WORDS:
+                if name in ('limit', 'in', 'next', 'self', 'function'):
                     name += '_'
                 out('  %s = $arg%d;' % (name, i))
                 i += 1

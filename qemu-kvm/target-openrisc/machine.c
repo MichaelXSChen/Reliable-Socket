@@ -20,11 +20,8 @@
 #include "hw/hw.h"
 #include "hw/boards.h"
 
-static const VMStateDescription vmstate_env = {
-    .name = "env",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
+static const VMStateDescription vmstate_cpu = {
+    .name = "cpu",
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(gpr, CPUOpenRISCState, 32),
         VMSTATE_UINT32(sr, CPUOpenRISCState),
@@ -39,14 +36,12 @@ static const VMStateDescription vmstate_env = {
     }
 };
 
-const VMStateDescription vmstate_openrisc_cpu = {
-    .name = "cpu",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
-    .fields = (VMStateField[]) {
-        VMSTATE_CPU(),
-        VMSTATE_STRUCT(env, OpenRISCCPU, 1, vmstate_env, CPUOpenRISCState),
-        VMSTATE_END_OF_LIST()
-    }
-};
+void cpu_save(QEMUFile *f, void *opaque)
+{
+    vmstate_save_state(f, &vmstate_cpu, opaque);
+}
+
+int cpu_load(QEMUFile *f, void *opaque, int version_id)
+{
+    return vmstate_load_state(f, &vmstate_cpu, opaque, version_id);
+}

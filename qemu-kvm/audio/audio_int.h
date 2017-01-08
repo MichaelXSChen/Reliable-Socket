@@ -243,13 +243,38 @@ static inline int audio_ring_dist (int dst, int src, int len)
     return (dst >= src) ? (dst - src) : (len - src + dst);
 }
 
-#define dolog(fmt, ...) AUD_log(AUDIO_CAP, fmt, ## __VA_ARGS__)
+static void GCC_ATTR dolog (const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start (ap, fmt);
+    AUD_vlog (AUDIO_CAP, fmt, ap);
+    va_end (ap);
+}
 
 #ifdef DEBUG
-#define ldebug(fmt, ...) AUD_log(AUDIO_CAP, fmt, ## __VA_ARGS__)
+static void GCC_ATTR ldebug (const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start (ap, fmt);
+    AUD_vlog (AUDIO_CAP, fmt, ap);
+    va_end (ap);
+}
 #else
-#define ldebug(fmt, ...) (void)0
+#if defined NDEBUG && defined __GNUC__
+#define ldebug(...)
+#elif defined NDEBUG && defined _MSC_VER
+#define ldebug __noop
+#else
+static void GCC_ATTR ldebug (const char *fmt, ...)
+{
+    (void) fmt;
+}
 #endif
+#endif
+
+#undef GCC_ATTR
 
 #define AUDIO_STRINGIFY_(n) #n
 #define AUDIO_STRINGIFY(n) AUDIO_STRINGIFY_(n)

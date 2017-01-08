@@ -29,7 +29,7 @@
 #ifndef QEMU_XTENSA_CPU_QOM_H
 #define QEMU_XTENSA_CPU_QOM_H
 
-#include "qom/cpu.h"
+#include "qemu/cpu.h"
 #include "cpu.h"
 
 #define TYPE_XTENSA_CPU "xtensa-cpu"
@@ -43,9 +43,7 @@
 
 /**
  * XtensaCPUClass:
- * @parent_realize: The parent class' realize handler.
  * @parent_reset: The parent class' reset handler.
- * @config: The CPU core configuration.
  *
  * An Xtensa CPU model.
  */
@@ -54,10 +52,7 @@ typedef struct XtensaCPUClass {
     CPUClass parent_class;
     /*< public >*/
 
-    DeviceRealize parent_realize;
     void (*parent_reset)(CPUState *cpu);
-
-    const XtensaConfig *config;
 } XtensaCPUClass;
 
 /**
@@ -76,18 +71,10 @@ typedef struct XtensaCPU {
 
 static inline XtensaCPU *xtensa_env_get_cpu(const CPUXtensaState *env)
 {
-    return container_of(env, XtensaCPU, env);
+    return XTENSA_CPU(container_of(env, XtensaCPU, env));
 }
 
 #define ENV_GET_CPU(e) CPU(xtensa_env_get_cpu(e))
 
-#define ENV_OFFSET offsetof(XtensaCPU, env)
-
-void xtensa_cpu_do_interrupt(CPUState *cpu);
-void xtensa_cpu_dump_state(CPUState *cpu, FILE *f,
-                           fprintf_function cpu_fprintf, int flags);
-hwaddr xtensa_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
-int xtensa_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
-int xtensa_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 
 #endif

@@ -35,12 +35,16 @@ void helper_store_dump_spr(CPUPPCState *env, uint32_t sprn)
              env->spr[sprn]);
 }
 #if !defined(CONFIG_USER_ONLY)
+#if defined(TARGET_PPC64)
+void helper_store_asr(CPUPPCState *env, target_ulong val)
+{
+    ppc_store_asr(env, val);
+}
+#endif
 
 void helper_store_sdr1(CPUPPCState *env, target_ulong val)
 {
-    if (!env->external_htab) {
-        ppc_store_sdr1(env, val);
-    }
+    ppc_store_sdr1(env, val);
 }
 
 void helper_store_hid0_601(CPUPPCState *env, target_ulong val)
@@ -62,12 +66,10 @@ void helper_store_hid0_601(CPUPPCState *env, target_ulong val)
 
 void helper_store_403_pbr(CPUPPCState *env, uint32_t num, target_ulong value)
 {
-    PowerPCCPU *cpu = ppc_env_get_cpu(env);
-
     if (likely(env->pb[num] != value)) {
         env->pb[num] = value;
         /* Should be optimized */
-        tlb_flush(CPU(cpu), 1);
+        tlb_flush(env, 1);
     }
 }
 

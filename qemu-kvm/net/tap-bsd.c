@@ -22,10 +22,10 @@
  * THE SOFTWARE.
  */
 
-#include "tap_int.h"
+#include "net/tap.h"
 #include "qemu-common.h"
-#include "sysemu/sysemu.h"
-#include "qemu/error-report.h"
+#include "sysemu.h"
+#include "qemu-error.h"
 
 #ifdef __NetBSD__
 #include <sys/ioctl.h>
@@ -33,8 +33,7 @@
 #include <net/if_tap.h>
 #endif
 
-int tap_open(char *ifname, int ifname_size, int *vnet_hdr,
-             int vnet_hdr_required, int mq_required)
+int tap_open(char *ifname, int ifname_size, int *vnet_hdr, int vnet_hdr_required)
 {
     int fd;
 #ifdef TAPGIFNAME
@@ -44,6 +43,7 @@ int tap_open(char *ifname, int ifname_size, int *vnet_hdr,
     struct stat s;
 #endif
 
+#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
     /* if no ifname is given, always start the search from tap0/tun0. */
     int i;
     char dname[100];
@@ -74,6 +74,15 @@ int tap_open(char *ifname, int ifname_size, int *vnet_hdr,
                    dname, strerror(errno));
         return -1;
     }
+#else
+    TFR(fd = open("/dev/tap", O_RDWR));
+    if (fd < 0) {
+        fprintf(stderr,
+            "warning: could not open /dev/tap: no virtual network emulation: %s\n",
+            strerror(errno));
+        return -1;
+    }
+#endif
 
 #ifdef TAPGIFNAME
     if (ioctl(fd, TAPGIFNAME, (void *)&ifr) < 0) {
@@ -135,19 +144,4 @@ void tap_fd_set_vnet_hdr_len(int fd, int len)
 void tap_fd_set_offload(int fd, int csum, int tso4,
                         int tso6, int ecn, int ufo)
 {
-}
-
-int tap_fd_enable(int fd)
-{
-    return -1;
-}
-
-int tap_fd_disable(int fd)
-{
-    return -1;
-}
-
-int tap_fd_get_ifname(int fd, char *ifname)
-{
-    return -1;
 }

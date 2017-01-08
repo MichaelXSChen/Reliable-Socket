@@ -31,10 +31,8 @@
 
 
 /* Map CPU modes onto saved register banks.  */
-static inline int bank_number(CPUUniCore32State *env, int mode)
+static inline int bank_number(int mode)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-
     switch (mode) {
     case ASR_MODE_USER:
     case ASR_MODE_SUSR:
@@ -48,7 +46,7 @@ static inline int bank_number(CPUUniCore32State *env, int mode)
     case ASR_MODE_INTR:
         return 4;
     }
-    cpu_abort(CPU(cpu), "Bad mode %x\n", mode);
+    cpu_abort(cpu_single_env, "Bad mode %x\n", mode);
     return -1;
 }
 
@@ -62,26 +60,24 @@ void switch_mode(CPUUniCore32State *env, int mode)
         return;
     }
 
-    i = bank_number(env, old_mode);
+    i = bank_number(old_mode);
     env->banked_r29[i] = env->regs[29];
     env->banked_r30[i] = env->regs[30];
     env->banked_bsr[i] = env->bsr;
 
-    i = bank_number(env, mode);
+    i = bank_number(mode);
     env->regs[29] = env->banked_r29[i];
     env->regs[30] = env->banked_r30[i];
     env->bsr = env->banked_bsr[i];
 }
 
 /* Handle a CPU exception.  */
-void uc32_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUUniCore32State *env)
 {
-    UniCore32CPU *cpu = UNICORE32_CPU(cs);
-    CPUUniCore32State *env = &cpu->env;
     uint32_t addr;
     int new_mode;
 
-    switch (cs->exception_index) {
+    switch (env->exception_index) {
     case UC32_EXCP_PRIV:
         new_mode = ASR_MODE_PRIV;
         addr = 0x08;
@@ -101,7 +97,7 @@ void uc32_cpu_do_interrupt(CPUState *cs)
         addr = 0x18;
         break;
     default:
-        cpu_abort(cs, "Unhandled exception 0x%x\n", cs->exception_index);
+        cpu_abort(env, "Unhandled exception 0x%x\n", env->exception_index);
         return;
     }
     /* High vectors.  */
@@ -116,15 +112,13 @@ void uc32_cpu_do_interrupt(CPUState *cs)
     /* The PC already points to the proper instruction.  */
     env->regs[30] = env->regs[31];
     env->regs[31] = addr;
-    cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
+    env->interrupt_request |= CPU_INTERRUPT_EXITTB;
 }
 
 static int get_phys_addr_ucv2(CPUUniCore32State *env, uint32_t address,
         int access_type, int is_user, uint32_t *phys_ptr, int *prot,
         target_ulong *page_size)
 {
-    UniCore32CPU *cpu = uc32_env_get_cpu(env);
-    CPUState *cs = CPU(cpu);
     int code;
     uint32_t table;
     uint32_t desc;
@@ -134,7 +128,7 @@ static int get_phys_addr_ucv2(CPUUniCore32State *env, uint32_t address,
     /* Lookup l1 descriptor.  */
     table = env->cp0.c2_base & 0xfffff000;
     table |= (address >> 20) & 0xffc;
-    desc = ldl_phys(cs->as, table);
+    desc = ldl_phys(table);
     code = 0;
     switch (PAGETABLE_TYPE(desc)) {
     case 3:
@@ -156,7 +150,7 @@ static int get_phys_addr_ucv2(CPUUniCore32State *env, uint32_t address,
             goto do_fault;
         }
         table = (desc & 0xfffff000) | ((address >> 10) & 0xffc);
-        desc = ldl_phys(cs->as, table);
+        desc = ldl_phys(table);
         /* 4k page.  */
         if (is_user) {
             DPRINTF("PTE address %x, desc %x\n", table, desc);
@@ -171,11 +165,11 @@ static int get_phys_addr_ucv2(CPUUniCore32State *env, uint32_t address,
             *page_size = TARGET_PAGE_SIZE;
             break;
         default:
-            cpu_abort(CPU(cpu), "wrong page type!");
+            cpu_abort(env, "wrong page type!");
         }
         break;
     default:
-        cpu_abort(CPU(cpu), "wrong page type!");
+        cpu_abort(env, "wrong page type!");
     }
 
     *phys_ptr = phys_addr;
@@ -212,11 +206,9 @@ do_fault:
     return code;
 }
 
-int uc32_cpu_handle_mmu_fault(CPUState *cs, vaddr address,
+int uc32_cpu_handle_mmu_fault(CPUUniCore32State *env, target_ulong address,
                               int access_type, int mmu_idx)
 {
-    UniCore32CPU *cpu = UNICORE32_CPU(cs);
-    CPUUniCore32State *env = &cpu->env;
     uint32_t phys_addr;
     target_ulong page_size;
     int prot;
@@ -236,7 +228,7 @@ int uc32_cpu_handle_mmu_fault(CPUState *cs, vaddr address,
             ret = get_phys_addr_ucv2(env, address, access_type, is_user,
                                     &phys_addr, &prot, &page_size);
             if (is_user) {
-                DPRINTF("user space access: ret %x, address %" VADDR_PRIx ", "
+                DPRINTF("user space access: ret %x, address %x, "
                         "access_type %x, phys_addr %x, prot %x\n",
                         ret, address, access_type, phys_addr, prot);
             }
@@ -253,24 +245,23 @@ int uc32_cpu_handle_mmu_fault(CPUState *cs, vaddr address,
         /* Map a single page.  */
         phys_addr &= TARGET_PAGE_MASK;
         address &= TARGET_PAGE_MASK;
-        tlb_set_page(cs, address, phys_addr, prot, mmu_idx, page_size);
+        tlb_set_page(env, address, phys_addr, prot, mmu_idx, page_size);
         return 0;
     }
 
     env->cp0.c3_faultstatus = ret;
     env->cp0.c4_faultaddr = address;
     if (access_type == 2) {
-        cs->exception_index = UC32_EXCP_ITRAP;
+        env->exception_index = UC32_EXCP_ITRAP;
     } else {
-        cs->exception_index = UC32_EXCP_DTRAP;
+        env->exception_index = UC32_EXCP_DTRAP;
     }
     return ret;
 }
 
-hwaddr uc32_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
+target_phys_addr_t cpu_get_phys_page_debug(CPUUniCore32State *env,
+        target_ulong addr)
 {
-    UniCore32CPU *cpu = UNICORE32_CPU(cs);
-
-    cpu_abort(CPU(cpu), "%s not supported yet\n", __func__);
+    cpu_abort(env, "%s not supported yet\n", __func__);
     return addr;
 }

@@ -23,17 +23,14 @@
  */
 
 #include "qemu-common.h"
-#include "qemu/config-file.h"
-#include "block/block_int.h"
-#include "qemu/module.h"
+#include "block_int.h"
+#include "module.h"
 
 typedef struct BDRVBlkdebugState {
     int state;
     int new_state;
-
     QLIST_HEAD(, BlkdebugRule) rules[BLKDBG_EVENT_MAX];
     QSIMPLEQ_HEAD(, BlkdebugRule) active_rules;
-    QLIST_HEAD(, BlkdebugSuspendedReq) suspended_reqs;
 } BDRVBlkdebugState;
 
 typedef struct BlkdebugAIOCB {
@@ -42,15 +39,9 @@ typedef struct BlkdebugAIOCB {
     int ret;
 } BlkdebugAIOCB;
 
-typedef struct BlkdebugSuspendedReq {
-    Coroutine *co;
-    char *tag;
-    QLIST_ENTRY(BlkdebugSuspendedReq) next;
-} BlkdebugSuspendedReq;
-
 static void blkdebug_aio_cancel(BlockDriverAIOCB *blockacb);
 
-static const AIOCBInfo blkdebug_aiocb_info = {
+static AIOPool blkdebug_aio_pool = {
     .aiocb_size = sizeof(BlkdebugAIOCB),
     .cancel     = blkdebug_aio_cancel,
 };
@@ -58,7 +49,6 @@ static const AIOCBInfo blkdebug_aiocb_info = {
 enum {
     ACTION_INJECT_ERROR,
     ACTION_SET_STATE,
-    ACTION_SUSPEND,
 };
 
 typedef struct BlkdebugRule {
@@ -75,9 +65,6 @@ typedef struct BlkdebugRule {
         struct {
             int new_state;
         } set_state;
-        struct {
-            char *tag;
-        } suspend;
     } options;
     QLIST_ENTRY(BlkdebugRule) next;
     QSIMPLEQ_ENTRY(BlkdebugRule) active_next;
@@ -168,7 +155,6 @@ static const char *event_names[BLKDBG_EVENT_MAX] = {
 
     [BLKDBG_REFTABLE_LOAD]                  = "reftable_load",
     [BLKDBG_REFTABLE_GROW]                  = "reftable_grow",
-    [BLKDBG_REFTABLE_UPDATE]                = "reftable_update",
 
     [BLKDBG_REFBLOCK_LOAD]                  = "refblock_load",
     [BLKDBG_REFBLOCK_UPDATE]                = "refblock_update",
@@ -183,17 +169,6 @@ static const char *event_names[BLKDBG_EVENT_MAX] = {
     [BLKDBG_CLUSTER_ALLOC]                  = "cluster_alloc",
     [BLKDBG_CLUSTER_ALLOC_BYTES]            = "cluster_alloc_bytes",
     [BLKDBG_CLUSTER_FREE]                   = "cluster_free",
-
-    [BLKDBG_FLUSH_TO_OS]                    = "flush_to_os",
-    [BLKDBG_FLUSH_TO_DISK]                  = "flush_to_disk",
-
-    [BLKDBG_PWRITEV_RMW_HEAD]               = "pwritev_rmw.head",
-    [BLKDBG_PWRITEV_RMW_AFTER_HEAD]         = "pwritev_rmw.after_head",
-    [BLKDBG_PWRITEV_RMW_TAIL]               = "pwritev_rmw.tail",
-    [BLKDBG_PWRITEV_RMW_AFTER_TAIL]         = "pwritev_rmw.after_tail",
-    [BLKDBG_PWRITEV]                        = "pwritev",
-    [BLKDBG_PWRITEV_ZERO]                   = "pwritev_zero",
-    [BLKDBG_PWRITEV_DONE]                   = "pwritev_done",
 };
 
 static int get_event_by_name(const char *name, BlkDebugEvent *event)
@@ -251,11 +226,6 @@ static int add_rule(QemuOpts *opts, void *opaque)
         rule->options.set_state.new_state =
             qemu_opt_get_number(opts, "new_state", 0);
         break;
-
-    case ACTION_SUSPEND:
-        rule->options.suspend.tag =
-            g_strdup(qemu_opt_get(opts, "tag"));
-        break;
     };
 
     /* Add the rule */
@@ -264,48 +234,19 @@ static int add_rule(QemuOpts *opts, void *opaque)
     return 0;
 }
 
-static void remove_rule(BlkdebugRule *rule)
+static int read_config(BDRVBlkdebugState *s, const char *filename)
 {
-    switch (rule->action) {
-    case ACTION_INJECT_ERROR:
-    case ACTION_SET_STATE:
-        break;
-    case ACTION_SUSPEND:
-        g_free(rule->options.suspend.tag);
-        break;
-    }
-
-    QLIST_REMOVE(rule, next);
-    g_free(rule);
-}
-
-static int read_config(BDRVBlkdebugState *s, const char *filename,
-                       QDict *options, Error **errp)
-{
-    FILE *f = NULL;
+    FILE *f;
     int ret;
     struct add_rule_data d;
-    Error *local_err = NULL;
 
-    if (filename) {
-        f = fopen(filename, "r");
-        if (f == NULL) {
-            error_setg_errno(errp, errno, "Could not read blkdebug config file");
-            return -errno;
-        }
-
-        ret = qemu_config_parse(f, config_groups, filename);
-        if (ret < 0) {
-            error_setg(errp, "Could not parse blkdebug config file");
-            ret = -EINVAL;
-            goto fail;
-        }
+    f = fopen(filename, "r");
+    if (f == NULL) {
+        return -errno;
     }
 
-    qemu_config_parse_qdict(options, config_groups, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        ret = -EINVAL;
+    ret = qemu_config_parse(f, config_groups, filename);
+    if (ret < 0) {
         goto fail;
     }
 
@@ -320,122 +261,48 @@ static int read_config(BDRVBlkdebugState *s, const char *filename,
 fail:
     qemu_opts_reset(&inject_error_opts);
     qemu_opts_reset(&set_state_opts);
-    if (f) {
-        fclose(f);
-    }
+    fclose(f);
     return ret;
 }
 
 /* Valid blkdebug filenames look like blkdebug:path/to/config:path/to/image */
-static void blkdebug_parse_filename(const char *filename, QDict *options,
-                                    Error **errp)
-{
-    const char *c;
-
-    /* Parse the blkdebug: prefix */
-    if (!strstart(filename, "blkdebug:", &filename)) {
-        /* There was no prefix; therefore, all options have to be already
-           present in the QDict (except for the filename) */
-        qdict_put(options, "x-image", qstring_from_str(filename));
-        return;
-    }
-
-    /* Parse config file path */
-    c = strchr(filename, ':');
-    if (c == NULL) {
-        error_setg(errp, "blkdebug requires both config file and image path");
-        return;
-    }
-
-    if (c != filename) {
-        QString *config_path;
-        config_path = qstring_from_substr(filename, 0, c - filename - 1);
-        qdict_put(options, "config", config_path);
-    }
-
-    /* TODO Allow multi-level nesting and set file.filename here */
-    filename = c + 1;
-    qdict_put(options, "x-image", qstring_from_str(filename));
-}
-
-static QemuOptsList runtime_opts = {
-    .name = "blkdebug",
-    .head = QTAILQ_HEAD_INITIALIZER(runtime_opts.head),
-    .desc = {
-        {
-            .name = "config",
-            .type = QEMU_OPT_STRING,
-            .help = "Path to the configuration file",
-        },
-        {
-            .name = "x-image",
-            .type = QEMU_OPT_STRING,
-            .help = "[internal use only, will be removed]",
-        },
-        {
-            .name = "align",
-            .type = QEMU_OPT_SIZE,
-            .help = "Required alignment in bytes",
-        },
-        { /* end of list */ }
-    },
-};
-
-static int blkdebug_open(BlockDriverState *bs, QDict *options, int flags,
-                         Error **errp)
+static int blkdebug_open(BlockDriverState *bs, const char *filename, int flags)
 {
     BDRVBlkdebugState *s = bs->opaque;
-    QemuOpts *opts;
-    Error *local_err = NULL;
-    const char *config;
-    uint64_t align;
     int ret;
+    char *config, *c;
 
-    opts = qemu_opts_create(&runtime_opts, NULL, 0, &error_abort);
-    qemu_opts_absorb_qdict(opts, options, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        ret = -EINVAL;
-        goto out;
+    /* Parse the blkdebug: prefix */
+    if (strncmp(filename, "blkdebug:", strlen("blkdebug:"))) {
+        return -EINVAL;
+    }
+    filename += strlen("blkdebug:");
+
+    /* Read rules from config file */
+    c = strchr(filename, ':');
+    if (c == NULL) {
+        return -EINVAL;
     }
 
-    /* Read rules from config file or command line options */
-    config = qemu_opt_get(opts, "config");
-    ret = read_config(s, config, options, errp);
-    if (ret) {
-        goto out;
+    config = g_strdup(filename);
+    config[c - filename] = '\0';
+    ret = read_config(s, config);
+    g_free(config);
+    if (ret < 0) {
+        return ret;
     }
+    filename = c + 1;
 
     /* Set initial state */
     s->state = 1;
 
     /* Open the backing file */
-    assert(bs->file == NULL);
-    ret = bdrv_open_image(&bs->file, qemu_opt_get(opts, "x-image"), options, "image",
-                          flags | BDRV_O_PROTOCOL, false, &local_err);
+    ret = bdrv_file_open(&bs->file, filename, flags);
     if (ret < 0) {
-        error_propagate(errp, local_err);
-        goto out;
+        return ret;
     }
 
-    /* Set request alignment */
-    align = qemu_opt_get_size(opts, "align", bs->request_alignment);
-    if (align > 0 && align < INT_MAX && !(align & (align - 1))) {
-        bs->request_alignment = align;
-    } else {
-        error_setg(errp, "Invalid alignment");
-        ret = -EINVAL;
-        goto fail_unref;
-    }
-
-    ret = 0;
-    goto out;
-
-fail_unref:
-    bdrv_unref(bs->file);
-out:
-    qemu_opts_del(opts);
-    return ret;
+    return 0;
 }
 
 static void error_callback_bh(void *opaque)
@@ -468,7 +335,7 @@ static BlockDriverAIOCB *inject_error(BlockDriverState *bs,
         return NULL;
     }
 
-    acb = qemu_aio_get(&blkdebug_aiocb_info, bs, cb, opaque);
+    acb = qemu_aio_get(&blkdebug_aio_pool, bs, cb, opaque);
     acb->ret = -error;
 
     bh = qemu_bh_new(error_callback_bh, acb);
@@ -522,7 +389,6 @@ static BlockDriverAIOCB *blkdebug_aio_writev(BlockDriverState *bs,
     return bdrv_aio_writev(bs->file, sector_num, qiov, nb_sectors, cb, opaque);
 }
 
-
 static void blkdebug_close(BlockDriverState *bs)
 {
     BDRVBlkdebugState *s = bs->opaque;
@@ -531,30 +397,10 @@ static void blkdebug_close(BlockDriverState *bs)
 
     for (i = 0; i < BLKDBG_EVENT_MAX; i++) {
         QLIST_FOREACH_SAFE(rule, &s->rules[i], next, next) {
-            remove_rule(rule);
+            QLIST_REMOVE(rule, next);
+            g_free(rule);
         }
     }
-}
-
-static void suspend_request(BlockDriverState *bs, BlkdebugRule *rule)
-{
-    BDRVBlkdebugState *s = bs->opaque;
-    BlkdebugSuspendedReq r;
-
-    r = (BlkdebugSuspendedReq) {
-        .co         = qemu_coroutine_self(),
-        .tag        = g_strdup(rule->options.suspend.tag),
-    };
-
-    remove_rule(rule);
-    QLIST_INSERT_HEAD(&s->suspended_reqs, &r, next);
-
-    printf("blkdebug: Suspended request '%s'\n", r.tag);
-    qemu_coroutine_yield();
-    printf("blkdebug: Resuming request '%s'\n", r.tag);
-
-    QLIST_REMOVE(&r, next);
-    g_free(r.tag);
 }
 
 static bool process_rule(BlockDriverState *bs, struct BlkdebugRule *rule,
@@ -580,10 +426,6 @@ static bool process_rule(BlockDriverState *bs, struct BlkdebugRule *rule,
     case ACTION_SET_STATE:
         s->new_state = rule->options.set_state.new_state;
         break;
-
-    case ACTION_SUSPEND:
-        suspend_request(bs, rule);
-        break;
     }
     return injected;
 }
@@ -591,95 +433,17 @@ static bool process_rule(BlockDriverState *bs, struct BlkdebugRule *rule,
 static void blkdebug_debug_event(BlockDriverState *bs, BlkDebugEvent event)
 {
     BDRVBlkdebugState *s = bs->opaque;
-    struct BlkdebugRule *rule, *next;
+    struct BlkdebugRule *rule;
     bool injected;
 
     assert((int)event >= 0 && event < BLKDBG_EVENT_MAX);
 
     injected = false;
     s->new_state = s->state;
-    QLIST_FOREACH_SAFE(rule, &s->rules[event], next, next) {
+    QLIST_FOREACH(rule, &s->rules[event], next) {
         injected = process_rule(bs, rule, injected);
     }
     s->state = s->new_state;
-}
-
-static int blkdebug_debug_breakpoint(BlockDriverState *bs, const char *event,
-                                     const char *tag)
-{
-    BDRVBlkdebugState *s = bs->opaque;
-    struct BlkdebugRule *rule;
-    BlkDebugEvent blkdebug_event;
-
-    if (get_event_by_name(event, &blkdebug_event) < 0) {
-        return -ENOENT;
-    }
-
-
-    rule = g_malloc(sizeof(*rule));
-    *rule = (struct BlkdebugRule) {
-        .event  = blkdebug_event,
-        .action = ACTION_SUSPEND,
-        .state  = 0,
-        .options.suspend.tag = g_strdup(tag),
-    };
-
-    QLIST_INSERT_HEAD(&s->rules[blkdebug_event], rule, next);
-
-    return 0;
-}
-
-static int blkdebug_debug_resume(BlockDriverState *bs, const char *tag)
-{
-    BDRVBlkdebugState *s = bs->opaque;
-    BlkdebugSuspendedReq *r, *next;
-
-    QLIST_FOREACH_SAFE(r, &s->suspended_reqs, next, next) {
-        if (!strcmp(r->tag, tag)) {
-            qemu_coroutine_enter(r->co, NULL);
-            return 0;
-        }
-    }
-    return -ENOENT;
-}
-
-static int blkdebug_debug_remove_breakpoint(BlockDriverState *bs,
-                                            const char *tag)
-{
-    BDRVBlkdebugState *s = bs->opaque;
-    BlkdebugSuspendedReq *r, *r_next;
-    BlkdebugRule *rule, *next;
-    int i, ret = -ENOENT;
-
-    for (i = 0; i < BLKDBG_EVENT_MAX; i++) {
-        QLIST_FOREACH_SAFE(rule, &s->rules[i], next, next) {
-            if (rule->action == ACTION_SUSPEND &&
-                !strcmp(rule->options.suspend.tag, tag)) {
-                remove_rule(rule);
-                ret = 0;
-            }
-        }
-    }
-    QLIST_FOREACH_SAFE(r, &s->suspended_reqs, next, r_next) {
-        if (!strcmp(r->tag, tag)) {
-            qemu_coroutine_enter(r->co, NULL);
-            ret = 0;
-        }
-    }
-    return ret;
-}
-
-static bool blkdebug_debug_is_suspended(BlockDriverState *bs, const char *tag)
-{
-    BDRVBlkdebugState *s = bs->opaque;
-    BlkdebugSuspendedReq *r;
-
-    QLIST_FOREACH(r, &s->suspended_reqs, next) {
-        if (!strcmp(r->tag, tag)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 static int64_t blkdebug_getlength(BlockDriverState *bs)
@@ -688,24 +452,19 @@ static int64_t blkdebug_getlength(BlockDriverState *bs)
 }
 
 static BlockDriver bdrv_blkdebug = {
-    .format_name            = "blkdebug",
-    .protocol_name          = "blkdebug",
-    .instance_size          = sizeof(BDRVBlkdebugState),
+    .format_name        = "blkdebug",
+    .protocol_name      = "blkdebug",
 
-    .bdrv_parse_filename    = blkdebug_parse_filename,
-    .bdrv_file_open         = blkdebug_open,
-    .bdrv_close             = blkdebug_close,
-    .bdrv_getlength         = blkdebug_getlength,
+    .instance_size      = sizeof(BDRVBlkdebugState),
 
-    .bdrv_aio_readv         = blkdebug_aio_readv,
-    .bdrv_aio_writev        = blkdebug_aio_writev,
+    .bdrv_file_open     = blkdebug_open,
+    .bdrv_close         = blkdebug_close,
+    .bdrv_getlength     = blkdebug_getlength,
 
-    .bdrv_debug_event           = blkdebug_debug_event,
-    .bdrv_debug_breakpoint      = blkdebug_debug_breakpoint,
-    .bdrv_debug_remove_breakpoint
-                                = blkdebug_debug_remove_breakpoint,
-    .bdrv_debug_resume          = blkdebug_debug_resume,
-    .bdrv_debug_is_suspended    = blkdebug_debug_is_suspended,
+    .bdrv_aio_readv     = blkdebug_aio_readv,
+    .bdrv_aio_writev    = blkdebug_aio_writev,
+
+    .bdrv_debug_event   = blkdebug_debug_event,
 };
 
 static void bdrv_blkdebug_init(void)

@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "qemu.h"
-#include "disas/disas.h"
+#include "disas.h"
 
 #ifdef _ARCH_PPC64
 #undef ARCH_DLINFO
@@ -98,7 +98,7 @@ enum {
 static const char *get_elf_platform(void)
 {
     static char elf_platform[] = "i386";
-    int family = object_property_get_int(OBJECT(thread_cpu), "family", NULL);
+    int family = (thread_env->cpuid_version >> 8) & 0xff;
     if (family > 6)
         family = 6;
     if (family >= 3)
@@ -110,9 +110,7 @@ static const char *get_elf_platform(void)
 
 static uint32_t get_elf_hwcap(void)
 {
-    X86CPU *cpu = X86_CPU(thread_cpu);
-
-    return cpu->env.features[FEAT_1_EDX];
+  return thread_env->cpuid_features;
 }
 
 #ifdef TARGET_X86_64

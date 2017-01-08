@@ -12,9 +12,7 @@
  *
  */
 
-#include <glib.h>
-#include <string.h>
-#include "qapi/qmp/dispatch.h"
+#include "qapi/qmp-core.h"
 
 static QTAILQ_HEAD(QmpCommandList, QmpCommand) qmp_commands =
     QTAILQ_HEAD_INITIALIZER(qmp_commands);
@@ -66,26 +64,35 @@ void qmp_enable_command(const char *name)
     qmp_toggle_command(name, true);
 }
 
-bool qmp_command_is_enabled(const QmpCommand *cmd)
-{
-    return cmd->enabled;
-}
-
-const char *qmp_command_name(const QmpCommand *cmd)
-{
-    return cmd->name;
-}
-
-bool qmp_has_success_response(const QmpCommand *cmd)
-{
-    return !(cmd->options & QCO_NO_SUCCESS_RESP);
-}
-
-void qmp_for_each_command(qmp_cmd_callback_fn fn, void *opaque)
+bool qmp_command_is_enabled(const char *name)
 {
     QmpCommand *cmd;
 
     QTAILQ_FOREACH(cmd, &qmp_commands, node) {
-        fn(cmd, opaque);
+        if (strcmp(cmd->name, name) == 0) {
+            return cmd->enabled;
+        }
     }
+
+    return false;
+}
+
+char **qmp_get_command_list(void)
+{
+    QmpCommand *cmd;
+    int count = 1;
+    char **list_head, **list;
+
+    QTAILQ_FOREACH(cmd, &qmp_commands, node) {
+        count++;
+    }
+
+    list_head = list = g_malloc0(count * sizeof(char *));
+
+    QTAILQ_FOREACH(cmd, &qmp_commands, node) {
+        *list = strdup(cmd->name);
+        list++;
+    }
+
+    return list_head;
 }

@@ -13,8 +13,8 @@
  */
 
 #include "trace.h"
-#include "block/block_int.h"
-#include "block/blockjob.h"
+#include "block_int.h"
+#include "blockjob.h"
 #include "qemu/ratelimit.h"
 
 enum {
@@ -65,7 +65,7 @@ static void coroutine_fn commit_run(void *opaque)
     BlockDriverState *active = s->active;
     BlockDriverState *top = s->top;
     BlockDriverState *base = s->base;
-    BlockDriverState *overlay_bs;
+    BlockDriverState *overlay_bs = NULL;
     int64_t sector_num, end;
     int ret = 0;
     int n = 0;
@@ -92,6 +92,8 @@ static void coroutine_fn commit_run(void *opaque)
         }
     }
 
+    overlay_bs = bdrv_find_overlay(active, top);
+
     end = s->common.len >> BDRV_SECTOR_BITS;
     buf = qemu_blockalign(top, COMMIT_BUFFER_SIZE);
 
@@ -101,16 +103,16 @@ static void coroutine_fn commit_run(void *opaque)
 
 wait:
         /* Note that even when no rate limit is applied we need to yield
-         * with no pending I/O here so that bdrv_drain_all() returns.
+         * with no pending I/O here so that qemu_aio_flush() returns.
          */
-        block_job_sleep_ns(&s->common, QEMU_CLOCK_REALTIME, delay_ns);
+        block_job_sleep_ns(&s->common, rt_clock, delay_ns);
         if (block_job_is_cancelled(&s->common)) {
             break;
         }
         /* Copy if allocated above the base */
-        ret = bdrv_is_allocated_above(top, base, sector_num,
-                                      COMMIT_BUFFER_SIZE / BDRV_SECTOR_SIZE,
-                                      &n);
+        ret = bdrv_co_is_allocated_above(top, base, sector_num,
+                                         COMMIT_BUFFER_SIZE / BDRV_SECTOR_SIZE,
+                                         &n);
         copy = (ret == 1);
         trace_commit_one_iteration(s, sector_num, n, ret);
         if (copy) {
@@ -154,12 +156,11 @@ exit_restore_reopen:
     if (s->base_flags != bdrv_get_flags(base)) {
         bdrv_reopen(base, s->base_flags, NULL);
     }
-    overlay_bs = bdrv_find_overlay(active, top);
-    if (overlay_bs && s->orig_overlay_flags != bdrv_get_flags(overlay_bs)) {
+    if (s->orig_overlay_flags != bdrv_get_flags(overlay_bs)) {
         bdrv_reopen(overlay_bs, s->orig_overlay_flags, NULL);
     }
 
-    block_job_completed(&s->common, ret);
+    block_job_complete(&s->common, ret);
 }
 
 static void commit_set_speed(BlockJob *job, int64_t speed, Error **errp)
@@ -173,9 +174,9 @@ static void commit_set_speed(BlockJob *job, int64_t speed, Error **errp)
     ratelimit_set_speed(&s->limit, speed / BDRV_SECTOR_SIZE, SLICE_TIME);
 }
 
-static const BlockJobDriver commit_job_driver = {
+static BlockJobType commit_job_type = {
     .instance_size = sizeof(CommitBlockJob),
-    .job_type      = BLOCK_JOB_TYPE_COMMIT,
+    .job_type      = "commit",
     .set_speed     = commit_set_speed,
 };
 
@@ -198,9 +199,24 @@ void commit_start(BlockDriverState *bs, BlockDriverState *base,
         return;
     }
 
-    assert(top != bs);
+    /* Once we support top == active layer, remove this check */
+    if (top == bs) {
+        error_setg(errp,
+                   "Top image as the active layer is currently unsupported");
+        return;
+    }
+
     if (top == base) {
         error_setg(errp, "Invalid files for merge: top and base are the same");
+        return;
+    }
+
+    /* top and base may be valid, but let's make sure that base is reachable
+     * from top */
+    if (bdrv_find_backing_image(top, base->filename) != base) {
+        error_setg(errp,
+                   "Base (%s) is not reachable from top (%s)",
+                   base->filename, top->filename);
         return;
     }
 
@@ -232,7 +248,7 @@ void commit_start(BlockDriverState *bs, BlockDriverState *base,
     }
 
 
-    s = block_job_create(&commit_job_driver, bs, speed, cb, opaque, errp);
+    s = block_job_create(&commit_job_type, bs, speed, cb, opaque, errp);
     if (!s) {
         return;
     }

@@ -21,7 +21,7 @@
 #include <stdarg.h>
 
 #include "qemu.h"
-#include "exec/user/thunk.h"
+#include "thunk.h"
 
 //#define DEBUG
 

@@ -102,14 +102,14 @@ static inline int sas_ss_flags(unsigned long sp)
 
 int host_to_target_signal(int sig)
 {
-    if (sig < 0 || sig >= _NSIG)
+    if (sig >= _NSIG)
         return sig;
     return host_to_target_signal_table[sig];
 }
 
 int target_to_host_signal(int sig)
 {
-    if (sig < 0 || sig >= _NSIG)
+    if (sig >= _NSIG)
         return sig;
     return target_to_host_signal_table[sig];
 }
@@ -197,121 +197,51 @@ void target_to_host_old_sigset(sigset_t *sigset,
     target_to_host_sigset(sigset, &d);
 }
 
-/* Wrapper for sigprocmask function
- * Emulates a sigprocmask in a safe way for the guest. Note that set and oldset
- * are host signal set, not guest ones. This wraps the sigprocmask host calls
- * that should be protected (calls originated from guest)
- */
-int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
-{
-    int ret;
-    sigset_t val;
-    sigset_t *temp = NULL;
-    CPUState *cpu = thread_cpu;
-    TaskState *ts = (TaskState *)cpu->opaque;
-    bool segv_was_blocked = ts->sigsegv_blocked;
-
-    if (set) {
-        bool has_sigsegv = sigismember(set, SIGSEGV);
-        val = *set;
-        temp = &val;
-
-        sigdelset(temp, SIGSEGV);
-
-        switch (how) {
-        case SIG_BLOCK:
-            if (has_sigsegv) {
-                ts->sigsegv_blocked = true;
-            }
-            break;
-        case SIG_UNBLOCK:
-            if (has_sigsegv) {
-                ts->sigsegv_blocked = false;
-            }
-            break;
-        case SIG_SETMASK:
-            ts->sigsegv_blocked = has_sigsegv;
-            break;
-        default:
-            g_assert_not_reached();
-        }
-    }
-
-    ret = sigprocmask(how, temp, oldset);
-
-    if (oldset && segv_was_blocked) {
-        sigaddset(oldset, SIGSEGV);
-    }
-
-    return ret;
-}
-
 /* siginfo conversion */
 
 static inline void host_to_target_siginfo_noswap(target_siginfo_t *tinfo,
                                                  const siginfo_t *info)
 {
-    int sig = host_to_target_signal(info->si_signo);
+    int sig;
+    sig = host_to_target_signal(info->si_signo);
     tinfo->si_signo = sig;
     tinfo->si_errno = 0;
     tinfo->si_code = info->si_code;
-
-    if (sig == TARGET_SIGILL || sig == TARGET_SIGFPE || sig == TARGET_SIGSEGV
-        || sig == TARGET_SIGBUS || sig == TARGET_SIGTRAP) {
-        /* Should never come here, but who knows. The information for
-           the target is irrelevant.  */
+    if (sig == SIGILL || sig == SIGFPE || sig == SIGSEGV ||
+        sig == SIGBUS || sig == SIGTRAP) {
+        /* should never come here, but who knows. The information for
+           the target is irrelevant */
         tinfo->_sifields._sigfault._addr = 0;
-    } else if (sig == TARGET_SIGIO) {
-        tinfo->_sifields._sigpoll._band = info->si_band;
+    } else if (sig == SIGIO) {
 	tinfo->_sifields._sigpoll._fd = info->si_fd;
-    } else if (sig == TARGET_SIGCHLD) {
-        tinfo->_sifields._sigchld._pid = info->si_pid;
-        tinfo->_sifields._sigchld._uid = info->si_uid;
-        tinfo->_sifields._sigchld._status
-            = host_to_target_waitstatus(info->si_status);
-        tinfo->_sifields._sigchld._utime = info->si_utime;
-        tinfo->_sifields._sigchld._stime = info->si_stime;
     } else if (sig >= TARGET_SIGRTMIN) {
         tinfo->_sifields._rt._pid = info->si_pid;
         tinfo->_sifields._rt._uid = info->si_uid;
         /* XXX: potential problem if 64 bit */
-        tinfo->_sifields._rt._sigval.sival_ptr
-            = (abi_ulong)(unsigned long)info->si_value.sival_ptr;
+        tinfo->_sifields._rt._sigval.sival_ptr =
+            (abi_ulong)(unsigned long)info->si_value.sival_ptr;
     }
 }
 
 static void tswap_siginfo(target_siginfo_t *tinfo,
                           const target_siginfo_t *info)
 {
-    int sig = info->si_signo;
+    int sig;
+    sig = info->si_signo;
     tinfo->si_signo = tswap32(sig);
     tinfo->si_errno = tswap32(info->si_errno);
     tinfo->si_code = tswap32(info->si_code);
-
-    if (sig == TARGET_SIGILL || sig == TARGET_SIGFPE || sig == TARGET_SIGSEGV
-        || sig == TARGET_SIGBUS || sig == TARGET_SIGTRAP) {
-        tinfo->_sifields._sigfault._addr
-            = tswapal(info->_sifields._sigfault._addr);
-    } else if (sig == TARGET_SIGIO) {
-        tinfo->_sifields._sigpoll._band
-            = tswap32(info->_sifields._sigpoll._band);
-        tinfo->_sifields._sigpoll._fd = tswap32(info->_sifields._sigpoll._fd);
-    } else if (sig == TARGET_SIGCHLD) {
-        tinfo->_sifields._sigchld._pid
-            = tswap32(info->_sifields._sigchld._pid);
-        tinfo->_sifields._sigchld._uid
-            = tswap32(info->_sifields._sigchld._uid);
-        tinfo->_sifields._sigchld._status
-            = tswap32(info->_sifields._sigchld._status);
-        tinfo->_sifields._sigchld._utime
-            = tswapal(info->_sifields._sigchld._utime);
-        tinfo->_sifields._sigchld._stime
-            = tswapal(info->_sifields._sigchld._stime);
+    if (sig == SIGILL || sig == SIGFPE || sig == SIGSEGV ||
+        sig == SIGBUS || sig == SIGTRAP) {
+        tinfo->_sifields._sigfault._addr =
+            tswapal(info->_sifields._sigfault._addr);
+    } else if (sig == SIGIO) {
+	tinfo->_sifields._sigpoll._fd = tswap32(info->_sifields._sigpoll._fd);
     } else if (sig >= TARGET_SIGRTMIN) {
         tinfo->_sifields._rt._pid = tswap32(info->_sifields._rt._pid);
         tinfo->_sifields._rt._uid = tswap32(info->_sifields._rt._uid);
-        tinfo->_sifields._rt._sigval.sival_ptr
-            = tswapal(info->_sifields._rt._sigval.sival_ptr);
+        tinfo->_sifields._rt._sigval.sival_ptr =
+            tswapal(info->_sifields._rt._sigval.sival_ptr);
     }
 }
 
@@ -419,8 +349,7 @@ void signal_init(void)
 
 static inline struct sigqueue *alloc_sigqueue(CPUArchState *env)
 {
-    CPUState *cpu = ENV_GET_CPU(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = env->opaque;
     struct sigqueue *q = ts->first_free;
     if (!q)
         return NULL;
@@ -430,9 +359,7 @@ static inline struct sigqueue *alloc_sigqueue(CPUArchState *env)
 
 static inline void free_sigqueue(CPUArchState *env, struct sigqueue *q)
 {
-    CPUState *cpu = ENV_GET_CPU(env);
-    TaskState *ts = cpu->opaque;
-
+    TaskState *ts = env->opaque;
     q->next = ts->first_free;
     ts->first_free = q;
 }
@@ -440,19 +367,17 @@ static inline void free_sigqueue(CPUArchState *env, struct sigqueue *q)
 /* abort execution with signal */
 static void QEMU_NORETURN force_sig(int target_sig)
 {
-    CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu->env_ptr;
-    TaskState *ts = (TaskState *)cpu->opaque;
+    TaskState *ts = (TaskState *)thread_env->opaque;
     int host_sig, core_dumped = 0;
     struct sigaction act;
     host_sig = target_to_host_signal(target_sig);
-    gdb_signalled(env, target_sig);
+    gdb_signalled(thread_env, target_sig);
 
     /* dump core if supported by target binary format */
     if (core_dump_signal(target_sig) && (ts->bprm->core_dump != NULL)) {
         stop_all_tasks();
         core_dumped =
-            ((*ts->bprm->core_dump)(target_sig, env) == 0);
+            ((*ts->bprm->core_dump)(target_sig, thread_env) == 0);
     }
     if (core_dumped) {
         /* we already dumped the core of target process, we don't want
@@ -473,7 +398,6 @@ static void QEMU_NORETURN force_sig(int target_sig)
      * it to arrive. */
     sigfillset(&act.sa_mask);
     act.sa_handler = SIG_DFL;
-    act.sa_flags = 0;
     sigaction(host_sig, &act, NULL);
 
     /* For some reason raise(host_sig) doesn't send the signal when
@@ -493,8 +417,7 @@ static void QEMU_NORETURN force_sig(int target_sig)
    as possible */
 int queue_signal(CPUArchState *env, int sig, target_siginfo_t *info)
 {
-    CPUState *cpu = ENV_GET_CPU(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = env->opaque;
     struct emulated_sigtable *k;
     struct sigqueue *q, **pq;
     abi_ulong handler;
@@ -507,19 +430,6 @@ int queue_signal(CPUArchState *env, int sig, target_siginfo_t *info)
     k = &ts->sigtab[sig - 1];
     queue = gdb_queuesig ();
     handler = sigact_table[sig - 1]._sa_handler;
-
-    if (ts->sigsegv_blocked && sig == TARGET_SIGSEGV) {
-        /* Guest has blocked SIGSEGV but we got one anyway. Assume this
-         * is a forced SIGSEGV (ie one the kernel handles via force_sig_info
-         * because it got a real MMU fault). A blocked SIGSEGV in that
-         * situation is treated as if using the default handler. This is
-         * not correct if some other process has randomly sent us a SIGSEGV
-         * via kill(), but that is not easy to distinguish at this point,
-         * so we assume it doesn't happen.
-         */
-        handler = TARGET_SIG_DFL;
-    }
-
     if (!queue && handler == TARGET_SIG_DFL) {
         if (sig == TARGET_SIGTSTP || sig == TARGET_SIGTTIN || sig == TARGET_SIGTTOU) {
             kill(getpid(),SIGSTOP);
@@ -572,7 +482,6 @@ int queue_signal(CPUArchState *env, int sig, target_siginfo_t *info)
 static void host_signal_handler(int host_signum, siginfo_t *info,
                                 void *puc)
 {
-    CPUArchState *env = thread_cpu->env_ptr;
     int sig;
     target_siginfo_t tinfo;
 
@@ -592,9 +501,9 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     fprintf(stderr, "qemu: got signal %d\n", sig);
 #endif
     host_to_target_siginfo_noswap(&tinfo, info);
-    if (queue_signal(env, sig, &tinfo) == 1) {
+    if (queue_signal(thread_env, sig, &tinfo) == 1) {
         /* interrupt the virtual CPU as soon as possible */
-        cpu_exit(thread_cpu);
+        cpu_exit(thread_env);
     }
 }
 
@@ -677,22 +586,28 @@ int do_sigaction(int sig, const struct target_sigaction *act,
             sig, act, oact);
 #endif
     if (oact) {
-        __put_user(k->_sa_handler, &oact->_sa_handler);
-        __put_user(k->sa_flags, &oact->sa_flags);
-#if !defined(TARGET_MIPS)
-        __put_user(k->sa_restorer, &oact->sa_restorer);
+        oact->_sa_handler = tswapal(k->_sa_handler);
+#if defined(TARGET_MIPS) || defined (TARGET_ALPHA)
+        oact->sa_flags = bswap32(k->sa_flags);
+#else
+        oact->sa_flags = tswapal(k->sa_flags);
 #endif
-        /* Not swapped.  */
+#if !defined(TARGET_MIPS)
+        oact->sa_restorer = tswapal(k->sa_restorer);
+#endif
         oact->sa_mask = k->sa_mask;
     }
     if (act) {
         /* FIXME: This is not threadsafe.  */
-        __get_user(k->_sa_handler, &act->_sa_handler);
-        __get_user(k->sa_flags, &act->sa_flags);
-#if !defined(TARGET_MIPS)
-        __get_user(k->sa_restorer, &act->sa_restorer);
+        k->_sa_handler = tswapal(act->_sa_handler);
+#if defined(TARGET_MIPS) || defined (TARGET_ALPHA)
+        k->sa_flags = bswap32(act->sa_flags);
+#else
+        k->sa_flags = tswapal(act->sa_flags);
 #endif
-        /* To be swapped in target_to_host_sigset.  */
+#if !defined(TARGET_MIPS)
+        k->sa_restorer = tswapal(act->sa_restorer);
+#endif
         k->sa_mask = act->sa_mask;
 
         /* we update the host linux signal state */
@@ -841,9 +756,8 @@ static int
 setup_sigcontext(struct target_sigcontext *sc, struct target_fpstate *fpstate,
 		 CPUX86State *env, abi_ulong mask, abi_ulong fpstate_addr)
 {
-    CPUState *cs = CPU(x86_env_get_cpu(env));
-    int err = 0;
-    uint16_t magic;
+	int err = 0;
+        uint16_t magic;
 
 	/* already locked in setup_frame() */
 	err |= __put_user(env->segs[R_GS].selector, (unsigned int *)&sc->gs);
@@ -858,7 +772,7 @@ setup_sigcontext(struct target_sigcontext *sc, struct target_fpstate *fpstate,
 	err |= __put_user(env->regs[R_EDX], &sc->edx);
 	err |= __put_user(env->regs[R_ECX], &sc->ecx);
 	err |= __put_user(env->regs[R_EAX], &sc->eax);
-    err |= __put_user(cs->exception_index, &sc->trapno);
+	err |= __put_user(env->exception_index, &sc->trapno);
 	err |= __put_user(env->error_code, &sc->err);
 	err |= __put_user(env->eip, &sc->eip);
 	err |= __put_user(env->segs[R_CS].selector, (unsigned int *)&sc->cs);
@@ -1118,7 +1032,7 @@ long do_sigreturn(CPUX86State *env)
     }
 
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     /* restore registers */
     if (restore_sigcontext(env, &frame->sc, &eax))
@@ -1143,7 +1057,7 @@ long do_rt_sigreturn(CPUX86State *env)
         if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1))
                 goto badframe;
         target_to_host_sigset(&set, &frame->uc.tuc_sigmask);
-        do_sigprocmask(SIG_SETMASK, &set, NULL);
+        sigprocmask(SIG_SETMASK, &set, NULL);
 
 	if (restore_sigcontext(env, &frame->uc.tuc_mcontext, &eax))
 		goto badframe;
@@ -1159,282 +1073,6 @@ badframe:
         unlock_user_struct(frame, frame_addr, 0);
         force_sig(TARGET_SIGSEGV);
 	return 0;
-}
-
-#elif defined(TARGET_AARCH64)
-
-struct target_sigcontext {
-    uint64_t fault_address;
-    /* AArch64 registers */
-    uint64_t regs[31];
-    uint64_t sp;
-    uint64_t pc;
-    uint64_t pstate;
-    /* 4K reserved for FP/SIMD state and future expansion */
-    char __reserved[4096] __attribute__((__aligned__(16)));
-};
-
-struct target_ucontext {
-    abi_ulong tuc_flags;
-    abi_ulong tuc_link;
-    target_stack_t tuc_stack;
-    target_sigset_t tuc_sigmask;
-    /* glibc uses a 1024-bit sigset_t */
-    char __unused[1024 / 8 - sizeof(target_sigset_t)];
-    /* last for future expansion */
-    struct target_sigcontext tuc_mcontext;
-};
-
-/*
- * Header to be used at the beginning of structures extending the user
- * context. Such structures must be placed after the rt_sigframe on the stack
- * and be 16-byte aligned. The last structure must be a dummy one with the
- * magic and size set to 0.
- */
-struct target_aarch64_ctx {
-    uint32_t magic;
-    uint32_t size;
-};
-
-#define TARGET_FPSIMD_MAGIC 0x46508001
-
-struct target_fpsimd_context {
-    struct target_aarch64_ctx head;
-    uint32_t fpsr;
-    uint32_t fpcr;
-    uint64_t vregs[32 * 2]; /* really uint128_t vregs[32] */
-};
-
-/*
- * Auxiliary context saved in the sigcontext.__reserved array. Not exported to
- * user space as it will change with the addition of new context. User space
- * should check the magic/size information.
- */
-struct target_aux_context {
-    struct target_fpsimd_context fpsimd;
-    /* additional context to be added before "end" */
-    struct target_aarch64_ctx end;
-};
-
-struct target_rt_sigframe {
-    struct target_siginfo info;
-    struct target_ucontext uc;
-    uint64_t fp;
-    uint64_t lr;
-    uint32_t tramp[2];
-};
-
-static int target_setup_sigframe(struct target_rt_sigframe *sf,
-                                 CPUARMState *env, target_sigset_t *set)
-{
-    int i;
-    struct target_aux_context *aux =
-        (struct target_aux_context *)sf->uc.tuc_mcontext.__reserved;
-
-    /* set up the stack frame for unwinding */
-    __put_user(env->xregs[29], &sf->fp);
-    __put_user(env->xregs[30], &sf->lr);
-
-    for (i = 0; i < 31; i++) {
-        __put_user(env->xregs[i], &sf->uc.tuc_mcontext.regs[i]);
-    }
-    __put_user(env->xregs[31], &sf->uc.tuc_mcontext.sp);
-    __put_user(env->pc, &sf->uc.tuc_mcontext.pc);
-    __put_user(pstate_read(env), &sf->uc.tuc_mcontext.pstate);
-
-    __put_user(/*current->thread.fault_address*/ 0,
-            &sf->uc.tuc_mcontext.fault_address);
-
-    for (i = 0; i < TARGET_NSIG_WORDS; i++) {
-        __put_user(set->sig[i], &sf->uc.tuc_sigmask.sig[i]);
-    }
-
-    for (i = 0; i < 32; i++) {
-#ifdef TARGET_WORDS_BIGENDIAN
-        __put_user(env->vfp.regs[i * 2], &aux->fpsimd.vregs[i * 2 + 1]);
-        __put_user(env->vfp.regs[i * 2 + 1], &aux->fpsimd.vregs[i * 2]);
-#else
-        __put_user(env->vfp.regs[i * 2], &aux->fpsimd.vregs[i * 2]);
-        __put_user(env->vfp.regs[i * 2 + 1], &aux->fpsimd.vregs[i * 2 + 1]);
-#endif
-    }
-    __put_user(vfp_get_fpsr(env), &aux->fpsimd.fpsr);
-    __put_user(vfp_get_fpcr(env), &aux->fpsimd.fpcr);
-    __put_user(TARGET_FPSIMD_MAGIC, &aux->fpsimd.head.magic);
-    __put_user(sizeof(struct target_fpsimd_context),
-            &aux->fpsimd.head.size);
-
-    /* set the "end" magic */
-    __put_user(0, &aux->end.magic);
-    __put_user(0, &aux->end.size);
-
-    return 0;
-}
-
-static int target_restore_sigframe(CPUARMState *env,
-                                   struct target_rt_sigframe *sf)
-{
-    sigset_t set;
-    int i;
-    struct target_aux_context *aux =
-        (struct target_aux_context *)sf->uc.tuc_mcontext.__reserved;
-    uint32_t magic, size, fpsr, fpcr;
-    uint64_t pstate;
-
-    target_to_host_sigset(&set, &sf->uc.tuc_sigmask);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
-
-    for (i = 0; i < 31; i++) {
-        __get_user(env->xregs[i], &sf->uc.tuc_mcontext.regs[i]);
-    }
-
-    __get_user(env->xregs[31], &sf->uc.tuc_mcontext.sp);
-    __get_user(env->pc, &sf->uc.tuc_mcontext.pc);
-    __get_user(pstate, &sf->uc.tuc_mcontext.pstate);
-    pstate_write(env, pstate);
-
-    __get_user(magic, &aux->fpsimd.head.magic);
-    __get_user(size, &aux->fpsimd.head.size);
-
-    if (magic != TARGET_FPSIMD_MAGIC
-        || size != sizeof(struct target_fpsimd_context)) {
-        return 1;
-    }
-
-    for (i = 0; i < 32; i++) {
-#ifdef TARGET_WORDS_BIGENDIAN
-        __get_user(env->vfp.regs[i * 2], &aux->fpsimd.vregs[i * 2 + 1]);
-        __get_user(env->vfp.regs[i * 2 + 1], &aux->fpsimd.vregs[i * 2]);
-#else
-        __get_user(env->vfp.regs[i * 2], &aux->fpsimd.vregs[i * 2]);
-        __get_user(env->vfp.regs[i * 2 + 1], &aux->fpsimd.vregs[i * 2 + 1]);
-#endif
-    }
-    __get_user(fpsr, &aux->fpsimd.fpsr);
-    vfp_set_fpsr(env, fpsr);
-    __get_user(fpcr, &aux->fpsimd.fpcr);
-    vfp_set_fpcr(env, fpcr);
-
-    return 0;
-}
-
-static abi_ulong get_sigframe(struct target_sigaction *ka, CPUARMState *env)
-{
-    abi_ulong sp;
-
-    sp = env->xregs[31];
-
-    /*
-     * This is the X/Open sanctioned signal stack switching.
-     */
-    if ((ka->sa_flags & SA_ONSTACK) && !sas_ss_flags(sp)) {
-        sp = target_sigaltstack_used.ss_sp + target_sigaltstack_used.ss_size;
-    }
-
-    sp = (sp - sizeof(struct target_rt_sigframe)) & ~15;
-
-    return sp;
-}
-
-static void target_setup_frame(int usig, struct target_sigaction *ka,
-                               target_siginfo_t *info, target_sigset_t *set,
-                               CPUARMState *env)
-{
-    struct target_rt_sigframe *frame;
-    abi_ulong frame_addr, return_addr;
-
-    frame_addr = get_sigframe(ka, env);
-    if (!lock_user_struct(VERIFY_WRITE, frame, frame_addr, 0)) {
-        goto give_sigsegv;
-    }
-
-    __put_user(0, &frame->uc.tuc_flags);
-    __put_user(0, &frame->uc.tuc_link);
-
-    __put_user(target_sigaltstack_used.ss_sp,
-                      &frame->uc.tuc_stack.ss_sp);
-    __put_user(sas_ss_flags(env->xregs[31]),
-                      &frame->uc.tuc_stack.ss_flags);
-    __put_user(target_sigaltstack_used.ss_size,
-                      &frame->uc.tuc_stack.ss_size);
-    target_setup_sigframe(frame, env, set);
-    if (ka->sa_flags & TARGET_SA_RESTORER) {
-        return_addr = ka->sa_restorer;
-    } else {
-        /* mov x8,#__NR_rt_sigreturn; svc #0 */
-        __put_user(0xd2801168, &frame->tramp[0]);
-        __put_user(0xd4000001, &frame->tramp[1]);
-        return_addr = frame_addr + offsetof(struct target_rt_sigframe, tramp);
-    }
-    env->xregs[0] = usig;
-    env->xregs[31] = frame_addr;
-    env->xregs[29] = env->xregs[31] + offsetof(struct target_rt_sigframe, fp);
-    env->pc = ka->_sa_handler;
-    env->xregs[30] = return_addr;
-    if (info) {
-        if (copy_siginfo_to_user(&frame->info, info)) {
-            goto give_sigsegv;
-        }
-        env->xregs[1] = frame_addr + offsetof(struct target_rt_sigframe, info);
-        env->xregs[2] = frame_addr + offsetof(struct target_rt_sigframe, uc);
-    }
-
-    unlock_user_struct(frame, frame_addr, 1);
-    return;
-
- give_sigsegv:
-    unlock_user_struct(frame, frame_addr, 1);
-    force_sig(TARGET_SIGSEGV);
-}
-
-static void setup_rt_frame(int sig, struct target_sigaction *ka,
-                           target_siginfo_t *info, target_sigset_t *set,
-                           CPUARMState *env)
-{
-    target_setup_frame(sig, ka, info, set, env);
-}
-
-static void setup_frame(int sig, struct target_sigaction *ka,
-                        target_sigset_t *set, CPUARMState *env)
-{
-    target_setup_frame(sig, ka, 0, set, env);
-}
-
-long do_rt_sigreturn(CPUARMState *env)
-{
-    struct target_rt_sigframe *frame = NULL;
-    abi_ulong frame_addr = env->xregs[31];
-
-    if (frame_addr & 15) {
-        goto badframe;
-    }
-
-    if  (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1)) {
-        goto badframe;
-    }
-
-    if (target_restore_sigframe(env, frame)) {
-        goto badframe;
-    }
-
-    if (do_sigaltstack(frame_addr +
-            offsetof(struct target_rt_sigframe, uc.tuc_stack),
-            0, get_sp_from_cpustate(env)) == -EFAULT) {
-        goto badframe;
-    }
-
-    unlock_user_struct(frame, frame_addr, 0);
-    return env->xregs[0];
-
- badframe:
-    unlock_user_struct(frame, frame_addr, 0);
-    force_sig(TARGET_SIGSEGV);
-    return 0;
-}
-
-long do_sigreturn(CPUARMState *env)
-{
-    return do_rt_sigreturn(env);
 }
 
 #elif defined(TARGET_ARM)
@@ -1897,7 +1535,7 @@ restore_sigcontext(CPUARMState *env, struct target_sigcontext *sc)
 static long do_sigreturn_v1(CPUARMState *env)
 {
         abi_ulong frame_addr;
-        struct sigframe_v1 *frame = NULL;
+	struct sigframe_v1 *frame;
 	target_sigset_t set;
         sigset_t host_set;
         int i;
@@ -1907,11 +1545,10 @@ static long do_sigreturn_v1(CPUARMState *env)
 	 * then 'sp' should be word aligned here.  If it's
 	 * not, then the user is trying to mess with us.
 	 */
-        frame_addr = env->regs[13];
-        if (frame_addr & 7) {
-            goto badframe;
-        }
+	if (env->regs[13] & 7)
+		goto badframe;
 
+        frame_addr = env->regs[13];
 	if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1))
                 goto badframe;
 
@@ -1923,7 +1560,7 @@ static long do_sigreturn_v1(CPUARMState *env)
         }
 
         target_to_host_sigset_internal(&host_set, &set);
-        do_sigprocmask(SIG_SETMASK, &host_set, NULL);
+        sigprocmask(SIG_SETMASK, &host_set, NULL);
 
 	if (restore_sigcontext(env, &frame->sc))
 		goto badframe;
@@ -2004,7 +1641,7 @@ static int do_sigframe_return_v2(CPUARMState *env, target_ulong frame_addr,
     abi_ulong *regspace;
 
     target_to_host_sigset(&host_set, &uc->tuc_sigmask);
-    do_sigprocmask(SIG_SETMASK, &host_set, NULL);
+    sigprocmask(SIG_SETMASK, &host_set, NULL);
 
     if (restore_sigcontext(env, &uc->tuc_mcontext))
         return 1;
@@ -2039,18 +1676,17 @@ static int do_sigframe_return_v2(CPUARMState *env, target_ulong frame_addr,
 static long do_sigreturn_v2(CPUARMState *env)
 {
         abi_ulong frame_addr;
-        struct sigframe_v2 *frame = NULL;
+	struct sigframe_v2 *frame;
 
 	/*
 	 * Since we stacked the signal on a 64-bit boundary,
 	 * then 'sp' should be word aligned here.  If it's
 	 * not, then the user is trying to mess with us.
 	 */
-        frame_addr = env->regs[13];
-        if (frame_addr & 7) {
-            goto badframe;
-        }
+	if (env->regs[13] & 7)
+		goto badframe;
 
+        frame_addr = env->regs[13];
 	if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1))
                 goto badframe;
 
@@ -2078,7 +1714,7 @@ long do_sigreturn(CPUARMState *env)
 static long do_rt_sigreturn_v1(CPUARMState *env)
 {
         abi_ulong frame_addr;
-        struct rt_sigframe_v1 *frame = NULL;
+	struct rt_sigframe_v1 *frame;
         sigset_t host_set;
 
 	/*
@@ -2086,16 +1722,15 @@ static long do_rt_sigreturn_v1(CPUARMState *env)
 	 * then 'sp' should be word aligned here.  If it's
 	 * not, then the user is trying to mess with us.
 	 */
-        frame_addr = env->regs[13];
-        if (frame_addr & 7) {
-            goto badframe;
-        }
+	if (env->regs[13] & 7)
+		goto badframe;
 
+        frame_addr = env->regs[13];
 	if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1))
                 goto badframe;
 
         target_to_host_sigset(&host_set, &frame->uc.tuc_sigmask);
-        do_sigprocmask(SIG_SETMASK, &host_set, NULL);
+        sigprocmask(SIG_SETMASK, &host_set, NULL);
 
 	if (restore_sigcontext(env, &frame->uc.tuc_mcontext))
 		goto badframe;
@@ -2120,18 +1755,17 @@ badframe:
 static long do_rt_sigreturn_v2(CPUARMState *env)
 {
         abi_ulong frame_addr;
-        struct rt_sigframe_v2 *frame = NULL;
+	struct rt_sigframe_v2 *frame;
 
 	/*
 	 * Since we stacked the signal on a 64-bit boundary,
 	 * then 'sp' should be word aligned here.  If it's
 	 * not, then the user is trying to mess with us.
 	 */
-        frame_addr = env->regs[13];
-        if (frame_addr & 7) {
-            goto badframe;
-        }
+	if (env->regs[13] & 7)
+		goto badframe;
 
+        frame_addr = env->regs[13];
 	if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1))
                 goto badframe;
 
@@ -2506,7 +2140,7 @@ long do_sigreturn(CPUSPARCState *env)
         }
 
         target_to_host_sigset_internal(&host_set, &set);
-        do_sigprocmask(SIG_SETMASK, &host_set, NULL);
+        sigprocmask(SIG_SETMASK, &host_set, NULL);
 
         if (err)
                 goto segv_and_exit;
@@ -2622,14 +2256,14 @@ void sparc64_set_context(CPUSPARCState *env)
             abi_ulong *src, *dst;
             src = ucp->tuc_sigmask.sig;
             dst = target_set.sig;
-            for (i = 0; i < TARGET_NSIG_WORDS; i++, dst++, src++) {
+            for (i = 0; i < sizeof(target_sigset_t) / sizeof(abi_ulong);
+                 i++, dst++, src++)
                 err |= __get_user(*dst, src);
-            }
             if (err)
                 goto do_sigsegv;
         }
         target_to_host_sigset_internal(&set, &target_set);
-        do_sigprocmask(SIG_SETMASK, &set, NULL);
+        sigprocmask(SIG_SETMASK, &set, NULL);
     }
     env->pc = pc;
     env->npc = npc;
@@ -2718,7 +2352,7 @@ void sparc64_get_context(CPUSPARCState *env)
 
     err = 0;
 
-    do_sigprocmask(0, NULL, &set);
+    sigprocmask(0, NULL, &set);
     host_to_target_sigset_internal(&target_set, &set);
     if (TARGET_NSIG_WORDS == 1) {
         err |= __put_user(target_set.sig[0],
@@ -2727,9 +2361,9 @@ void sparc64_get_context(CPUSPARCState *env)
         abi_ulong *src, *dst;
         src = target_set.sig;
         dst = ucp->tuc_sigmask.sig;
-        for (i = 0; i < TARGET_NSIG_WORDS; i++, dst++, src++) {
+        for (i = 0; i < sizeof(target_sigset_t) / sizeof(abi_ulong);
+             i++, dst++, src++)
             err |= __put_user(*src, dst);
-        }
         if (err)
             goto do_sigsegv;
     }
@@ -2789,9 +2423,66 @@ void sparc64_get_context(CPUSPARCState *env)
     force_sig(TARGET_SIGSEGV);
 }
 #endif
-#elif defined(TARGET_MIPS) || defined(TARGET_MIPS64)
+#elif defined(TARGET_ABI_MIPSN64)
 
-# if defined(TARGET_ABI_MIPSO32)
+# warning signal handling not implemented
+
+static void setup_frame(int sig, struct target_sigaction *ka,
+                        target_sigset_t *set, CPUMIPSState *env)
+{
+    fprintf(stderr, "setup_frame: not implemented\n");
+}
+
+static void setup_rt_frame(int sig, struct target_sigaction *ka,
+                           target_siginfo_t *info,
+                           target_sigset_t *set, CPUMIPSState *env)
+{
+    fprintf(stderr, "setup_rt_frame: not implemented\n");
+}
+
+long do_sigreturn(CPUMIPSState *env)
+{
+    fprintf(stderr, "do_sigreturn: not implemented\n");
+    return -TARGET_ENOSYS;
+}
+
+long do_rt_sigreturn(CPUMIPSState *env)
+{
+    fprintf(stderr, "do_rt_sigreturn: not implemented\n");
+    return -TARGET_ENOSYS;
+}
+
+#elif defined(TARGET_ABI_MIPSN32)
+
+# warning signal handling not implemented
+
+static void setup_frame(int sig, struct target_sigaction *ka,
+                        target_sigset_t *set, CPUMIPSState *env)
+{
+    fprintf(stderr, "setup_frame: not implemented\n");
+}
+
+static void setup_rt_frame(int sig, struct target_sigaction *ka,
+                           target_siginfo_t *info,
+                           target_sigset_t *set, CPUMIPSState *env)
+{
+    fprintf(stderr, "setup_rt_frame: not implemented\n");
+}
+
+long do_sigreturn(CPUMIPSState *env)
+{
+    fprintf(stderr, "do_sigreturn: not implemented\n");
+    return -TARGET_ENOSYS;
+}
+
+long do_rt_sigreturn(CPUMIPSState *env)
+{
+    fprintf(stderr, "do_rt_sigreturn: not implemented\n");
+    return -TARGET_ENOSYS;
+}
+
+#elif defined(TARGET_ABI_MIPSO32)
+
 struct target_sigcontext {
     uint32_t   sc_regmask;     /* Unused */
     uint32_t   sc_status;
@@ -2813,25 +2504,6 @@ struct target_sigcontext {
     target_ulong   sc_hi3;
     target_ulong   sc_lo3;
 };
-# else /* N32 || N64 */
-struct target_sigcontext {
-    uint64_t sc_regs[32];
-    uint64_t sc_fpregs[32];
-    uint64_t sc_mdhi;
-    uint64_t sc_hi1;
-    uint64_t sc_hi2;
-    uint64_t sc_hi3;
-    uint64_t sc_mdlo;
-    uint64_t sc_lo1;
-    uint64_t sc_lo2;
-    uint64_t sc_lo3;
-    uint64_t sc_pc;
-    uint32_t sc_fpc_csr;
-    uint32_t sc_used_math;
-    uint32_t sc_dsp;
-    uint32_t sc_reserved;
-};
-# endif /* O32 */
 
 struct sigframe {
     uint32_t sf_ass[4];			/* argument save space for o32 */
@@ -2859,17 +2531,18 @@ struct target_rt_sigframe {
 /* Install trampoline to jump back from signal handler */
 static inline int install_sigtramp(unsigned int *tramp,   unsigned int syscall)
 {
-    int err = 0;
+    int err;
 
     /*
-     * Set up the return code ...
-     *
-     *         li      v0, __NR__foo_sigreturn
-     *         syscall
-     */
+    * Set up the return code ...
+    *
+    *         li      v0, __NR__foo_sigreturn
+    *         syscall
+    */
 
-    err |= __put_user(0x24020000 + syscall, tramp + 0);
+    err = __put_user(0x24020000 + syscall, tramp + 0);
     err |= __put_user(0x0000000c          , tramp + 1);
+    /* flush_cache_sigtramp((unsigned long) tramp); */
     return err;
 }
 
@@ -2877,38 +2550,74 @@ static inline int
 setup_sigcontext(CPUMIPSState *regs, struct target_sigcontext *sc)
 {
     int err = 0;
-    int i;
 
-    err |= __put_user(exception_resume_pc(regs), &sc->sc_pc);
-    regs->hflags &= ~MIPS_HFLAG_BMASK;
+    err |= __put_user(regs->active_tc.PC, &sc->sc_pc);
 
-    __put_user(0, &sc->sc_regs[0]);
-    for (i = 1; i < 32; ++i) {
-        err |= __put_user(regs->active_tc.gpr[i], &sc->sc_regs[i]);
-    }
+#define save_gp_reg(i) do {   						\
+        err |= __put_user(regs->active_tc.gpr[i], &sc->sc_regs[i]);	\
+    } while(0)
+    __put_user(0, &sc->sc_regs[0]); save_gp_reg(1); save_gp_reg(2);
+    save_gp_reg(3); save_gp_reg(4); save_gp_reg(5); save_gp_reg(6);
+    save_gp_reg(7); save_gp_reg(8); save_gp_reg(9); save_gp_reg(10);
+    save_gp_reg(11); save_gp_reg(12); save_gp_reg(13); save_gp_reg(14);
+    save_gp_reg(15); save_gp_reg(16); save_gp_reg(17); save_gp_reg(18);
+    save_gp_reg(19); save_gp_reg(20); save_gp_reg(21); save_gp_reg(22);
+    save_gp_reg(23); save_gp_reg(24); save_gp_reg(25); save_gp_reg(26);
+    save_gp_reg(27); save_gp_reg(28); save_gp_reg(29); save_gp_reg(30);
+    save_gp_reg(31);
+#undef save_gp_reg
 
     err |= __put_user(regs->active_tc.HI[0], &sc->sc_mdhi);
     err |= __put_user(regs->active_tc.LO[0], &sc->sc_mdlo);
 
-    /* Rather than checking for dsp existence, always copy.  The storage
-       would just be garbage otherwise.  */
-    err |= __put_user(regs->active_tc.HI[1], &sc->sc_hi1);
-    err |= __put_user(regs->active_tc.HI[2], &sc->sc_hi2);
-    err |= __put_user(regs->active_tc.HI[3], &sc->sc_hi3);
-    err |= __put_user(regs->active_tc.LO[1], &sc->sc_lo1);
-    err |= __put_user(regs->active_tc.LO[2], &sc->sc_lo2);
-    err |= __put_user(regs->active_tc.LO[3], &sc->sc_lo3);
-    {
-        uint32_t dsp = cpu_rddsp(0x3ff, regs);
-        err |= __put_user(dsp, &sc->sc_dsp);
+    /* Not used yet, but might be useful if we ever have DSP suppport */
+#if 0
+    if (cpu_has_dsp) {
+	err |= __put_user(mfhi1(), &sc->sc_hi1);
+	err |= __put_user(mflo1(), &sc->sc_lo1);
+	err |= __put_user(mfhi2(), &sc->sc_hi2);
+	err |= __put_user(mflo2(), &sc->sc_lo2);
+	err |= __put_user(mfhi3(), &sc->sc_hi3);
+	err |= __put_user(mflo3(), &sc->sc_lo3);
+	err |= __put_user(rddsp(DSP_MASK), &sc->sc_dsp);
     }
-
-    err |= __put_user(1, &sc->sc_used_math);
-
-    for (i = 0; i < 32; ++i) {
-        err |= __put_user(regs->active_fpu.fpr[i].d, &sc->sc_fpregs[i]);
+    /* same with 64 bit */
+#ifdef CONFIG_64BIT
+    err |= __put_user(regs->hi, &sc->sc_hi[0]);
+    err |= __put_user(regs->lo, &sc->sc_lo[0]);
+    if (cpu_has_dsp) {
+	err |= __put_user(mfhi1(), &sc->sc_hi[1]);
+	err |= __put_user(mflo1(), &sc->sc_lo[1]);
+	err |= __put_user(mfhi2(), &sc->sc_hi[2]);
+	err |= __put_user(mflo2(), &sc->sc_lo[2]);
+	err |= __put_user(mfhi3(), &sc->sc_hi[3]);
+	err |= __put_user(mflo3(), &sc->sc_lo[3]);
+	err |= __put_user(rddsp(DSP_MASK), &sc->sc_dsp);
     }
+#endif
+#endif
 
+#if 0
+    err |= __put_user(!!used_math(), &sc->sc_used_math);
+
+    if (!used_math())
+	goto out;
+
+    /*
+    * Save FPU state to signal context.  Signal handler will "inherit"
+    * current FPU state.
+    */
+    preempt_disable();
+
+    if (!is_fpu_owner()) {
+	own_fpu();
+	restore_fp(current);
+    }
+    err |= save_fp_context(sc);
+
+    preempt_enable();
+    out:
+#endif
     return err;
 }
 
@@ -2916,36 +2625,70 @@ static inline int
 restore_sigcontext(CPUMIPSState *regs, struct target_sigcontext *sc)
 {
     int err = 0;
-    int i;
 
     err |= __get_user(regs->CP0_EPC, &sc->sc_pc);
 
     err |= __get_user(regs->active_tc.HI[0], &sc->sc_mdhi);
     err |= __get_user(regs->active_tc.LO[0], &sc->sc_mdlo);
 
-    for (i = 1; i < 32; ++i) {
-        err |= __get_user(regs->active_tc.gpr[i], &sc->sc_regs[i]);
+#define restore_gp_reg(i) do {   							\
+        err |= __get_user(regs->active_tc.gpr[i], &sc->sc_regs[i]);		\
+    } while(0)
+    restore_gp_reg( 1); restore_gp_reg( 2); restore_gp_reg( 3);
+    restore_gp_reg( 4); restore_gp_reg( 5); restore_gp_reg( 6);
+    restore_gp_reg( 7); restore_gp_reg( 8); restore_gp_reg( 9);
+    restore_gp_reg(10); restore_gp_reg(11); restore_gp_reg(12);
+    restore_gp_reg(13); restore_gp_reg(14); restore_gp_reg(15);
+    restore_gp_reg(16); restore_gp_reg(17); restore_gp_reg(18);
+    restore_gp_reg(19); restore_gp_reg(20); restore_gp_reg(21);
+    restore_gp_reg(22); restore_gp_reg(23); restore_gp_reg(24);
+    restore_gp_reg(25); restore_gp_reg(26); restore_gp_reg(27);
+    restore_gp_reg(28); restore_gp_reg(29); restore_gp_reg(30);
+    restore_gp_reg(31);
+#undef restore_gp_reg
+
+#if 0
+    if (cpu_has_dsp) {
+	err |= __get_user(treg, &sc->sc_hi1); mthi1(treg);
+	err |= __get_user(treg, &sc->sc_lo1); mtlo1(treg);
+	err |= __get_user(treg, &sc->sc_hi2); mthi2(treg);
+	err |= __get_user(treg, &sc->sc_lo2); mtlo2(treg);
+	err |= __get_user(treg, &sc->sc_hi3); mthi3(treg);
+	err |= __get_user(treg, &sc->sc_lo3); mtlo3(treg);
+	err |= __get_user(treg, &sc->sc_dsp); wrdsp(treg, DSP_MASK);
+    }
+#ifdef CONFIG_64BIT
+    err |= __get_user(regs->hi, &sc->sc_hi[0]);
+    err |= __get_user(regs->lo, &sc->sc_lo[0]);
+    if (cpu_has_dsp) {
+	err |= __get_user(treg, &sc->sc_hi[1]); mthi1(treg);
+	err |= __get_user(treg, &sc->sc_lo[1]); mthi1(treg);
+	err |= __get_user(treg, &sc->sc_hi[2]); mthi2(treg);
+	err |= __get_user(treg, &sc->sc_lo[2]); mthi2(treg);
+	err |= __get_user(treg, &sc->sc_hi[3]); mthi3(treg);
+	err |= __get_user(treg, &sc->sc_lo[3]); mthi3(treg);
+	err |= __get_user(treg, &sc->sc_dsp); wrdsp(treg, DSP_MASK);
+    }
+#endif
+
+    err |= __get_user(used_math, &sc->sc_used_math);
+    conditional_used_math(used_math);
+
+    preempt_disable();
+
+    if (used_math()) {
+	/* restore fpu context if we have used it before */
+	own_fpu();
+	err |= restore_fp_context(sc);
+    } else {
+	/* signal handler may have used FPU.  Give it up. */
+	lose_fpu();
     }
 
-    err |= __get_user(regs->active_tc.HI[1], &sc->sc_hi1);
-    err |= __get_user(regs->active_tc.HI[2], &sc->sc_hi2);
-    err |= __get_user(regs->active_tc.HI[3], &sc->sc_hi3);
-    err |= __get_user(regs->active_tc.LO[1], &sc->sc_lo1);
-    err |= __get_user(regs->active_tc.LO[2], &sc->sc_lo2);
-    err |= __get_user(regs->active_tc.LO[3], &sc->sc_lo3);
-    {
-        uint32_t dsp;
-        err |= __get_user(dsp, &sc->sc_dsp);
-        cpu_wrdsp(dsp, 0x3ff, regs);
-    }
-
-    for (i = 0; i < 32; ++i) {
-        err |= __get_user(regs->active_fpu.fpr[i].d, &sc->sc_fpregs[i]);
-    }
-
+    preempt_enable();
+#endif
     return err;
 }
-
 /*
  * Determine which stack to use..
  */
@@ -2972,16 +2715,6 @@ get_sigframe(struct target_sigaction *ka, CPUMIPSState *regs, size_t frame_size)
     return (sp - frame_size) & ~7;
 }
 
-static void mips_set_hflags_isa_mode_from_pc(CPUMIPSState *env)
-{
-    if (env->insn_flags & (ASE_MIPS16 | ASE_MICROMIPS)) {
-        env->hflags &= ~MIPS_HFLAG_M16;
-        env->hflags |= (env->active_tc.PC & 1) << MIPS_HFLAG_M16_SHIFT;
-        env->active_tc.PC &= ~(target_ulong) 1;
-    }
-}
-
-# if defined(TARGET_ABI_MIPSO32)
 /* compare linux/arch/mips/kernel/signal.c:setup_frame() */
 static void setup_frame(int sig, struct target_sigaction * ka,
                         target_sigset_t *set, CPUMIPSState *regs)
@@ -3023,7 +2756,6 @@ static void setup_frame(int sig, struct target_sigaction * ka,
     * since it returns to userland using eret
     * we cannot do this here, and we must set PC directly */
     regs->active_tc.PC = regs->active_tc.gpr[25] = ka->_sa_handler;
-    mips_set_hflags_isa_mode_from_pc(regs);
     unlock_user_struct(frame, frame_addr, 1);
     return;
 
@@ -3053,7 +2785,7 @@ long do_sigreturn(CPUMIPSState *regs)
     }
 
     target_to_host_sigset_internal(&blocked, &target_set);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
 
     if (restore_sigcontext(regs, &frame->sf_sc))
    	goto badframe;
@@ -3071,7 +2803,6 @@ long do_sigreturn(CPUMIPSState *regs)
 #endif
 
     regs->active_tc.PC = regs->CP0_EPC;
-    mips_set_hflags_isa_mode_from_pc(regs);
     /* I am not sure this is right, but it seems to work
     * maybe a problem with nested signals ? */
     regs->CP0_EPC = 0;
@@ -3081,7 +2812,6 @@ badframe:
     force_sig(TARGET_SIGSEGV/*, current*/);
     return 0;
 }
-# endif /* O32 */
 
 static void setup_rt_frame(int sig, struct target_sigaction *ka,
                            target_siginfo_t *info,
@@ -3134,7 +2864,6 @@ static void setup_rt_frame(int sig, struct target_sigaction *ka,
     * since it returns to userland using eret
     * we cannot do this here, and we must set PC directly */
     env->active_tc.PC = env->active_tc.gpr[25] = ka->_sa_handler;
-    mips_set_hflags_isa_mode_from_pc(env);
     unlock_user_struct(frame, frame_addr, 1);
     return;
 
@@ -3157,7 +2886,7 @@ long do_rt_sigreturn(CPUMIPSState *env)
    	goto badframe;
 
     target_to_host_sigset(&blocked, &frame->rs_uc.tuc_sigmask);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
 
     if (restore_sigcontext(env, &frame->rs_uc.tuc_mcontext))
         goto badframe;
@@ -3168,7 +2897,6 @@ long do_rt_sigreturn(CPUMIPSState *env)
         goto badframe;
 
     env->active_tc.PC = env->CP0_EPC;
-    mips_set_hflags_isa_mode_from_pc(env);
     /* I am not sure this is right, but it seems to work
     * maybe a problem with nested signals ? */
     env->CP0_EPC = 0;
@@ -3447,7 +3175,7 @@ long do_sigreturn(CPUSH4State *regs)
         goto badframe;
 
     target_to_host_sigset_internal(&blocked, &target_set);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
 
     if (restore_sigcontext(regs, &frame->sc, &r0))
         goto badframe;
@@ -3476,7 +3204,7 @@ long do_rt_sigreturn(CPUSH4State *regs)
    	goto badframe;
 
     target_to_host_sigset(&blocked, &frame->uc.tuc_sigmask);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
 
     if (restore_sigcontext(regs, &frame->uc.tuc_mcontext, &r0))
         goto badframe;
@@ -3706,7 +3434,7 @@ long do_sigreturn(CPUMBState *env)
             goto badframe;
     }
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     restore_sigcontext(&frame->uc.tuc_mcontext, env);
     /* We got here through a sigreturn syscall, our path back is via an
@@ -3738,7 +3466,7 @@ struct target_sigcontext {
 struct target_signal_frame {
         struct target_sigcontext sc;
         uint32_t extramask[TARGET_NSIG_WORDS - 1];
-        uint16_t retcode[4];      /* Trampoline code. */
+        uint8_t retcode[8];       /* Trampoline code. */
 };
 
 struct rt_signal_frame {
@@ -3746,7 +3474,7 @@ struct rt_signal_frame {
         void *puc;
         siginfo_t info;
         struct ucontext uc;
-        uint16_t retcode[4];      /* Trampoline code. */
+        uint8_t retcode[8];       /* Trampoline code. */
 };
 
 static void setup_sigcontext(struct target_sigcontext *sc, CPUCRISState *env)
@@ -3824,8 +3552,8 @@ static void setup_frame(int sig, struct target_sigaction *ka,
 	 */
 	err |= __put_user(0x9c5f, frame->retcode+0);
 	err |= __put_user(TARGET_NR_sigreturn, 
-			  frame->retcode + 1);
-	err |= __put_user(0xe93d, frame->retcode + 2);
+			  frame->retcode+2);
+	err |= __put_user(0xe93d, frame->retcode+4);
 
 	/* Save the mask.  */
 	err |= __put_user(set->sig[0], &frame->sc.oldmask);
@@ -3881,7 +3609,7 @@ long do_sigreturn(CPUCRISState *env)
 			goto badframe;
 	}
 	target_to_host_sigset_internal(&set, &target_set);
-        do_sigprocmask(SIG_SETMASK, &set, NULL);
+	sigprocmask(SIG_SETMASK, &set, NULL);
 
 	restore_sigcontext(&frame->sc, env);
 	unlock_user_struct(frame, frame_addr, 0);
@@ -4042,6 +3770,8 @@ static void setup_rt_frame(int sig, struct target_sigaction *ka,
     unsigned long return_ip;
     struct target_rt_sigframe *frame;
     abi_ulong info_addr, uc_addr;
+
+    frame_addr = get_sigframe(ka, env, sizeof *frame);
 
     frame_addr = get_sigframe(ka, env, sizeof(*frame));
     if (!lock_user_struct(VERIFY_WRITE, frame, frame_addr, 0)) {
@@ -4410,7 +4140,7 @@ long do_sigreturn(CPUS390XState *env)
     }
 
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL); /* ~_BLOCKABLE? */
+    sigprocmask(SIG_SETMASK, &set, NULL); /* ~_BLOCKABLE? */
 
     if (restore_sigregs(env, &frame->sregs)) {
         goto badframe;
@@ -4438,7 +4168,7 @@ long do_rt_sigreturn(CPUS390XState *env)
     }
     target_to_host_sigset(&set, &frame->uc.tuc_sigmask);
 
-    do_sigprocmask(SIG_SETMASK, &set, NULL); /* ~_BLOCKABLE? */
+    sigprocmask(SIG_SETMASK, &set, NULL); /* ~_BLOCKABLE? */
 
     if (restore_sigregs(env, &frame->uc.tuc_mcontext)) {
         goto badframe;
@@ -4833,7 +4563,7 @@ static void setup_frame(int sig, struct target_sigaction *ka,
 
     signal = current_exec_domain_sig(sig);
 
-    err |= __put_user(ka->_sa_handler, &sc->handler);
+    err |= __put_user(h2g(ka->_sa_handler), &sc->handler);
     err |= __put_user(set->sig[0], &sc->oldmask);
 #if defined(TARGET_PPC64)
     err |= __put_user(set->sig[0] >> 32, &sc->_unused[3]);
@@ -4855,7 +4585,7 @@ static void setup_frame(int sig, struct target_sigaction *ka,
 
     /* Create a stack frame for the caller of the handler.  */
     newsp = frame_addr - SIGNAL_FRAMESIZE;
-    err |= put_user(env->gpr[1], newsp, target_ulong);
+    err |= __put_user(env->gpr[1], (target_ulong *)(uintptr_t) newsp);
 
     if (err)
         goto sigsegv;
@@ -4863,7 +4593,7 @@ static void setup_frame(int sig, struct target_sigaction *ka,
     /* Set up registers for signal handler.  */
     env->gpr[1] = newsp;
     env->gpr[3] = signal;
-    env->gpr[4] = frame_addr + offsetof(struct target_sigframe, sctx);
+    env->gpr[4] = (target_ulong) h2g(sc);
     env->nip = (target_ulong) ka->_sa_handler;
     /* Signal handlers are entered in big-endian mode.  */
     env->msr &= ~MSR_LE;
@@ -4950,7 +4680,7 @@ long do_sigreturn(CPUPPCState *env)
 {
     struct target_sigcontext *sc = NULL;
     struct target_mcontext *sr = NULL;
-    target_ulong sr_addr = 0, sc_addr;
+    target_ulong sr_addr, sc_addr;
     sigset_t blocked;
     target_sigset_t set;
 
@@ -4966,7 +4696,7 @@ long do_sigreturn(CPUPPCState *env)
        goto sigsegv;
 #endif
     target_to_host_sigset_internal(&blocked, &set);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
 
     if (__get_user(sr_addr, &sc->regs))
         goto sigsegv;
@@ -5010,7 +4740,7 @@ static int do_setcontext(struct target_ucontext *ucp, CPUPPCState *env, int sig)
         return 1;
 
     target_to_host_sigset_internal(&blocked, &set);
-    do_sigprocmask(SIG_SETMASK, &blocked, NULL);
+    sigprocmask(SIG_SETMASK, &blocked, NULL);
     if (restore_user_regs(env, mcp, sig))
         goto sigsegv;
 
@@ -5384,7 +5114,7 @@ long do_sigreturn(CPUM68KState *env)
     }
 
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     /* restore registers */
 
@@ -5412,7 +5142,7 @@ long do_rt_sigreturn(CPUM68KState *env)
         goto badframe;
 
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     /* restore registers */
 
@@ -5659,7 +5389,7 @@ long do_sigreturn(CPUAlphaState *env)
     }
 
     target_to_host_sigset_internal(&set, &target_set);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     if (restore_sigcontext(env, sc)) {
         goto badframe;
@@ -5682,7 +5412,7 @@ long do_rt_sigreturn(CPUAlphaState *env)
         goto badframe;
     }
     target_to_host_sigset(&set, &frame->uc.tuc_sigmask);
-    do_sigprocmask(SIG_SETMASK, &set, NULL);
+    sigprocmask(SIG_SETMASK, &set, NULL);
 
     if (restore_sigcontext(env, &frame->uc.tuc_mcontext)) {
         goto badframe;
@@ -5733,7 +5463,6 @@ long do_rt_sigreturn(CPUArchState *env)
 
 void process_pending_signals(CPUArchState *cpu_env)
 {
-    CPUState *cpu = ENV_GET_CPU(cpu_env);
     int sig;
     abi_ulong handler;
     sigset_t set, old_set;
@@ -5741,7 +5470,7 @@ void process_pending_signals(CPUArchState *cpu_env)
     struct emulated_sigtable *k;
     struct target_sigaction *sa;
     struct sigqueue *q;
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = cpu_env->opaque;
 
     if (!ts->signal_pending)
         return;
@@ -5767,21 +5496,13 @@ void process_pending_signals(CPUArchState *cpu_env)
     if (!k->first)
         k->pending = 0;
 
-    sig = gdb_handlesig(cpu, sig);
+    sig = gdb_handlesig (cpu_env, sig);
     if (!sig) {
         sa = NULL;
         handler = TARGET_SIG_IGN;
     } else {
         sa = &sigact_table[sig - 1];
         handler = sa->_sa_handler;
-    }
-
-    if (ts->sigsegv_blocked && sig == TARGET_SIGSEGV) {
-        /* Guest has blocked SIGSEGV but we got one anyway. Assume this
-         * is a forced SIGSEGV (ie one the kernel handles via force_sig_info
-         * because it got a real MMU fault), and treat as if default handler.
-         */
-        handler = TARGET_SIG_DFL;
     }
 
     if (handler == TARGET_SIG_DFL) {
@@ -5807,7 +5528,7 @@ void process_pending_signals(CPUArchState *cpu_env)
             sigaddset(&set, target_to_host_signal(sig));
 
         /* block signals in the handler using Linux */
-        do_sigprocmask(SIG_BLOCK, &set, &old_set);
+        sigprocmask(SIG_BLOCK, &set, &old_set);
         /* save the previous blocked signal state to restore it at the
            end of the signal execution (see do_sigreturn) */
         host_to_target_sigset_internal(&target_old_set, &old_set);
@@ -5821,15 +5542,10 @@ void process_pending_signals(CPUArchState *cpu_env)
         }
 #endif
         /* prepare the stack frame of the virtual CPU */
-#if defined(TARGET_ABI_MIPSN32) || defined(TARGET_ABI_MIPSN64)
-        /* These targets do not have traditional signals.  */
-        setup_rt_frame(sig, sa, &q->info, &target_old_set, cpu_env);
-#else
         if (sa->sa_flags & TARGET_SA_SIGINFO)
             setup_rt_frame(sig, sa, &q->info, &target_old_set, cpu_env);
         else
             setup_frame(sig, sa, &target_old_set, cpu_env);
-#endif
 	if (sa->sa_flags & TARGET_SA_RESETHAND)
             sa->_sa_handler = TARGET_SIG_DFL;
     }

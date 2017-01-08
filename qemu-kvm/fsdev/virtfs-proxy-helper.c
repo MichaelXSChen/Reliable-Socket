@@ -21,8 +21,8 @@
 #include <linux/magic.h>
 #endif
 #include "qemu-common.h"
-#include "qemu/sockets.h"
-#include "qemu/xattr.h"
+#include "qemu_socket.h"
+#include "qemu-xattr.h"
 #include "virtio-9p-marshal.h"
 #include "hw/9pfs/virtio-9p-proxy.h"
 #include "fsdev/virtio-9p-marshal.h"
@@ -248,7 +248,7 @@ static int send_fd(int sockfd, int fd)
 static int send_status(int sockfd, struct iovec *iovec, int status)
 {
     ProxyHeader header;
-    int retval, msg_size;
+    int retval, msg_size;;
 
     if (status < 0) {
         header.type = T_ERROR;
@@ -272,76 +272,31 @@ static int send_status(int sockfd, struct iovec *iovec, int status)
 /*
  * from man 7 capabilities, section
  * Effect of User ID Changes on Capabilities:
- * If the effective user ID is changed from nonzero to 0, then the permitted
- * set is copied to the effective set.  If the effective user ID is changed
- * from 0 to nonzero, then all capabilities are are cleared from the effective
- * set.
- *
- * The setfsuid/setfsgid man pages warn that changing the effective user ID may
- * expose the program to unwanted signals, but this is not true anymore: for an
- * unprivileged (without CAP_KILL) program to send a signal, the real or
- * effective user ID of the sending process must equal the real or saved user
- * ID of the target process.  Even when dropping privileges, it is enough to
- * keep the saved UID to a "privileged" value and virtfs-proxy-helper won't
- * be exposed to signals.  So just use setresuid/setresgid.
+ * 4. If the file system user ID is changed from 0 to nonzero (see setfsuid(2))
+ * then the following capabilities are cleared from the effective set:
+ * CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH,  CAP_FOWNER, CAP_FSETID,
+ * CAP_LINUX_IMMUTABLE  (since  Linux 2.2.30), CAP_MAC_OVERRIDE, and CAP_MKNOD
+ * (since Linux 2.2.30). If the file system UID is changed from nonzero to 0,
+ * then any of these capabilities that are enabled in the permitted set
+ * are enabled in the effective set.
  */
-static int setugid(int uid, int gid, int *suid, int *sgid)
+static int setfsugid(int uid, int gid)
 {
-    int retval;
-
     /*
-     * We still need DAC_OVERRIDE because we don't change
+     * We still need DAC_OVERRIDE because  we don't change
      * supplementary group ids, and hence may be subjected DAC rules
      */
     cap_value_t cap_list[] = {
         CAP_DAC_OVERRIDE,
     };
 
-    *suid = geteuid();
-    *sgid = getegid();
-
-    if (setresgid(-1, gid, *sgid) == -1) {
-        retval = -errno;
-        goto err_out;
-    }
-
-    if (setresuid(-1, uid, *suid) == -1) {
-        retval = -errno;
-        goto err_sgid;
-    }
+    setfsgid(gid);
+    setfsuid(uid);
 
     if (uid != 0 || gid != 0) {
-        if (do_cap_set(cap_list, ARRAY_SIZE(cap_list), 0) < 0) {
-            retval = -errno;
-            goto err_suid;
-        }
+        return do_cap_set(cap_list, ARRAY_SIZE(cap_list), 0);
     }
     return 0;
-
-err_suid:
-    if (setresuid(-1, *suid, *suid) == -1) {
-        abort();
-    }
-err_sgid:
-    if (setresgid(-1, *sgid, *sgid) == -1) {
-        abort();
-    }
-err_out:
-    return retval;
-}
-
-/*
- * This is used to reset the ugid back with the saved values
- * There is nothing much we can do checking error values here.
- */
-static void resetugid(int suid, int sgid)
-{
-    if (setresgid(-1, sgid, sgid) == -1) {
-        abort();
-    }
-    if (setresuid(-1, suid, suid) == -1) {
-        abort();
-    }
 }
 
 /*
@@ -381,7 +336,7 @@ static int send_response(int sock, struct iovec *iovec, int size)
     proxy_marshal(iovec, 0, "dd", header.type, header.size);
     retval = socket_write(sock, iovec->iov_base, header.size + PROXY_HDR_SZ);
     if (retval < 0) {
-        return retval;
+        return retval;;
     }
     return 0;
 }
@@ -595,7 +550,7 @@ static int do_readlink(struct iovec *iovec, struct iovec *out_iovec)
     }
     buffer = g_malloc(size);
     v9fs_string_init(&target);
-    retval = readlink(path.data, buffer, size - 1);
+    retval = readlink(path.data, buffer, size);
     if (retval > 0) {
         buffer[retval] = '\0';
         v9fs_string_sprintf(&target, "%s", buffer);
@@ -623,15 +578,18 @@ static int do_create_others(int type, struct iovec *iovec)
 
     v9fs_string_init(&path);
     v9fs_string_init(&oldpath);
+    cur_uid = geteuid();
+    cur_gid = getegid();
 
     retval = proxy_unmarshal(iovec, offset, "dd", &uid, &gid);
     if (retval < 0) {
         return retval;
     }
     offset += retval;
-    retval = setugid(uid, gid, &cur_uid, &cur_gid);
+    retval = setfsugid(uid, gid);
     if (retval < 0) {
-        goto unmarshal_err_out;
+        retval = -errno;
+        goto err_out;
     }
     switch (type) {
     case T_MKNOD:
@@ -661,10 +619,9 @@ static int do_create_others(int type, struct iovec *iovec)
     }
 
 err_out:
-    resetugid(cur_uid, cur_gid);
-unmarshal_err_out:
     v9fs_string_free(&path);
     v9fs_string_free(&oldpath);
+    setfsugid(cur_uid, cur_gid);
     return retval;
 }
 
@@ -684,16 +641,24 @@ static int do_create(struct iovec *iovec)
     if (ret < 0) {
         goto unmarshal_err_out;
     }
-    ret = setugid(uid, gid, &cur_uid, &cur_gid);
+    cur_uid = geteuid();
+    cur_gid = getegid();
+    ret = setfsugid(uid, gid);
     if (ret < 0) {
-        goto unmarshal_err_out;
+        /*
+         * On failure reset back to the
+         * old uid/gid
+         */
+        ret = -errno;
+        goto err_out;
     }
     ret = open(path.data, flags, mode);
     if (ret < 0) {
         ret = -errno;
     }
 
-    resetugid(cur_uid, cur_gid);
+err_out:
+    setfsugid(cur_uid, cur_gid);
 unmarshal_err_out:
     v9fs_string_free(&path);
     return ret;
@@ -1039,7 +1004,7 @@ int main(int argc, char **argv)
         }
         switch (c) {
         case 'p':
-            rpath = g_strdup(optarg);
+            rpath = strdup(optarg);
             break;
         case 'n':
             is_daemon = false;
@@ -1048,7 +1013,7 @@ int main(int argc, char **argv)
             sock = atoi(optarg);
             break;
         case 's':
-            sock_name = g_strdup(optarg);
+            sock_name = strdup(optarg);
             break;
         case 'u':
             own_u = atoi(optarg);

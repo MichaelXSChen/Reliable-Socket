@@ -13,7 +13,7 @@
  */
 
 #include "trace.h"
-#include "qemu/sockets.h" /* for EINPROGRESS on Windows */
+#include "qemu_socket.h" /* for EINPROGRESS on Windows */
 #include "qed.h"
 
 typedef struct {

@@ -265,12 +265,6 @@
 #define TARGET_NR_open_by_handle_at     336
 #define TARGET_NR_clock_adjtime         337
 #define TARGET_NR_syncfs                338
-#define TARGET_NR_setns                 339
-#define TARGET_NR_process_vm_readv      340
-#define TARGET_NR_process_vm_writev     341
-#define TARGET_NR_s390_runtime_instr    342
-#define TARGET_NR_kcmp                  343
-#define TARGET_NR_finit_module          344
 
 /*
  * There are some system calls that are not present on 64 bit, some
@@ -361,3 +355,4 @@
 #define TARGET_NR_newfstatat		293
 
 #endif
+

@@ -34,8 +34,7 @@ ARCHLIST=$(cd "$linux/arch" && echo *)
 
 for arch in $ARCHLIST; do
     # Discard anything which isn't a KVM-supporting architecture
-    if ! [ -e "$linux/arch/$arch/include/asm/kvm.h" ] &&
-        ! [ -e "$linux/arch/$arch/include/uapi/asm/kvm.h" ] ; then
+    if ! [ -e "$linux/arch/$arch/include/asm/kvm.h" ]; then
         continue
     fi
 
@@ -53,9 +52,6 @@ for arch in $ARCHLIST; do
     done
     if [ $arch = x86 ]; then
         cp "$tmpdir/include/asm/hyperv.h" "$output/linux-headers/asm-x86"
-    fi
-    if [ $arch = powerpc ]; then
-        cp "$tmpdir/include/asm/epapr_hcalls.h" "$output/linux-headers/asm-powerpc/"
     fi
 done
 

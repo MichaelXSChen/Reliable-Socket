@@ -21,15 +21,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#include "net/vde.h"
+
 #include "config-host.h"
 
 #include <libvdeplug.h>
 
-#include "net/net.h"
-#include "clients.h"
+#include "net.h"
+#include "qemu-char.h"
 #include "qemu-common.h"
-#include "qemu/option.h"
-#include "qemu/main-loop.h"
+#include "qemu-option.h"
 
 typedef struct VDEState {
     NetClientState nc;
@@ -39,7 +40,7 @@ typedef struct VDEState {
 static void vde_to_qemu(void *opaque)
 {
     VDEState *s = opaque;
-    uint8_t buf[NET_BUFSIZE];
+    uint8_t buf[4096];
     int size;
 
     size = vde_recv(s->vde, (char *)buf, sizeof(buf), 0);

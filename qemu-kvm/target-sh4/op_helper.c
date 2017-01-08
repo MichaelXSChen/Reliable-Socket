@@ -21,35 +21,48 @@
 #include "cpu.h"
 #include "helper.h"
 
+static inline void cpu_restore_state_from_retaddr(CPUSH4State *env,
+                                                  uintptr_t retaddr)
+{
+    TranslationBlock *tb;
+
+    if (retaddr) {
+        tb = tb_find_pc(retaddr);
+        if (tb) {
+            /* the PC is inside the translated code. It means that we have
+               a virtual CPU fault */
+            cpu_restore_state(tb, env, retaddr);
+        }
+    }
+}
+
 #ifndef CONFIG_USER_ONLY
-#include "exec/softmmu_exec.h"
+#include "softmmu_exec.h"
 
 #define MMUSUFFIX _mmu
 
 #define SHIFT 0
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 1
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 2
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 3
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
-void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
+void tlb_fill(CPUSH4State *env, target_ulong addr, int is_write, int mmu_idx,
               uintptr_t retaddr)
 {
     int ret;
 
-    ret = superh_cpu_handle_mmu_fault(cs, addr, is_write, mmu_idx);
+    ret = cpu_sh4_handle_mmu_fault(env, addr, is_write, mmu_idx);
     if (ret) {
         /* now we have a real cpu fault */
-        if (retaddr) {
-            cpu_restore_state(cs, retaddr);
-        }
-        cpu_loop_exit(cs);
+        cpu_restore_state_from_retaddr(env, retaddr);
+        cpu_loop_exit(env);
     }
 }
 
@@ -58,10 +71,8 @@ void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
 void helper_ldtlb(CPUSH4State *env)
 {
 #ifdef CONFIG_USER_ONLY
-    SuperHCPU *cpu = sh_env_get_cpu(env);
-
     /* XXXXX */
-    cpu_abort(CPU(cpu), "Unhandled ldtlb");
+    cpu_abort(env, "Unhandled ldtlb");
 #else
     cpu_load_tlb(env);
 #endif
@@ -70,13 +81,9 @@ void helper_ldtlb(CPUSH4State *env)
 static inline void QEMU_NORETURN raise_exception(CPUSH4State *env, int index,
                                                  uintptr_t retaddr)
 {
-    CPUState *cs = CPU(sh_env_get_cpu(env));
-
-    cs->exception_index = index;
-    if (retaddr) {
-        cpu_restore_state(cs, retaddr);
-    }
-    cpu_loop_exit(cs);
+    env->exception_index = index;
+    cpu_restore_state_from_retaddr(env, retaddr);
+    cpu_loop_exit(env);
 }
 
 void helper_raise_illegal_instruction(CPUSH4State *env)
@@ -106,9 +113,7 @@ void helper_debug(CPUSH4State *env)
 
 void helper_sleep(CPUSH4State *env)
 {
-    CPUState *cs = CPU(sh_env_get_cpu(env));
-
-    cs->halted = 1;
+    env->halted = 1;
     env->in_sleep = 1;
     raise_exception(env, EXCP_HLT, 0);
 }

@@ -31,8 +31,10 @@
 /* For tb_lock */
 #include "cpu.h"
 #include "tcg.h"
-#include "qemu/timer.h"
-#include "qemu/envlist.h"
+#include "qemu-timer.h"
+#include "envlist.h"
+
+#define DEBUG_LOGFILE "/tmp/qemu.log"
 
 int singlestep;
 #if defined(CONFIG_USE_GUEST_BASE)
@@ -92,7 +94,7 @@ void fork_start(void)
 void fork_end(int child)
 {
     if (child) {
-        gdbserver_fork((CPUArchState *)thread_cpu->env_ptr);
+        gdbserver_fork(thread_env);
     }
 }
 
@@ -511,7 +513,6 @@ static void flush_windows(CPUSPARCState *env)
 
 void cpu_loop(CPUSPARCState *env)
 {
-    CPUState *cs = CPU(sparc_env_get_cpu(env));
     int trapnr, ret, syscall_nr;
     //target_siginfo_t info;
 
@@ -643,7 +644,7 @@ void cpu_loop(CPUSPARCState *env)
             {
                 int sig;
 
-                sig = gdb_handlesig(cs, TARGET_SIGTRAP);
+                sig = gdb_handlesig (env, TARGET_SIGTRAP);
 #if 0
                 if (sig)
                   {
@@ -660,7 +661,7 @@ void cpu_loop(CPUSPARCState *env)
         badtrap:
 #endif
             printf ("Unhandled trap: 0x%x\n", trapnr);
-            cpu_dump_state(cs, stderr, fprintf, 0);
+            cpu_dump_state(env, stderr, fprintf, 0);
             exit (1);
         }
         process_pending_signals (env);
@@ -671,8 +672,8 @@ void cpu_loop(CPUSPARCState *env)
 
 static void usage(void)
 {
-    printf("qemu-" TARGET_NAME " version " QEMU_VERSION ", Copyright (c) 2003-2008 Fabrice Bellard\n"
-           "usage: qemu-" TARGET_NAME " [options] program [arguments...]\n"
+    printf("qemu-" TARGET_ARCH " version " QEMU_VERSION ", Copyright (c) 2003-2008 Fabrice Bellard\n"
+           "usage: qemu-" TARGET_ARCH " [options] program [arguments...]\n"
            "BSD CPU emulator (compiled for %s emulation)\n"
            "\n"
            "Standard options:\n"
@@ -690,12 +691,11 @@ static void usage(void)
            "-bsd type         select emulated BSD type FreeBSD/NetBSD/OpenBSD (default)\n"
            "\n"
            "Debug options:\n"
-           "-d item1[,...]    enable logging of specified items\n"
-           "                  (use '-d help' for a list of log items)\n"
-           "-D logfile        write logs to 'logfile' (default stderr)\n"
-           "-p pagesize       set the host page size to 'pagesize'\n"
-           "-singlestep       always run in singlestep mode\n"
-           "-strace           log system calls\n"
+           "-d options   activate log (default logfile=%s)\n"
+           "-D logfile   override default logfile location\n"
+           "-p pagesize  set the host page size to 'pagesize'\n"
+           "-singlestep  always run in singlestep mode\n"
+           "-strace      log system calls\n"
            "\n"
            "Environment variables:\n"
            "QEMU_STRACE       Print system calls and arguments similar to the\n"
@@ -707,13 +707,14 @@ static void usage(void)
            "Note that if you provide several changes to single variable\n"
            "last change will stay in effect.\n"
            ,
-           TARGET_NAME,
+           TARGET_ARCH,
            interp_prefix,
-           x86_stack_size);
+           x86_stack_size,
+           DEBUG_LOGFILE);
     exit(1);
 }
 
-THREAD CPUState *thread_cpu;
+THREAD CPUArchState *thread_env;
 
 /* Assumes contents are already zeroed.  */
 void init_task_state(TaskState *ts)
@@ -732,13 +733,12 @@ int main(int argc, char **argv)
 {
     const char *filename;
     const char *cpu_model;
-    const char *log_file = NULL;
+    const char *log_file = DEBUG_LOGFILE;
     const char *log_mask = NULL;
     struct target_pt_regs regs1, *regs = &regs1;
     struct image_info info1, *info = &info1;
     TaskState ts1, *ts = &ts1;
     CPUArchState *env;
-    CPUState *cpu;
     int optind;
     const char *r;
     int gdbstub_port = 0;
@@ -861,16 +861,20 @@ int main(int argc, char **argv)
     }
 
     /* init debug */
-    qemu_set_log_filename(log_file);
+    cpu_set_log_filename(log_file);
     if (log_mask) {
         int mask;
+        const CPULogItem *item;
 
-        mask = qemu_str_to_log_mask(log_mask);
+        mask = cpu_str_to_log_mask(log_mask);
         if (!mask) {
-            qemu_print_log_usage(stdout);
+            printf("Log items (comma separated):\n");
+            for (item = cpu_log_items; item->mask != 0; item++) {
+                printf("%-10s %s\n", item->name, item->help);
+            }
             exit(1);
         }
-        qemu_set_log(mask);
+        cpu_set_log(mask);
     }
 
     if (optind >= argc) {
@@ -913,11 +917,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
-    cpu = ENV_GET_CPU(env);
-#if defined(TARGET_SPARC) || defined(TARGET_PPC)
-    cpu_reset(cpu);
+#if defined(TARGET_I386) || defined(TARGET_SPARC) || defined(TARGET_PPC)
+    cpu_reset(ENV_GET_CPU(env));
 #endif
-    thread_cpu = cpu;
+    thread_env = env;
 
     if (getenv("QEMU_STRACE")) {
         do_strace = 1;
@@ -1000,20 +1003,20 @@ int main(int argc, char **argv)
     memset(ts, 0, sizeof(TaskState));
     init_task_state(ts);
     ts->info = info;
-    cpu->opaque = ts;
+    env->opaque = ts;
 
 #if defined(TARGET_I386)
     cpu_x86_set_cpl(env, 3);
 
     env->cr[0] = CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK;
     env->hflags |= HF_PE_MASK;
-    if (env->features[FEAT_1_EDX] & CPUID_SSE) {
+    if (env->cpuid_features & CPUID_SSE) {
         env->cr[4] |= CR4_OSFXSR_MASK;
         env->hflags |= HF_OSFXSR_MASK;
     }
 #ifndef TARGET_ABI32
     /* enable 64 bit mode if possible */
-    if (!(env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM)) {
+    if (!(env->cpuid_ext2_features & CPUID_EXT2_LM)) {
         fprintf(stderr, "The selected x86 CPU does not support 64 bit mode\n");
         exit(1);
     }
@@ -1136,7 +1139,7 @@ int main(int argc, char **argv)
 
     if (gdbstub_port) {
         gdbserver_start (gdbstub_port);
-        gdb_handlesig(cpu, 0);
+        gdb_handlesig(env, 0);
     }
     cpu_loop(env);
     /* never exits */

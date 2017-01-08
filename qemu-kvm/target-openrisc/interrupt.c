@@ -19,31 +19,40 @@
 
 #include "cpu.h"
 #include "qemu-common.h"
-#include "exec/gdbstub.h"
-#include "qemu/host-utils.h"
+#include "gdbstub.h"
+#include "host-utils.h"
 #ifndef CONFIG_USER_ONLY
 #include "hw/loader.h"
 #endif
 
-void openrisc_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUOpenRISCState *env)
 {
 #ifndef CONFIG_USER_ONLY
-    OpenRISCCPU *cpu = OPENRISC_CPU(cs);
-    CPUOpenRISCState *env = &cpu->env;
-
-    env->epcr = env->pc;
-    if (env->flags & D_FLAG) {
+    if (env->flags & D_FLAG) { /* Delay Slot insn */
         env->flags &= ~D_FLAG;
         env->sr |= SR_DSX;
-        env->epcr -= 4;
-    }
-    if (cs->exception_index == EXCP_SYSCALL) {
-        env->epcr += 4;
+        if (env->exception_index == EXCP_TICK    ||
+            env->exception_index == EXCP_INT     ||
+            env->exception_index == EXCP_SYSCALL ||
+            env->exception_index == EXCP_FPE) {
+            env->epcr = env->jmp_pc;
+        } else {
+            env->epcr = env->pc - 4;
+        }
+    } else {
+        if (env->exception_index == EXCP_TICK    ||
+            env->exception_index == EXCP_INT     ||
+            env->exception_index == EXCP_SYSCALL ||
+            env->exception_index == EXCP_FPE) {
+            env->epcr = env->npc;
+        } else {
+            env->epcr = env->pc;
+        }
     }
 
     /* For machine-state changed between user-mode and supervisor mode,
        we need flush TLB when we enter&exit EXCP.  */
-    tlb_flush(cs, 1);
+    tlb_flush(env, 1);
 
     env->esr = env->sr;
     env->sr &= ~SR_DME;
@@ -54,12 +63,12 @@ void openrisc_cpu_do_interrupt(CPUState *cs)
     env->tlb->cpu_openrisc_map_address_data = &cpu_openrisc_get_phys_nommu;
     env->tlb->cpu_openrisc_map_address_code = &cpu_openrisc_get_phys_nommu;
 
-    if (cs->exception_index > 0 && cs->exception_index < EXCP_NR) {
-        env->pc = (cs->exception_index << 8);
+    if (env->exception_index > 0 && env->exception_index < EXCP_NR) {
+        env->pc = (env->exception_index << 8);
     } else {
-        cpu_abort(cs, "Unhandled exception 0x%x\n", cs->exception_index);
+        cpu_abort(env, "Unhandled exception 0x%x\n", env->exception_index);
     }
 #endif
 
-    cs->exception_index = -1;
+    env->exception_index = -1;
 }

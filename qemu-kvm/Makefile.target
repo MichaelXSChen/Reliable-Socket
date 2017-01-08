@@ -1,8 +1,8 @@
 # -*- Mode: makefile -*-
 
 include ../config-host.mak
-include config-target.mak
 include config-devices.mak
+include config-target.mak
 include $(SRC_PATH)/rules.mak
 
 $(call set-vpath, $(SRC_PATH))
@@ -15,14 +15,14 @@ QEMU_CFLAGS+=-I$(SRC_PATH)/include
 
 ifdef CONFIG_USER_ONLY
 # user emulator name
-QEMU_PROG=qemu-$(TARGET_NAME)
+QEMU_PROG=qemu-$(TARGET_ARCH2)
 else
 # system emulator name
-ifneq (,$(findstring -mwindows,$(libs_softmmu)))
+ifneq (,$(findstring -mwindows,$(LIBS)))
 # Terminate program name with a 'w' because the linker builds a windows executable.
-QEMU_PROGW=qemu-system-$(TARGET_NAME)w$(EXESUF)
+QEMU_PROGW=qemu-system-$(TARGET_ARCH2)w$(EXESUF)
 endif # windows executable
-QEMU_PROG=qemu-system-$(TARGET_NAME)$(EXESUF)
+QEMU_PROG=qemu-system-$(TARGET_ARCH2)$(EXESUF)
 endif
 
 PROGS=$(QEMU_PROG)
@@ -31,11 +31,15 @@ PROGS+=$(QEMU_PROGW)
 endif
 STPFILES=
 
+ifndef CONFIG_HAIKU
+LIBS+=-lm
+endif
+
 config-target.h: config-target.h-timestamp
 config-target.h-timestamp: config-target.mak
 
 ifdef CONFIG_TRACE_SYSTEMTAP
-stap: $(QEMU_PROG).stp-installed $(QEMU_PROG).stp
+stap: $(QEMU_PROG).stp
 
 ifdef CONFIG_USER_ONLY
 TARGET_TYPE=user
@@ -43,24 +47,14 @@ else
 TARGET_TYPE=system
 endif
 
-$(QEMU_PROG).stp-installed: $(SRC_PATH)/trace-events
-	$(call quiet-command,$(TRACETOOL) \
-		--format=stap \
-		--backend=$(TRACE_BACKEND) \
-		--binary=$(bindir)/$(QEMU_PROG) \
-		--target-name=$(TARGET_NAME) \
-		--target-type=$(TARGET_TYPE) \
-		< $< > $@,"  GEN   $(TARGET_DIR)$(QEMU_PROG).stp-installed")
-
 $(QEMU_PROG).stp: $(SRC_PATH)/trace-events
 	$(call quiet-command,$(TRACETOOL) \
 		--format=stap \
 		--backend=$(TRACE_BACKEND) \
-		--binary=$(realpath .)/$(QEMU_PROG) \
-		--target-name=$(TARGET_NAME) \
+		--binary=$(bindir)/$(QEMU_PROG) \
+		--target-arch=$(TARGET_ARCH) \
 		--target-type=$(TARGET_TYPE) \
-		< $< > $@,"  GEN   $(TARGET_DIR)$(QEMU_PROG).stp")
-
+		< $< > $@,"  GEN   $(QEMU_PROG).stp")
 else
 stap:
 endif
@@ -75,12 +69,13 @@ all: $(PROGS) stap
 obj-y = exec.o translate-all.o cpu-exec.o
 obj-y += tcg/tcg.o tcg/optimize.o
 obj-$(CONFIG_TCG_INTERPRETER) += tci.o
-obj-$(CONFIG_TCG_INTERPRETER) += disas/tci.o
 obj-y += fpu/softfloat.o
-obj-y += target-$(TARGET_BASE_ARCH)/
 obj-y += disas.o
-obj-$(call notempty,$(TARGET_XML_FILES)) += gdbstub-xml.o
-obj-$(call lnot,$(CONFIG_KVM)) += kvm-stub.o
+obj-$(CONFIG_TCI_DIS) += tci-dis.o
+obj-y += target-$(TARGET_BASE_ARCH)/
+obj-$(CONFIG_GDBSTUB_XML) += gdbstub-xml.o
+
+tci-dis.o: QEMU_CFLAGS += -I$(SRC_PATH)/tcg -I$(SRC_PATH)/tcg/tci
 
 #########################################################
 # Linux user emulator target
@@ -90,7 +85,7 @@ ifdef CONFIG_LINUX_USER
 QEMU_CFLAGS+=-I$(SRC_PATH)/linux-user/$(TARGET_ABI_DIR) -I$(SRC_PATH)/linux-user
 
 obj-y += linux-user/
-obj-y += gdbstub.o thunk.o user-exec.o
+obj-y += gdbstub.o thunk.o user-exec.o $(oslib-obj-y)
 
 endif #CONFIG_LINUX_USER
 
@@ -99,78 +94,80 @@ endif #CONFIG_LINUX_USER
 
 ifdef CONFIG_BSD_USER
 
-QEMU_CFLAGS+=-I$(SRC_PATH)/bsd-user -I$(SRC_PATH)/bsd-user/$(TARGET_ABI_DIR)
+QEMU_CFLAGS+=-I$(SRC_PATH)/bsd-user -I$(SRC_PATH)/bsd-user/$(TARGET_ARCH)
 
 obj-y += bsd-user/
-obj-y += gdbstub.o user-exec.o
+obj-y += gdbstub.o user-exec.o $(oslib-obj-y)
 
 endif #CONFIG_BSD_USER
 
 #########################################################
 # System emulator target
 ifdef CONFIG_SOFTMMU
+CONFIG_NO_PCI = $(if $(subst n,,$(CONFIG_PCI)),n,y)
+CONFIG_NO_KVM = $(if $(subst n,,$(CONFIG_KVM)),n,y)
+CONFIG_NO_XEN = $(if $(subst n,,$(CONFIG_XEN)),n,y)
+CONFIG_NO_GET_MEMORY_MAPPING = $(if $(subst n,,$(CONFIG_HAVE_GET_MEMORY_MAPPING)),n,y)
+CONFIG_NO_CORE_DUMP = $(if $(subst n,,$(CONFIG_HAVE_CORE_DUMP)),n,y)
+
 obj-y += arch_init.o cpus.o monitor.o gdbstub.o balloon.o ioport.o
-obj-y += qtest.o
 obj-y += hw/
-obj-$(CONFIG_FDT) += device_tree.o
 obj-$(CONFIG_KVM) += kvm-all.o
+obj-$(CONFIG_NO_KVM) += kvm-stub.o
 obj-y += memory.o savevm.o cputlb.o
-obj-y += memory_mapping.o
-obj-y += dump.o
-LIBS+=$(libs_softmmu)
+obj-$(CONFIG_HAVE_GET_MEMORY_MAPPING) += memory_mapping.o
+obj-$(CONFIG_HAVE_CORE_DUMP) += dump.o
+obj-$(CONFIG_NO_GET_MEMORY_MAPPING) += memory_mapping-stub.o
+obj-$(CONFIG_NO_CORE_DUMP) += dump-stub.o
+LIBS+=-lz
+
+QEMU_CFLAGS += $(VNC_TLS_CFLAGS)
+QEMU_CFLAGS += $(VNC_SASL_CFLAGS)
+QEMU_CFLAGS += $(VNC_JPEG_CFLAGS)
+QEMU_CFLAGS += $(VNC_PNG_CFLAGS)
 
 # xen support
 obj-$(CONFIG_XEN) += xen-all.o xen-mapcache.o
-obj-$(call lnot,$(CONFIG_XEN)) += xen-stub.o
+obj-$(CONFIG_NO_XEN) += xen-stub.o
 
 # Hardware support
-ifeq ($(TARGET_NAME), sparc64)
+ifeq ($(TARGET_ARCH), sparc64)
 obj-y += hw/sparc64/
 else
 obj-y += hw/$(TARGET_BASE_ARCH)/
 endif
 
+main.o: QEMU_CFLAGS+=$(GPROF_CFLAGS)
+
 GENERATED_HEADERS += hmp-commands.h qmp-commands-old.h
 
 endif # CONFIG_SOFTMMU
 
-# Workaround for http://gcc.gnu.org/PR55489, see configure.
-%/translate.o: QEMU_CFLAGS += $(TRANSLATE_OPT_CFLAGS)
+nested-vars += obj-y
 
-dummy := $(call unnest-vars,,obj-y)
-
-# we are making another call to unnest-vars with different vars, protect obj-y,
-# it can be overriden in subdir Makefile.objs
-obj-y-save := $(obj-y)
-
-block-obj-y :=
-common-obj-y :=
+# This resolves all nested paths, so it must come last
 include $(SRC_PATH)/Makefile.objs
-dummy := $(call unnest-vars,.., \
-               block-obj-y \
-               block-obj-m \
-               common-obj-y \
-               common-obj-m)
 
-# Now restore obj-y
-obj-y := $(obj-y-save)
+all-obj-y = $(obj-y)
+all-obj-y += $(addprefix ../, $(universal-obj-y))
 
-all-obj-y = $(obj-y) $(common-obj-y)
-all-obj-$(CONFIG_SOFTMMU) += $(block-obj-y)
-
-ifndef CONFIG_HAIKU
-LIBS+=-lm
-endif
-LIBS+=-lfalcon
+ifdef CONFIG_SOFTMMU
+all-obj-y += $(addprefix ../, $(common-obj-y))
+all-obj-y += $(addprefix ../libdis/, $(libdis-y))
+all-obj-y += $(addprefix ../, $(trace-obj-y))
+else
+all-obj-y += $(addprefix ../libuser/, $(user-obj-y))
+all-obj-y += $(addprefix ../libdis-user/, $(libdis-y))
+endif #CONFIG_LINUX_USER
 
 ifdef QEMU_PROGW
 # The linker builds a windows executable. Make also a console executable.
-$(QEMU_PROGW): $(all-obj-y) ../libqemuutil.a ../libqemustub.a
+$(QEMU_PROGW): $(all-obj-y)
 	$(call LINK,$^)
 $(QEMU_PROG): $(QEMU_PROGW)
 	$(call quiet-command,$(OBJCOPY) --subsystem console $(QEMU_PROGW) $(QEMU_PROG),"  GEN   $(TARGET_DIR)$(QEMU_PROG)")
 else
-$(QEMU_PROG): $(all-obj-y) ../libqemuutil.a ../libqemustub.a
+$(QEMU_PROG): $(all-obj-y)
 	$(call LINK,$^)
 endif
 
@@ -200,7 +197,7 @@ endif
 endif
 ifdef CONFIG_TRACE_SYSTEMTAP
 	$(INSTALL_DIR) "$(DESTDIR)$(qemu_datadir)/../systemtap/tapset"
-	$(INSTALL_DATA) $(QEMU_PROG).stp-installed "$(DESTDIR)$(qemu_datadir)/../systemtap/tapset/$(QEMU_PROG).stp"
+	$(INSTALL_DATA) $(QEMU_PROG).stp "$(DESTDIR)$(qemu_datadir)/../systemtap/tapset"
 endif
 
 GENERATED_HEADERS += config-target.h

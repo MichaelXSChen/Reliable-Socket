@@ -20,8 +20,6 @@ struct socket {
 
   int s;                           /* The actual socket */
 
-  int pollfds_idx;                 /* GPollFD GArray index */
-
   Slirp *slirp;			   /* managing slirp instance */
 
 			/* XXX union these with not-yet-used sbuf params */

@@ -20,7 +20,7 @@
 #ifndef QEMU_ARM_CPU_QOM_H
 #define QEMU_ARM_CPU_QOM_H
 
-#include "qom/cpu.h"
+#include "qemu/cpu.h"
 
 #define TYPE_ARM_CPU "arm-cpu"
 
@@ -33,7 +33,6 @@
 
 /**
  * ARMCPUClass:
- * @parent_realize: The parent class' realize handler.
  * @parent_reset: The parent class' reset handler.
  *
  * An ARM CPU model.
@@ -43,7 +42,6 @@ typedef struct ARMCPUClass {
     CPUClass parent_class;
     /*< public >*/
 
-    DeviceRealize parent_realize;
     void (*parent_reset)(CPUState *cpu);
 } ARMCPUClass;
 
@@ -62,45 +60,6 @@ typedef struct ARMCPU {
 
     /* Coprocessor information */
     GHashTable *cp_regs;
-    /* For marshalling (mostly coprocessor) register state between the
-     * kernel and QEMU (for KVM) and between two QEMUs (for migration),
-     * we use these arrays.
-     */
-    /* List of register indexes managed via these arrays; (full KVM style
-     * 64 bit indexes, not CPRegInfo 32 bit indexes)
-     */
-    uint64_t *cpreg_indexes;
-    /* Values of the registers (cpreg_indexes[i]'s value is cpreg_values[i]) */
-    uint64_t *cpreg_values;
-    /* When using KVM, keeps a copy of the initial state of the VCPU,
-     * so that on reset we can feed the reset values back into the kernel.
-     */
-    uint64_t *cpreg_reset_values;
-    /* Length of the indexes, values, reset_values arrays */
-    int32_t cpreg_array_len;
-    /* These are used only for migration: incoming data arrives in
-     * these fields and is sanity checked in post_load before copying
-     * to the working data structures above.
-     */
-    uint64_t *cpreg_vmstate_indexes;
-    uint64_t *cpreg_vmstate_values;
-    int32_t cpreg_vmstate_array_len;
-
-    /* Timers used by the generic (architected) timer */
-    QEMUTimer *gt_timer[NUM_GTIMERS];
-    /* GPIO outputs for generic timer */
-    qemu_irq gt_timer_outputs[NUM_GTIMERS];
-
-    /* 'compatible' string for this CPU for Linux device trees */
-    const char *dtb_compatible;
-
-    /* Should CPU start in PSCI powered-off state? */
-    bool start_powered_off;
-
-    /* [QEMU_]KVM_ARM_TARGET_* constant for this CPU, or
-     * QEMU_KVM_ARM_TARGET_NONE if the kernel doesn't support this CPU type.
-     */
-    uint32_t kvm_target;
 
     /* The instance init functions for implementation-specific subclasses
      * set these fields to specify the implementation-dependent values of
@@ -132,16 +91,6 @@ typedef struct ARMCPU {
     uint32_t id_isar3;
     uint32_t id_isar4;
     uint32_t id_isar5;
-    uint64_t id_aa64pfr0;
-    uint64_t id_aa64pfr1;
-    uint64_t id_aa64dfr0;
-    uint64_t id_aa64dfr1;
-    uint64_t id_aa64afr0;
-    uint64_t id_aa64afr1;
-    uint64_t id_aa64isar0;
-    uint64_t id_aa64isar1;
-    uint64_t id_aa64mmfr0;
-    uint64_t id_aa64mmfr1;
     uint32_t clidr;
     /* The elements of this array are the CCSIDR values for each cache,
      * in the order L1DCache, L1ICache, L2DCache, L2ICache, etc.
@@ -149,57 +98,16 @@ typedef struct ARMCPU {
     uint32_t ccsidr[16];
     uint32_t reset_cbar;
     uint32_t reset_auxcr;
-    bool reset_hivecs;
 } ARMCPU;
-
-#define TYPE_AARCH64_CPU "aarch64-cpu"
-#define AARCH64_CPU_CLASS(klass) \
-    OBJECT_CLASS_CHECK(AArch64CPUClass, (klass), TYPE_AARCH64_CPU)
-#define AARCH64_CPU_GET_CLASS(obj) \
-    OBJECT_GET_CLASS(AArch64CPUClass, (obj), TYPE_AArch64_CPU)
-
-typedef struct AArch64CPUClass {
-    /*< private >*/
-    ARMCPUClass parent_class;
-    /*< public >*/
-} AArch64CPUClass;
 
 static inline ARMCPU *arm_env_get_cpu(CPUARMState *env)
 {
-    return container_of(env, ARMCPU, env);
+    return ARM_CPU(container_of(env, ARMCPU, env));
 }
 
 #define ENV_GET_CPU(e) CPU(arm_env_get_cpu(e))
 
-#define ENV_OFFSET offsetof(ARMCPU, env)
-
-#ifndef CONFIG_USER_ONLY
-extern const struct VMStateDescription vmstate_arm_cpu;
-#endif
-
+void arm_cpu_realize(ARMCPU *cpu);
 void register_cp_regs_for_features(ARMCPU *cpu);
-void init_cpreg_list(ARMCPU *cpu);
-
-void arm_cpu_do_interrupt(CPUState *cpu);
-void arm_v7m_cpu_do_interrupt(CPUState *cpu);
-
-void arm_cpu_dump_state(CPUState *cs, FILE *f, fprintf_function cpu_fprintf,
-                        int flags);
-
-hwaddr arm_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
-
-int arm_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
-int arm_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-
-/* Callback functions for the generic timer's timers. */
-void arm_gt_ptimer_cb(void *opaque);
-void arm_gt_vtimer_cb(void *opaque);
-
-#ifdef TARGET_AARCH64
-void aarch64_cpu_dump_state(CPUState *cs, FILE *f,
-                            fprintf_function cpu_fprintf, int flags);
-int aarch64_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
-int aarch64_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-#endif
 
 #endif

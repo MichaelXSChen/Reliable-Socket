@@ -16,10 +16,8 @@
 
 void HELPER(exception)(CPUUniCore32State *env, uint32_t excp)
 {
-    CPUState *cs = CPU(uc32_env_get_cpu(env));
-
-    cs->exception_index = excp;
-    cpu_loop_exit(cs);
+    env->exception_index = excp;
+    cpu_loop_exit(env);
 }
 
 static target_ulong asr_read(CPUUniCore32State *env)
@@ -241,34 +239,39 @@ uint32_t HELPER(ror_cc)(CPUUniCore32State *env, uint32_t x, uint32_t i)
 }
 
 #ifndef CONFIG_USER_ONLY
-#include "exec/softmmu_exec.h"
-
 #define MMUSUFFIX _mmu
 
 #define SHIFT 0
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 1
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 2
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
 #define SHIFT 3
-#include "exec/softmmu_template.h"
+#include "softmmu_template.h"
 
-void tlb_fill(CPUState *cs, target_ulong addr, int is_write,
+void tlb_fill(CPUUniCore32State *env, target_ulong addr, int is_write,
               int mmu_idx, uintptr_t retaddr)
 {
+    TranslationBlock *tb;
+    unsigned long pc;
     int ret;
 
-    ret = uc32_cpu_handle_mmu_fault(cs, addr, is_write, mmu_idx);
+    ret = uc32_cpu_handle_mmu_fault(env, addr, is_write, mmu_idx);
     if (unlikely(ret)) {
         if (retaddr) {
             /* now we have a real cpu fault */
-            cpu_restore_state(cs, retaddr);
+            pc = (unsigned long)retaddr;
+            tb = tb_find_pc(pc);
+            if (tb) {/* the PC is inside the translated code.
+                        It means that we have a virtual CPU fault */
+                cpu_restore_state(tb, env, pc);
+            }
         }
-        cpu_loop_exit(cs);
+        cpu_loop_exit(env);
     }
 }
 #endif

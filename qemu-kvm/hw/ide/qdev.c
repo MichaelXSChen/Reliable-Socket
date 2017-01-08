@@ -17,12 +17,12 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 #include <hw/hw.h>
-#include "sysemu/dma.h"
-#include "qemu/error-report.h"
+#include "dma.h"
+#include "qemu-error.h"
 #include <hw/ide/internal.h>
-#include "sysemu/blockdev.h"
-#include "hw/block/block.h"
-#include "sysemu/sysemu.h"
+#include "blockdev.h"
+#include "hw/block-common.h"
+#include "sysemu.h"
 
 /* --------------------------------- */
 
@@ -47,12 +47,10 @@ static const TypeInfo ide_bus_info = {
     .class_init = ide_bus_class_init,
 };
 
-void ide_bus_new(IDEBus *idebus, size_t idebus_size, DeviceState *dev,
-                 int bus_id, int max_units)
+void ide_bus_new(IDEBus *idebus, DeviceState *dev, int bus_id)
 {
-    qbus_create_inplace(idebus, idebus_size, TYPE_IDE_BUS, dev, NULL);
+    qbus_create_inplace(&idebus->qbus, TYPE_IDE_BUS, dev, NULL);
     idebus->bus_id = bus_id;
-    idebus->max_units = max_units;
 }
 
 static char *idebus_get_fw_dev_path(DeviceState *dev)
@@ -78,13 +76,6 @@ static int ide_qdev_init(DeviceState *qdev)
     if (dev->unit == -1) {
         dev->unit = bus->master ? 1 : 0;
     }
-
-    if (dev->unit >= bus->max_units) {
-        error_report("Can't create IDE unit %d, bus supports only %d units",
-                     dev->unit, bus->max_units);
-        goto err;
-    }
-
     switch (dev->unit) {
     case 0:
         if (bus->master) {
@@ -152,10 +143,7 @@ static int ide_dev_initfn(IDEDevice *dev, IDEDriveKind kind)
     IDEBus *bus = DO_UPCAST(IDEBus, qbus, dev->qdev.parent_bus);
     IDEState *s = bus->ifs + dev->unit;
 
-    if (dev->conf.discard_granularity == -1) {
-        dev->conf.discard_granularity = 512;
-    } else if (dev->conf.discard_granularity &&
-               dev->conf.discard_granularity != 512) {
+    if (dev->conf.discard_granularity && dev->conf.discard_granularity != 512) {
         error_report("discard_granularity must be 512 for ide");
         return -1;
     }
@@ -206,7 +194,7 @@ static int ide_drive_initfn(IDEDevice *dev)
 #define DEFINE_IDE_DEV_PROPERTIES()                     \
     DEFINE_BLOCK_PROPERTIES(IDEDrive, dev.conf),        \
     DEFINE_PROP_STRING("ver",  IDEDrive, dev.version),  \
-    DEFINE_PROP_UINT64("wwn",  IDEDrive, dev.wwn, 0),    \
+    DEFINE_PROP_HEX64("wwn",  IDEDrive, dev.wwn, 0),    \
     DEFINE_PROP_STRING("serial",  IDEDrive, dev.serial),\
     DEFINE_PROP_STRING("model", IDEDrive, dev.model)
 
@@ -228,7 +216,7 @@ static void ide_hd_class_init(ObjectClass *klass, void *data)
     dc->props = ide_hd_properties;
 }
 
-static const TypeInfo ide_hd_info = {
+static TypeInfo ide_hd_info = {
     .name          = "ide-hd",
     .parent        = TYPE_IDE_DEVICE,
     .instance_size = sizeof(IDEDrive),
@@ -250,7 +238,7 @@ static void ide_cd_class_init(ObjectClass *klass, void *data)
     dc->props = ide_cd_properties;
 }
 
-static const TypeInfo ide_cd_info = {
+static TypeInfo ide_cd_info = {
     .name          = "ide-cd",
     .parent        = TYPE_IDE_DEVICE,
     .instance_size = sizeof(IDEDrive),
@@ -272,7 +260,7 @@ static void ide_drive_class_init(ObjectClass *klass, void *data)
     dc->props = ide_drive_properties;
 }
 
-static const TypeInfo ide_drive_info = {
+static TypeInfo ide_drive_info = {
     .name          = "ide-drive",
     .parent        = TYPE_IDE_DEVICE,
     .instance_size = sizeof(IDEDrive),
@@ -283,12 +271,11 @@ static void ide_device_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->init = ide_qdev_init;
-    set_bit(DEVICE_CATEGORY_STORAGE, k->categories);
     k->bus_type = TYPE_IDE_BUS;
     k->props = ide_props;
 }
 
-static const TypeInfo ide_device_type_info = {
+static TypeInfo ide_device_type_info = {
     .name = TYPE_IDE_DEVICE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(IDEDevice),

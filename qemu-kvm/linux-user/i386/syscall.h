@@ -144,6 +144,3 @@ struct target_vm86plus_struct {
 };
 
 #define UNAME_MACHINE "i686"
-#define UNAME_MINIMUM_RELEASE "2.6.32"
-
-#define TARGET_CLONE_BACKWARDS

@@ -6,8 +6,18 @@
 
 /* ------------------------------------------------------------------ */
 
+static uint8_t usb_lo(uint16_t val)
+{
+    return val & 0xff;
+}
+
+static uint8_t usb_hi(uint16_t val)
+{
+    return (val >> 8) & 0xff;
+}
+
 int usb_desc_device(const USBDescID *id, const USBDescDevice *dev,
-                    bool msos, uint8_t *dest, size_t len)
+                    uint8_t *dest, size_t len)
 {
     uint8_t bLength = 0x12;
     USBDescriptor *d = (void *)dest;
@@ -19,18 +29,8 @@ int usb_desc_device(const USBDescID *id, const USBDescDevice *dev,
     d->bLength                     = bLength;
     d->bDescriptorType             = USB_DT_DEVICE;
 
-    if (msos && dev->bcdUSB < 0x0200) {
-        /*
-         * Version 2.0+ required for microsoft os descriptors to work.
-         * Done this way so msos-desc compat property will handle both
-         * the version and the new descriptors being present.
-         */
-        d->u.device.bcdUSB_lo          = usb_lo(0x0200);
-        d->u.device.bcdUSB_hi          = usb_hi(0x0200);
-    } else {
-        d->u.device.bcdUSB_lo          = usb_lo(dev->bcdUSB);
-        d->u.device.bcdUSB_hi          = usb_hi(dev->bcdUSB);
-    }
+    d->u.device.bcdUSB_lo          = usb_lo(dev->bcdUSB);
+    d->u.device.bcdUSB_hi          = usb_hi(dev->bcdUSB);
     d->u.device.bDeviceClass       = dev->bDeviceClass;
     d->u.device.bDeviceSubClass    = dev->bDeviceSubClass;
     d->u.device.bDeviceProtocol    = dev->bDeviceProtocol;
@@ -225,9 +225,12 @@ int usb_desc_endpoint(const USBDescEndpoint *ep, int flags,
         d->u.endpoint.bRefresh      = ep->bRefresh;
         d->u.endpoint.bSynchAddress = ep->bSynchAddress;
     }
+    if (ep->extra) {
+        memcpy(dest + bLength, ep->extra, extralen);
+    }
 
     if (superlen) {
-        USBDescriptor *d = (void *)(dest + bLength);
+        USBDescriptor *d = (void *)(dest + bLength + extralen);
 
         d->bLength                       = 0x06;
         d->bDescriptorType               = USB_DT_ENDPOINT_COMPANION;
@@ -238,10 +241,6 @@ int usb_desc_endpoint(const USBDescEndpoint *ep, int flags,
             usb_lo(ep->wBytesPerInterval);
         d->u.super_endpoint.wBytesPerInterval_hi =
             usb_hi(ep->wBytesPerInterval);
-    }
-
-    if (ep->extra) {
-        memcpy(dest + bLength + superlen, ep->extra, extralen);
     }
 
     return bLength + extralen + superlen;
@@ -385,8 +384,6 @@ static void usb_desc_ep_init(USBDevice *dev)
             usb_ep_set_ifnum(dev, pid, ep, iface->bInterfaceNumber);
             usb_ep_set_max_packet_size(dev, pid, ep,
                                        iface->eps[e].wMaxPacketSize);
-            usb_ep_set_max_streams(dev, pid, ep,
-                                   iface->eps[e].bmAttributes_super);
         }
     }
 }
@@ -509,10 +506,6 @@ void usb_desc_init(USBDevice *dev)
     if (desc->super) {
         dev->speedmask |= USB_SPEED_MASK_SUPER;
     }
-    if (desc->msos && (dev->flags & (1 << USB_DEV_FLAG_MSOS_DESC_ENABLE))) {
-        dev->flags |= (1 << USB_DEV_FLAG_MSOS_DESC_IN_USE);
-        usb_desc_set_string(dev, 0xee, "MSFT100Q");
-    }
     usb_desc_setdefaults(dev);
 }
 
@@ -528,6 +521,8 @@ void usb_desc_attach(USBDevice *dev)
     } else if (desc->full && (dev->port->speedmask & USB_SPEED_MASK_FULL)) {
         dev->speed = USB_SPEED_FULL;
     } else {
+        fprintf(stderr, "usb: port/device speed mismatch for \"%s\"\n",
+                usb_device_get_product_desc(dev));
         return;
     }
     usb_desc_setdefaults(dev);
@@ -571,12 +566,6 @@ void usb_desc_create_serial(USBDevice *dev)
     char serial[64];
     char *path;
     int dst;
-
-    if (dev->serial) {
-        /* 'serial' usb bus property has priority if present */
-        usb_desc_set_string(dev, index, dev->serial);
-        return;
-    }
 
     assert(index != 0 && desc->str[index] != NULL);
     dst = snprintf(serial, sizeof(serial), "%s", desc->str[index]);
@@ -637,10 +626,8 @@ int usb_desc_string(USBDevice *dev, int index, uint8_t *dest, size_t len)
     return pos;
 }
 
-int usb_desc_get_descriptor(USBDevice *dev, USBPacket *p,
-                            int value, uint8_t *dest, size_t len)
+int usb_desc_get_descriptor(USBDevice *dev, int value, uint8_t *dest, size_t len)
 {
-    bool msos = (dev->flags & (1 << USB_DEV_FLAG_MSOS_DESC_IN_USE));
     const USBDesc *desc = usb_device_get_usb_desc(dev);
     const USBDescDevice *other_dev;
     uint8_t buf[256];
@@ -661,7 +648,7 @@ int usb_desc_get_descriptor(USBDevice *dev, USBPacket *p,
 
     switch(type) {
     case USB_DT_DEVICE:
-        ret = usb_desc_device(&desc->id, dev->device, msos, buf, sizeof(buf));
+        ret = usb_desc_device(&desc->id, dev->device, buf, sizeof(buf));
         trace_usb_desc_device(dev->addr, len, ret);
         break;
     case USB_DT_CONFIG:
@@ -709,8 +696,6 @@ int usb_desc_get_descriptor(USBDevice *dev, USBPacket *p,
             ret = len;
         }
         memcpy(dest, buf, ret);
-        p->actual_length = ret;
-        ret = 0;
     }
     return ret;
 }
@@ -718,7 +703,6 @@ int usb_desc_get_descriptor(USBDevice *dev, USBPacket *p,
 int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
         int request, int value, int index, int length, uint8_t *data)
 {
-    bool msos = (dev->flags & (1 << USB_DEV_FLAG_MSOS_DESC_IN_USE));
     const USBDesc *desc = usb_device_get_usb_desc(dev);
     int ret = -1;
 
@@ -731,7 +715,7 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
         break;
 
     case DeviceRequest | USB_REQ_GET_DESCRIPTOR:
-        ret = usb_desc_get_descriptor(dev, p, value, data, length);
+        ret = usb_desc_get_descriptor(dev, value, data, length);
         break;
 
     case DeviceRequest | USB_REQ_GET_CONFIGURATION:
@@ -740,8 +724,7 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
          * the non zero value of bConfigurationValue.
          */
         data[0] = dev->config ? dev->config->bConfigurationValue : 0;
-        p->actual_length = 1;
-        ret = 0;
+        ret = 1;
         break;
     case DeviceOutRequest | USB_REQ_SET_CONFIGURATION:
         ret = usb_desc_set_config(dev, value);
@@ -759,15 +742,14 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
          * We return the same value that a configured device would return if
          * it used the first configuration.
          */
-        if (config->bmAttributes & USB_CFG_ATT_SELFPOWER) {
+        if (config->bmAttributes & 0x40) {
             data[0] |= 1 << USB_DEVICE_SELF_POWERED;
         }
         if (dev->remote_wakeup) {
             data[0] |= 1 << USB_DEVICE_REMOTE_WAKEUP;
         }
         data[1] = 0x00;
-        p->actual_length = 2;
-        ret = 0;
+        ret = 2;
         break;
     }
     case DeviceOutRequest | USB_REQ_CLEAR_FEATURE:
@@ -790,25 +772,11 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
             break;
         }
         data[0] = dev->altsetting[index];
-        p->actual_length = 1;
-        ret = 0;
+        ret = 1;
         break;
     case InterfaceOutRequest | USB_REQ_SET_INTERFACE:
         ret = usb_desc_set_interface(dev, index, value);
         trace_usb_set_interface(dev->addr, index, value, ret);
-        break;
-
-    case VendorDeviceRequest | 'Q':
-        if (msos) {
-            ret = usb_desc_msos(desc, p, index, data, length);
-            trace_usb_desc_msos(dev->addr, index, length, ret);
-        }
-        break;
-    case VendorInterfaceRequest | 'Q':
-        if (msos) {
-            ret = usb_desc_msos(desc, p, index, data, length);
-            trace_usb_desc_msos(dev->addr, index, length, ret);
-        }
         break;
 
     }

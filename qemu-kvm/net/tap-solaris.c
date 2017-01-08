@@ -22,8 +22,8 @@
  * THE SOFTWARE.
  */
 
-#include "tap_int.h"
-#include "sysemu/sysemu.h"
+#include "net/tap.h"
+#include "sysemu.h"
 
 #include <sys/stat.h>
 #include <sys/ethernet.h>
@@ -38,7 +38,7 @@
 #include <net/if.h>
 #include <syslog.h>
 #include <stropts.h>
-#include "qemu/error-report.h"
+#include "qemu-error.h"
 
 ssize_t tap_read_packet(int tapfd, uint8_t *buf, int maxlen)
 {
@@ -173,8 +173,7 @@ static int tap_alloc(char *dev, size_t dev_size)
     return tap_fd;
 }
 
-int tap_open(char *ifname, int ifname_size, int *vnet_hdr,
-             int vnet_hdr_required, int mq_required)
+int tap_open(char *ifname, int ifname_size, int *vnet_hdr, int vnet_hdr_required)
 {
     char  dev[10]="";
     int fd;
@@ -225,19 +224,4 @@ void tap_fd_set_vnet_hdr_len(int fd, int len)
 void tap_fd_set_offload(int fd, int csum, int tso4,
                         int tso6, int ecn, int ufo)
 {
-}
-
-int tap_fd_enable(int fd)
-{
-    return -1;
-}
-
-int tap_fd_disable(int fd)
-{
-    return -1;
-}
-
-int tap_fd_get_ifname(int fd, char *ifname)
-{
-    return -1;
 }

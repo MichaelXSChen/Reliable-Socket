@@ -16,33 +16,41 @@ __email__      = "stefanha@linux.vnet.ibm.com"
 from tracetool import out
 
 
-PUBLIC = True
-
-
 def c(events):
-    pass
+    out('#include "trace.h"',
+        '',
+        'TraceEvent trace_list[] = {')
+
+    for e in events:
+        out('{.tp_name = "%(name)s", .state=0},',
+            name = e.name,
+            )
+
+    out('};')
 
 def h(events):
     out('#include <stdio.h>',
-        '#include "trace/control.h"',
+        '#include "trace/stderr.h"',
         '',
-        )
+        'extern TraceEvent trace_list[];')
 
-    for e in events:
+    for num, e in enumerate(events):
         argnames = ", ".join(e.args.names())
         if len(e.args) > 0:
             argnames = ", " + argnames
 
         out('static inline void trace_%(name)s(%(args)s)',
             '{',
-            '    bool _state = trace_event_get_state(%(event_id)s);',
-            '    if (_state) {',
+            '    if (trace_list[%(event_num)s].state != 0) {',
             '        fprintf(stderr, "%(name)s " %(fmt)s "\\n" %(argnames)s);',
             '    }',
             '}',
             name = e.name,
             args = e.args,
-            event_id = "TRACE_" + e.name.upper(),
-            fmt = e.fmt.rstrip("\n"),
+            event_num = num,
+            fmt = e.fmt,
             argnames = argnames,
             )
+
+    out('',
+        '#define NR_TRACE_EVENTS %d' % len(events))

@@ -15,7 +15,7 @@
 #ifndef BLOCK_QED_H
 #define BLOCK_QED_H
 
-#include "block/block_int.h"
+#include "block_int.h"
 
 /* The layout of a QED file is as follows:
  *
@@ -100,7 +100,7 @@ typedef struct {
     /* if (features & QED_F_BACKING_FILE) */
     uint32_t backing_filename_offset; /* in bytes from start of header */
     uint32_t backing_filename_size;   /* in bytes */
-} QEMU_PACKED QEDHeader;
+} QEDHeader;
 
 typedef struct {
     uint64_t offsets[0];            /* in bytes */

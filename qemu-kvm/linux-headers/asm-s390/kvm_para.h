@@ -1,5 +1,5 @@
 /*
- * User API definitions for paravirtual devices on s390
+ * definition for paravirtual devices on s390
  *
  * Copyright IBM Corp. 2008
  *
@@ -9,3 +9,9 @@
  *
  *    Author(s): Christian Borntraeger <borntraeger@de.ibm.com>
  */
+
+#ifndef __S390_KVM_PARA_H
+#define __S390_KVM_PARA_H
+
+
+#endif /* __S390_KVM_PARA_H */

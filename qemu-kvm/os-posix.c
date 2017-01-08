@@ -36,12 +36,16 @@
 
 /* Needed early for CONFIG_BSD etc. */
 #include "config-host.h"
-#include "sysemu/sysemu.h"
+#include "sysemu.h"
 #include "net/slirp.h"
 #include "qemu-options.h"
 
 #ifdef CONFIG_LINUX
 #include <sys/prctl.h>
+#endif
+
+#ifdef __FreeBSD__
+#include <sys/sysctl.h>
 #endif
 
 static struct passwd *user_pwd;
@@ -80,17 +84,46 @@ void os_setup_signal_handling(void)
    running from the build tree this will be "$bindir/../pc-bios".  */
 #define SHARE_SUFFIX "/share/qemu"
 #define BUILD_SUFFIX "/pc-bios"
-char *os_find_datadir(void)
+char *os_find_datadir(const char *argv0)
 {
-    char *dir, *exec_dir;
+    char *dir;
+    char *p = NULL;
     char *res;
+    char buf[PATH_MAX];
     size_t max_len;
 
-    exec_dir = qemu_get_exec_dir();
-    if (exec_dir == NULL) {
-        return NULL;
+#if defined(__linux__)
+    {
+        int len;
+        len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+        if (len > 0) {
+            buf[len] = 0;
+            p = buf;
+        }
     }
-    dir = dirname(exec_dir);
+#elif defined(__FreeBSD__)
+    {
+        static int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+        size_t len = sizeof(buf) - 1;
+
+        *buf = '\0';
+        if (!sysctl(mib, ARRAY_SIZE(mib), buf, &len, NULL, 0) &&
+            *buf) {
+            buf[sizeof(buf) - 1] = '\0';
+            p = buf;
+        }
+    }
+#endif
+    /* If we don't have any way of figuring out the actual executable
+       location then try argv[0].  */
+    if (!p) {
+        p = realpath(argv0, buf);
+        if (!p) {
+            return NULL;
+        }
+    }
+    dir = dirname(p);
+    dir = dirname(dir);
 
     max_len = strlen(dir) +
         MAX(strlen(SHARE_SUFFIX), strlen(BUILD_SUFFIX)) + 1;
@@ -104,7 +137,6 @@ char *os_find_datadir(void)
         }
     }
 
-    g_free(exec_dir);
     return res;
 }
 #undef SHARE_SUFFIX
@@ -330,16 +362,4 @@ int qemu_create_pidfile(const char *filename)
 bool is_daemonized(void)
 {
     return daemonize;
-}
-
-int os_mlock(void)
-{
-    int ret = 0;
-
-    ret = mlockall(MCL_CURRENT | MCL_FUTURE);
-    if (ret < 0) {
-        perror("mlockall");
-    }
-
-    return ret;
 }

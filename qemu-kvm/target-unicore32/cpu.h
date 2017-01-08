@@ -23,8 +23,8 @@
 
 #include "config.h"
 #include "qemu-common.h"
-#include "exec/cpu-defs.h"
-#include "fpu/softfloat.h"
+#include "cpu-defs.h"
+#include "softfloat.h"
 
 #define NB_MMU_MODES            2
 
@@ -125,10 +125,15 @@ void cpu_asr_write(CPUUniCore32State *env1, target_ulong val, target_ulong mask)
 #define cpu_init                        uc32_cpu_init
 #define cpu_exec                        uc32_cpu_exec
 #define cpu_signal_handler              uc32_cpu_signal_handler
+#define cpu_handle_mmu_fault            uc32_cpu_handle_mmu_fault
 
 CPUUniCore32State *uc32_cpu_init(const char *cpu_model);
 int uc32_cpu_exec(CPUUniCore32State *s);
 int uc32_cpu_signal_handler(int host_signum, void *pinfo, void *puc);
+int uc32_cpu_handle_mmu_fault(CPUUniCore32State *env, target_ulong address, int rw,
+                              int mmu_idx);
+
+#define CPU_SAVE_VERSION 2
 
 /* MMU modes definitions */
 #define MMU_MODE0_SUFFIX _kernel
@@ -139,9 +144,27 @@ static inline int cpu_mmu_index(CPUUniCore32State *env)
     return (env->uncached_asr & ASR_M) == ASR_MODE_USER ? 1 : 0;
 }
 
-#include "exec/cpu-all.h"
+static inline void cpu_clone_regs(CPUUniCore32State *env, target_ulong newsp)
+{
+    if (newsp) {
+        env->regs[29] = newsp;
+    }
+    env->regs[0] = 0;
+}
+
+static inline void cpu_set_tls(CPUUniCore32State *env, target_ulong newtls)
+{
+    env->regs[16] = newtls;
+}
+
+#include "cpu-all.h"
 #include "cpu-qom.h"
-#include "exec/exec-all.h"
+#include "exec-all.h"
+
+static inline void cpu_pc_from_tb(CPUUniCore32State *env, TranslationBlock *tb)
+{
+    env->regs[31] = tb->pc;
+}
 
 static inline void cpu_get_tb_cpu_state(CPUUniCore32State *env, target_ulong *pc,
                                         target_ulong *cs_base, int *flags)
@@ -154,9 +177,14 @@ static inline void cpu_get_tb_cpu_state(CPUUniCore32State *env, target_ulong *pc
     }
 }
 
-int uc32_cpu_handle_mmu_fault(CPUState *cpu, vaddr address, int rw,
-                              int mmu_idx);
 void uc32_translate_init(void);
+void do_interrupt(CPUUniCore32State *);
 void switch_mode(CPUUniCore32State *, int);
+
+static inline bool cpu_has_work(CPUUniCore32State *env)
+{
+    return env->interrupt_request &
+        (CPU_INTERRUPT_HARD | CPU_INTERRUPT_EXITTB);
+}
 
 #endif /* QEMU_UNICORE32_CPU_H */

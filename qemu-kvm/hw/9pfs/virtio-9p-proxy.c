@@ -11,9 +11,8 @@
  */
 #include <sys/socket.h>
 #include <sys/un.h>
-#include "hw/virtio/virtio.h"
+#include "hw/virtio.h"
 #include "virtio-9p.h"
-#include "qemu/error-report.h"
 #include "fsdev/qemu-fsdev.h"
 #include "virtio-9p-proxy.h"
 
@@ -522,7 +521,7 @@ static int v9fs_request(V9fsProxy *proxy, int type,
         }
         break;
     default:
-        error_report("Invalid type %d", type);
+        error_report("Invalid type %d\n", type);
         retval = -EINVAL;
         break;
     }
@@ -1086,8 +1085,7 @@ static int proxy_ioc_getversion(FsContext *fs_ctx, V9fsPath *path,
      * we can get fd for regular files and directories only
      */
     if (!S_ISREG(st_mode) && !S_ISDIR(st_mode)) {
-        errno = ENOTTY;
-        return -1;
+        return 0;
     }
     err = v9fs_request(fs_ctx->private, T_GETVERSION, st_gen, "s", path);
     if (err < 0) {
@@ -1154,12 +1152,10 @@ static int proxy_init(FsContext *ctx)
         sock_id = atoi(ctx->fs_root);
         if (sock_id < 0) {
             fprintf(stderr, "socket descriptor not initialized\n");
-            g_free(proxy);
             return -1;
         }
     }
     g_free(ctx->fs_root);
-    ctx->fs_root = NULL;
 
     proxy->in_iovec.iov_base  = g_malloc(PROXY_MAX_IO_SZ + PROXY_HDR_SZ);
     proxy->in_iovec.iov_len   = PROXY_MAX_IO_SZ + PROXY_HDR_SZ;

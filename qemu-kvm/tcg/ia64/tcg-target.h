@@ -22,7 +22,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef TCG_TARGET_IA64 
 #define TCG_TARGET_IA64 1
 
 /* We only map the first 64 registers */
@@ -92,8 +91,6 @@ typedef enum {
     TCG_REG_R61,
     TCG_REG_R62,
     TCG_REG_R63,
-
-    TCG_AREG0 = TCG_REG_R32,
 } TCGReg;
 
 #define TCG_CT_CONST_ZERO 0x100
@@ -106,9 +103,7 @@ typedef enum {
 
 /* optional instructions */
 #define TCG_TARGET_HAS_div_i32          0
-#define TCG_TARGET_HAS_rem_i32          0
 #define TCG_TARGET_HAS_div_i64          0
-#define TCG_TARGET_HAS_rem_i64          0
 #define TCG_TARGET_HAS_andc_i32         1
 #define TCG_TARGET_HAS_andc_i64         1
 #define TCG_TARGET_HAS_bswap16_i32      1
@@ -136,27 +131,10 @@ typedef enum {
 #define TCG_TARGET_HAS_orc_i64          1
 #define TCG_TARGET_HAS_rot_i32          1
 #define TCG_TARGET_HAS_rot_i64          1
-#define TCG_TARGET_HAS_movcond_i32      1
-#define TCG_TARGET_HAS_movcond_i64      1
-#define TCG_TARGET_HAS_deposit_i32      1
-#define TCG_TARGET_HAS_deposit_i64      1
-#define TCG_TARGET_HAS_add2_i32         0
-#define TCG_TARGET_HAS_add2_i64         0
-#define TCG_TARGET_HAS_sub2_i32         0
-#define TCG_TARGET_HAS_sub2_i64         0
-#define TCG_TARGET_HAS_mulu2_i32        0
-#define TCG_TARGET_HAS_mulu2_i64        0
-#define TCG_TARGET_HAS_muls2_i32        0
-#define TCG_TARGET_HAS_muls2_i64        0
-#define TCG_TARGET_HAS_muluh_i32        0
-#define TCG_TARGET_HAS_muluh_i64        0
-#define TCG_TARGET_HAS_mulsh_i32        0
-#define TCG_TARGET_HAS_mulsh_i64        0
-
-#define TCG_TARGET_HAS_new_ldst         0
-
-#define TCG_TARGET_deposit_i32_valid(ofs, len) ((len) <= 16)
-#define TCG_TARGET_deposit_i64_valid(ofs, len) ((len) <= 16)
+#define TCG_TARGET_HAS_deposit_i32      0
+#define TCG_TARGET_HAS_deposit_i64      0
+#define TCG_TARGET_HAS_movcond_i32      0
+#define TCG_TARGET_HAS_movcond_i64      0
 
 /* optional instructions automatically implemented */
 #define TCG_TARGET_HAS_neg_i32          0 /* sub r1, r0, r3 */
@@ -164,7 +142,13 @@ typedef enum {
 #define TCG_TARGET_HAS_not_i32          0 /* xor r1, -1, r3 */
 #define TCG_TARGET_HAS_not_i64          0 /* xor r1, -1, r3 */
 
-static inline void flush_icache_range(uintptr_t start, uintptr_t stop)
+#define TCG_AREG0 TCG_REG_R7
+
+/* Guest base is supported */
+#define TCG_TARGET_HAS_GUEST_BASE
+
+static inline void flush_icache_range(tcg_target_ulong start,
+                                      tcg_target_ulong stop)
 {
     start = start & ~(32UL - 1UL);
     stop = (stop + (32UL - 1UL)) & ~(32UL - 1UL);
@@ -174,5 +158,3 @@ static inline void flush_icache_range(uintptr_t start, uintptr_t stop)
     }
     asm volatile (";;sync.i;;srlz.i;;");
 }
-
-#endif

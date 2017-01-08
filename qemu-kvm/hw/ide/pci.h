@@ -37,14 +37,8 @@ typedef struct CMD646BAR {
     struct PCIIDEState *pci_dev;
 } CMD646BAR;
 
-#define TYPE_PCI_IDE "pci-ide"
-#define PCI_IDE(obj) OBJECT_CHECK(PCIIDEState, (obj), TYPE_PCI_IDE)
-
 typedef struct PCIIDEState {
-    /*< private >*/
-    PCIDevice parent_obj;
-    /*< public >*/
-
+    PCIDevice dev;
     IDEBus bus[2];
     BMDMAState bmdma[2];
     uint32_t secondary; /* used only for cmd646 */

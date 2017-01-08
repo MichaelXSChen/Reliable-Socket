@@ -59,17 +59,10 @@ static const char * const excp_names[0x80] = {
 };
 #endif
 
-void sparc_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUSPARCState *env)
 {
-    SPARCCPU *cpu = SPARC_CPU(cs);
-    CPUSPARCState *env = &cpu->env;
-    int intno = cs->exception_index;
+    int intno = env->exception_index;
     trap_state *tsptr;
-
-    /* Compute PSR before exposing state.  */
-    if (env->cc_op != CC_OP_FLAGS) {
-        cpu_get_psr(env);
-    }
 
 #ifdef DEBUG_PCALL
     if (qemu_loglevel_mask(CPU_LOG_INT)) {
@@ -92,7 +85,7 @@ void sparc_cpu_do_interrupt(CPUState *cs)
         }
 
         qemu_log("%6d: %s (v=%04x)\n", count, name, intno);
-        log_cpu_state(cs, 0);
+        log_cpu_state(env, 0);
 #if 0
         {
             int i;
@@ -111,8 +104,8 @@ void sparc_cpu_do_interrupt(CPUState *cs)
 #endif
 #if !defined(CONFIG_USER_ONLY)
     if (env->tl >= env->maxtl) {
-        cpu_abort(cs, "Trap 0x%04x while trap level (%d) >= MAXTL (%d),"
-                  " Error state", cs->exception_index, env->tl, env->maxtl);
+        cpu_abort(env, "Trap 0x%04x while trap level (%d) >= MAXTL (%d),"
+                  " Error state", env->exception_index, env->tl, env->maxtl);
         return;
     }
 #endif
@@ -160,7 +153,7 @@ void sparc_cpu_do_interrupt(CPUState *cs)
     env->tbr |= ((env->tl > 1) ? 1 << 14 : 0) | (intno << 5);
     env->pc = env->tbr;
     env->npc = env->pc + 4;
-    cs->exception_index = -1;
+    env->exception_index = -1;
 }
 
 trap_state *cpu_tsptr(CPUSPARCState* env)

@@ -19,7 +19,7 @@
 
 #include "cpu.h"
 #include "trace.h"
-#include "sysemu/sysemu.h"
+#include "sysemu.h"
 
 #define DEBUG_PCALL
 
@@ -58,16 +58,9 @@ static const char * const excp_names[0x80] = {
 };
 #endif
 
-void sparc_cpu_do_interrupt(CPUState *cs)
+void do_interrupt(CPUSPARCState *env)
 {
-    SPARCCPU *cpu = SPARC_CPU(cs);
-    CPUSPARCState *env = &cpu->env;
-    int cwp, intno = cs->exception_index;
-
-    /* Compute PSR before exposing state.  */
-    if (env->cc_op != CC_OP_FLAGS) {
-        cpu_get_psr(env);
-    }
+    int cwp, intno = env->exception_index;
 
 #ifdef DEBUG_PCALL
     if (qemu_loglevel_mask(CPU_LOG_INT)) {
@@ -86,7 +79,7 @@ void sparc_cpu_do_interrupt(CPUState *cs)
         }
 
         qemu_log("%6d: %s (v=%02x)\n", count, name, intno);
-        log_cpu_state(cs, 0);
+        log_cpu_state(env, 0);
 #if 0
         {
             int i;
@@ -105,12 +98,12 @@ void sparc_cpu_do_interrupt(CPUState *cs)
 #endif
 #if !defined(CONFIG_USER_ONLY)
     if (env->psret == 0) {
-        if (cs->exception_index == 0x80 &&
+        if (env->exception_index == 0x80 &&
             env->def->features & CPU_FEATURE_TA0_SHUTDOWN) {
             qemu_system_shutdown_request();
         } else {
-            cpu_abort(cs, "Trap 0x%02x while interrupts disabled, Error state",
-                      cs->exception_index);
+            cpu_abort(env, "Trap 0x%02x while interrupts disabled, Error state",
+                      env->exception_index);
         }
         return;
     }
@@ -125,7 +118,7 @@ void sparc_cpu_do_interrupt(CPUState *cs)
     env->tbr = (env->tbr & TBR_BASE_MASK) | (intno << 4);
     env->pc = env->tbr;
     env->npc = env->pc + 4;
-    cs->exception_index = -1;
+    env->exception_index = -1;
 
 #if !defined(CONFIG_USER_ONLY)
     /* IRQ acknowledgment */
