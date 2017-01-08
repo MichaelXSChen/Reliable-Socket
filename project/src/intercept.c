@@ -16,7 +16,7 @@
 #include "include/util.h"
  
 #define CON_MGR_PORT 4321 
-#define CON_MGR_IP "127.0.0.1"
+#define CON_MGR_IP "10.22.1.3"
 
 typedef int (*orig_connect_func_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 typedef int (*orig_accpet_func_type)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
@@ -395,7 +395,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
     int sk; 
     sk = orig_accept_func(sockfd, addr, addrlen);
-
+    debug("System accept returned sk = %d", sk);
     uint32_t seq=0; 
    
     ret = tcp_repair_on(sk);
@@ -443,6 +443,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     }
 
     ret =replace_tcp(&sk, con_info->isn);
+    debug("Before retrun accept");
     return sk; 
 }
 

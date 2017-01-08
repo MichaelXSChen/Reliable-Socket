@@ -208,5 +208,5 @@ int con_manager_init(){
 
 
 int main(){
-	init();
+	con_manager_init();
 }

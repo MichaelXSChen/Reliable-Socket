@@ -31,10 +31,12 @@ int find_connection(con_list_entry **entry ,struct con_id_type *con){
 int insert_connection(con_list_entry* entry){
 	struct con_list_entry *tmp = NULL; 
 	find_connection(&tmp, &(entry->con_id));
+	debugf("trying to insert entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
+	
+
 	if (tmp == NULL){
 		HASH_ADD(hh, con_list, con_id, sizeof(struct con_id_type), entry);
-	//	debugf("adding entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
-	//	debugf("\n\n Size of Hashtable: %d", HASH_COUNT(con_list));
+		debugf("\nInsert success!! Size of Hashtable: %d", HASH_COUNT(con_list));
 	}
 	else {
 		//TODO: How to do now;

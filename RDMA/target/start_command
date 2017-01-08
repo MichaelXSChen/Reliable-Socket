@@ -1,0 +1,1 @@
+server_type=start server_idx=0 group_size=3 config_path=/home/xusheng/VPB/RDMA/target/nodes.local.cfg mgid=ff0e::ffff:e101:101 ./test
