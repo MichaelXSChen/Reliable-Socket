@@ -1,4 +1,4 @@
-prefix=/home/ning/RDMA_Paxos/RDMA/.local
+prefix=/home/michael/VPB/RDMA/.local
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
 includedir=${prefix}/include

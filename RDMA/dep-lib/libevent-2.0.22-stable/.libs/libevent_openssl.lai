@@ -38,4 +38,4 @@ dlopen=''
 dlpreopen=''
 
 # Directory that this library needs to be installed in:
-libdir='/home/ning/RDMA_Paxos/RDMA/.local/lib'
+libdir='/home/michael/VPB/RDMA/.local/lib'

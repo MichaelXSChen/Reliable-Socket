@@ -877,3 +877,32 @@ msg_handle_exit:
     return ret;
 
 }
+
+
+// int msg_handle_new (uint8_t *msg, int size){
+//     // if leader, consensus the msa
+//     // If not leader, drop
+//     if(is_leader()){
+//         //server_side_on_read(msg, size, ??)
+
+
+//     }else{
+//         return 0;
+//     }
+
+
+// }
+
+// int monitor(){
+//     //Shutdown if receive 
+//     //Need a special thread
+// }
+
+
+// int 
+
+
+
+
+
+

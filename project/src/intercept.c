@@ -442,7 +442,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         debug("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
     }
 
-    ret =replace_tcp(&sk, seq);
+    ret =replace_tcp(&sk, con_info->isn);
     return sk; 
 }
 

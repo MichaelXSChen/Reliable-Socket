@@ -12,7 +12,7 @@ builddir=.
 ##################################################
 # Installation directories and permissions.
 ##################################################
-prefix=	/home/ning/RDMA_Paxos/RDMA/.local
+prefix=	/home/michael/VPB/RDMA/.local
 exec_prefix=${prefix}
 bindir=	${exec_prefix}/bin
 includedir=${prefix}/include
