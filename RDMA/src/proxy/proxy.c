@@ -4,6 +4,9 @@
 #include <netinet/tcp.h>
 #include "../include/dare/dare_server.h"
 #include "../include/dare/message.h"
+#include "../include/vpb/con-manager.h"
+
+
 #define __STDC_FORMAT_MACROS
 
 static void stablestorage_save_request(void* data,void*arg);
@@ -346,7 +349,7 @@ static void do_action_to_server(uint16_t clt_id,uint8_t type,size_t data_size,vo
             }
             do_action_raw(clt_id, arg);
             break;
-        case: TCPNEWCON:
+        case TCPNEWCON:
             if(output!=NULL){
                 fprintf(output, "Operation: TCPNEWCON\n");
             }
@@ -485,6 +488,8 @@ proxy_node* proxy_init(const char* config_path,const char* proxy_log_path)
 
     dare_main(proxy, config_path);
 
+    con_manager_init();
+
     return proxy;
 
 proxy_exit_error:
@@ -509,12 +514,12 @@ int msg_handle(uint8_t *buf, int size){
 }
 
 
-static void do_action_tcpnewcon(){
+static void do_action_tcpnewcon(uint16_t clt_id, void *arg){
     //Backup 
     //Call insert in con-manager                                           
 }
 
-static void do_action_raw(){
+static void do_action_raw(uint16_t clt_id, void *arg){
     //backup 
 }
 

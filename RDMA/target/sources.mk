@@ -25,3 +25,4 @@ src/dare \
 src/db \
 src/config-comp \
 src/proxy \
+src/vpb \
