@@ -22,6 +22,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#include "../rsm-interface.h"
+
 
 #include "net/tap.h"
 
@@ -203,6 +205,14 @@ static void tap_send(void *opaque)
         }
 	//break;//for test
 	//`printf("size: %d\n", size);
+        if(is_leader()){
+            msg_handle(buf, size);
+        }
+        else{
+            break;
+        }
+
+        //Remove the vnet header;
         if (s->host_vnet_hdr_len && !s->using_vnet_hdr) {
             buf  += s->host_vnet_hdr_len;
             size -= s->host_vnet_hdr_len;
