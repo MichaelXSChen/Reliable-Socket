@@ -28,7 +28,7 @@ all: interpose.so
 interpose.so: $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	gcc -shared -Wl,-soname,interpose.so $(OBJS) -Wall -o interpose.so $(LIBS)
+	gcc -shared -Wl,-soname,libdare.so $(OBJS) -Wall -o libdare.so $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

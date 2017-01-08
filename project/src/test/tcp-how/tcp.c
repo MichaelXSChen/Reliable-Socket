@@ -56,7 +56,7 @@ static int main_srv(int argc, char **argv)
 
     printf("Binding to port %d\n", port);
 
-    ret = bind(sk, (struct sockaddr *)&addr, sizeof(addr));
+   ret = bind(sk, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0) {
         perror("Can't bind socket");
         return -1;

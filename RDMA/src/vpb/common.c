@@ -38,7 +38,7 @@ void perrorf(const char* format,...){
 
 int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd){
 	tpl_node *tn;
-	//debug("size %d", cmd->argc);
+	//debugf("size %d", cmd->argc);
 	//return 0;
 
 	tn = tpl_map("s#", cmd->argv, cmd->argc);
@@ -47,12 +47,12 @@ int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd){
 	int size;
 	char* buffer; 
 	tpl_dump(tn, TPL_MEM, &buffer, &size);
-	debug("size%d", size);
+	debugf("size%d", size);
 	tpl_free(tn);
 	*len = sizeof(cmd->argc)+size;
 
 	(*buf) = (char *)malloc(*len);
-	//debug("len: %d", *len);
+	//debugf("len: %d", *len);
 	memcpy((*buf), &cmd->argc, sizeof(cmd->argc));
 	//memset(&((*buf)[sizeof(cmd->argc)]), 1, *len);
 	memcpy(&((*buf)[sizeof(cmd->argc)]), buffer, size);
@@ -103,7 +103,7 @@ int con_info_serialize(char **buf, int *len, const struct con_info_type *con_inf
 
 
 int con_info_deserialize(struct con_info_type *con_info, const char *buf, int len){
-	//debug("deserialize called, len: %d", len);
+	//debugf("deserialize called, len: %d", len);
 	tpl_node *tn;
 	tn = tpl_map("S($(uvuv)u)", con_info);
 	tpl_load(tn, TPL_MEM, buf, len);
@@ -144,7 +144,7 @@ int recv_bytes(int sk, char** buf, int *length){
 
 
 
-	debug("recv bytes with length: %d", *length);
+	debugf("recv bytes with length: %d", *length);
 	return 0;
 }
 
@@ -177,6 +177,6 @@ int send_bytes(int sk, char* buf, int len){
 		}
 	}while(left >0);
 
-	debug("Sent bytes with len: %d", len);
+	debugf("Sent bytes with len: %d", len);
 	return 0;
 }
