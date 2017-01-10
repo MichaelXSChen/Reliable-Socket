@@ -45,7 +45,7 @@ extern "C" int my_main(int argc, char **pt, char **aa)
 	return ret;
 }
 
-extern "C" int __libc_start_main(
+extern "C" int (
 	void *func_ptr,
 	int argc,
 	char* argv[],

@@ -37,3 +37,16 @@ int write_to_packet_buffer(const uint8_t *buffer, size_t len){
 
 	return len;
 }
+
+int packet_buffer_to_buffer(uint8_t *buffer, int maxlen){
+	pthread_mutex_lock(&lock);
+	int len =(int)ringbuf_bytes_used(rb);
+	if (len <= 0){
+		pthread_mutex_unlock(&lock);
+		return 0;
+	}
+	int read_len = (len < maxlen) ? len : maxlen;
+	ringbuf_memcpy_from(*buffer, rb, read_len);
+	pthread_mutex_unlock(&lock);
+	return read_len;
+}

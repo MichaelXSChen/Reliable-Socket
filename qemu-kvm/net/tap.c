@@ -204,21 +204,26 @@ static void tap_send(void *opaque)
     do {
         uint8_t *buf = s->buf;
 
-        size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
-        if (size <= 0) {
-            break;
-        }
-	//break;//for test
-	//`printf("size: %d\n", size);
-        uint8_t *buffer;
         if(is_leader()){
+        
+            size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
             msg_handle(buf, size);
         }
         else{
-            size = read_from_packet_buffer(&buffer);
-            if (size < 0)
-                break;
+            size = packet_buffer_to_buffer(s->buf, sizeof(s->buf));
+            //uint8_t *gbg = (uint8_t *) malloc(size);
         }
+
+        if (size <= 0) {
+            break;
+        }
+
+
+        // else{
+        //     size = read_from_packet_buffer(&buffer);
+        //     if (size < 0)
+        //         break;
+        // }
 
         //Remove the vnet header;
         if (s->host_vnet_hdr_len && !s->using_vnet_hdr) {
@@ -226,12 +231,8 @@ static void tap_send(void *opaque)
             size -= s->host_vnet_hdr_len;
         }
 
-        if (is_leader()){
         size = qemu_send_packet_async(&s->nc, buf, size, tap_send_completed);
-        }
-        else{
-            //size = qemu_send_packet_async(&s->nc, buffer, size, tap_send_completed);
-        }
+ 
         if (size == 0) {
             tap_read_poll(s, 0);
         }
