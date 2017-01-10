@@ -13,6 +13,7 @@ RM := rm -rf
 -include src/db/subdir.mk
 -include src/config-comp/subdir.mk
 -include src/vpb/subdir.mk
+-include src/packet-buffer/subdir.mk
 -include src/subdir.mk
 -include subdir.mk
 -include objects.mk
