@@ -5,7 +5,7 @@
 #include "../include/dare/dare_server.h"
 #include "../include/dare/message.h"
 #include "../include/vpb/con-manager.h"
-
+#include "../include/packet-buffer/packet-buffer.h"
 
 #define __STDC_FORMAT_MACROS
 
@@ -20,7 +20,7 @@ static void do_action_connect(uint16_t clt_id,void* arg);
 static void do_action_close(uint16_t clt_id,void* arg);
 static int set_blocking(int fd, int blocking);
 
-static void do_action_raw(uint16_t clt_id, void *arg);
+static void do_action_raw(void *data, size_t size);
 static void do_action_tcpnewcon(void *data, size_t size);
 
 
@@ -94,6 +94,9 @@ int dare_main(proxy_node* proxy, const char* config_path)
     LIST_INSERT_HEAD(&listhead, n1, entries);
     //fclose(log_fp);
     
+    init_packet_buffer();
+
+
     return 0;
 }
 
@@ -347,7 +350,7 @@ static void do_action_to_server(uint16_t clt_id,uint8_t type,size_t data_size,vo
             if(output!=NULL){
                 fprintf(output, "Operation: Raw.\n");
             }
-            do_action_raw(clt_id, arg);
+            do_action_raw(data, data_size);
             break;
         case TCPNEWCON:
             if(output!=NULL){
@@ -524,7 +527,9 @@ static void do_action_tcpnewcon(void *data, size_t size){
     insert_connection_bytes((char*)data, size);
 }
 
-static void do_action_raw(uint16_t clt_id, void *arg){
+static void do_action_raw(void *data, size_t size){
+
+    write_to_packet_buffer((uint8_t*)data, size);
     //backup 
 }
 
@@ -538,4 +543,5 @@ void make_consensus_con(uint8_t *buf, int size){
 int monitor(){
     //Establish a connection with guard
     //Kill itself on crash
+    return 0;
 }
