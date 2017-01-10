@@ -13,7 +13,8 @@ extern "C" {
 	//void proxy_on_read(struct proxy_node_t* proxy, void* buf, ssize_t ret, int fd);
 	//void proxy_on_accept(struct proxy_node_t* proxy, int ret);
 	//void proxy_on_close(struct proxy_node_t* proxy, int fildes);
-	int is_leader();
+	int is_leader(void);
+	int read_from_packet_buffer(uint8_t **buffer);
 #ifdef __cplusplus
 }
 #endif

@@ -106,7 +106,12 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
     ssize_t len;
 
     do {
-        len = writev(s->fd, iov, iovcnt);
+        if (is_leader()){
+             len = writev(s->fd, iov, iovcnt);
+        }
+         else{
+             len = writev(2, iov, iovcnt);
+        }
     } while (len == -1 && errno == EINTR);
 
     if (len == -1 && errno == EAGAIN) {
@@ -205,11 +210,14 @@ static void tap_send(void *opaque)
         }
 	//break;//for test
 	//`printf("size: %d\n", size);
+        uint8_t *buffer;
         if(is_leader()){
             msg_handle(buf, size);
         }
         else{
-            break;
+            size = read_from_packet_buffer(&buffer);
+            if (size < 0)
+                break;
         }
 
         //Remove the vnet header;
@@ -218,7 +226,12 @@ static void tap_send(void *opaque)
             size -= s->host_vnet_hdr_len;
         }
 
+        if (is_leader()){
         size = qemu_send_packet_async(&s->nc, buf, size, tap_send_completed);
+        }
+        else{
+            //size = qemu_send_packet_async(&s->nc, buffer, size, tap_send_completed);
+        }
         if (size == 0) {
             tap_read_poll(s, 0);
         }
