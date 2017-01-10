@@ -46,7 +46,7 @@ int packet_buffer_to_buffer(uint8_t *buffer, int maxlen){
 		return 0;
 	}
 	int read_len = (len < maxlen) ? len : maxlen;
-	ringbuf_memcpy_from(*buffer, rb, read_len);
+	ringbuf_memcpy_from(buffer, rb, read_len);
 	pthread_mutex_unlock(&lock);
 	return read_len;
 }

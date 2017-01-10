@@ -8,6 +8,7 @@ struct proxy_node_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
+	int packet_buffer_to_buffer(uint8_t *buffer, int maxlen);
 	int msg_handle(uint8_t *buf, int size);
 	//struct proxy_node_t* proxy_init(const char* config_path, const char* proxy_log_path);
 	//void proxy_on_read(struct proxy_node_t* proxy, void* buf, ssize_t ret, int fd);
