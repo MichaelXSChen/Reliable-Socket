@@ -13,6 +13,16 @@
 #include <inttypes.h>
 #include <unistd.h>
 
+#define ONE_NC_MODE
+
+#ifdef ONE_NC_MODE
+#define REPORT_SERVER "10.22.1.100"
+#define REPORT_PORT 6666
+#endif
+
+
+
+
 
 
 int sk;
@@ -67,9 +77,26 @@ int insert_connection_bytes(char* buf, int len){
 }
 
 
-int handle_con_info(){
-	return 0;
+int report_to_guest_manager(char* buf, int len){
+	struct sockaddr_in si;
+	int slen= sizeof(si);
+	sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sk < 0){
+		debugf("Failed to create sk");
+		return -1;
+	}
+	memset(&si, 0, slen);
+	si.sin_family=AF_INET;
+	si.sin_port=htons(REPORT_PORT);
+	inet_aton(REPORT_SERVER, &si.sin_addr);
+	int send_len = sendto(sk, buf, len, 0, (struct sockaddr*)&si, slen);
+	debugf("Sent to guest manager with len: %d", send_len);
+	return len;
+
 }
+
+
+
 
 
 void *serve(void *sk_arg){
@@ -105,8 +132,15 @@ void *serve(void *sk_arg){
 			tcpnewcon_handle((uint8_t *)buf,len); 
 
 			//
+		#ifdef ONE_NC_MODE
+			report_to_guest_manager(buf, len);
+
+		#endif
+
 			iamleader = 1;
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
+			
+
 			if (ret < 0){
 				printf("Failed to send reply back");
 				pthread_exit(0);
