@@ -26,7 +26,7 @@ tpl.o: tpl.c
 	gcc -c tpl.c -I.
 
 con-hashmap.o: con-hashmap.c
-	gcc -c con-module.c -I.
+	gcc -c con-hashmap.c -I.
 
 con-manager-guest: con-manager-guest.c con-hashmap.o common.o tpl.o
 	gcc -c con-manager-guest.c -I.
