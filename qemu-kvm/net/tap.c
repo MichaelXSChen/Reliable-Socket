@@ -111,7 +111,7 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
         //Can send packet out if 
         //1. It is leader
         //2. It is using other nic. 
-        if (is_leader() || (memcmp(NICID, s->nc.name, 3) != 0)){
+        if (is_leader()){
              len = writev(s->fd, iov, iovcnt);
         }
          else{
@@ -212,7 +212,7 @@ static void tap_send(void *opaque)
         //1. it is the leader
         //2. the tap device is not what we want to replicate
         //otherwise, read the consensused msg. 
-    	if (is_leader() || (memcmp(NICID, s->nc.name,3) != 0) ){
+    	if (is_leader() ){
             	size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
             }
     	else{
@@ -226,7 +226,7 @@ static void tap_send(void *opaque)
 
 
         // Only make consensus on the Replicate NIC
-        if(is_leader() && (memcmp(NICID, s->nc.name,3) ==0)){
+        if(is_leader()){
             msg_handle(buf, size);
         }
         //else{
