@@ -51,6 +51,8 @@
  */
 #define TAP_BUFSIZE (4096 + 65536)
 
+#define NICID "hn0"
+
 typedef struct TAPState {
     NetClientState nc;
     int fd;
@@ -106,7 +108,10 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
     ssize_t len;
 
     do {
-        if (is_leader()){
+        //Can send packet out if 
+        //1. It is leader
+        //2. It is using other nic. 
+        if (is_leader() || (memcmp(NICID, s->nc.name, 3) != 0)){
              len = writev(s->fd, iov, iovcnt);
         }
          else{
@@ -203,22 +208,25 @@ static void tap_send(void *opaque)
 
     do {
         uint8_t *buf = s->buf;
-	
-	if (is_leader()){
-        	size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
-        }
-	else{
-		size = packet_buffer_to_buffer(s->buf, sizeof(s->buf));
-	}
+	   //read from the tap device if
+        //1. it is the leader
+        //2. the tap device is not what we want to replicate
+        //otherwise, read the consensused msg. 
+    	if (is_leader() || (memcmp(NICID, s->nc.name) != 0) ){
+            	size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
+            }
+    	else{
+    		size = packet_buffer_to_buffer(s->buf, sizeof(s->buf));
+    	}
 
 
-	if (size <= 0) {
+	    if (size <= 0) {
             break;
         }
-	//break;//for test
-	//`printf("size: %d\n", size);
-        //uint8_t *buffer;
-        if(is_leader()){
+
+
+        // Only make consensus on the Replicate NIC
+        if(is_leader() && (memcmp(NICID, s->nc.name) ==0)){
             msg_handle(buf, size);
         }
         //else{
