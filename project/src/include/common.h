@@ -1,12 +1,12 @@
 #include <stdint.h>
-#include "include/tpl.h"
+#include "tpl.h"
 
 #ifndef COMMON_H
-#define COOMON_H
+#define COMMON_H
 
 #define DEBUG_ON 1 
 
-void debug(const char* format,...);
+void debugf(const char* format,...);
 
 
 void perrorf(const char* format,...);
@@ -44,5 +44,8 @@ struct con_info_reply{
     uint8_t is_leader;
     uint32_t isn;
 };
+
+int recv_bytes(int sk, char** buf, int *length);
+int send_bytes(int sk, char* buf, int len);
 
 #endif // COMMON_H

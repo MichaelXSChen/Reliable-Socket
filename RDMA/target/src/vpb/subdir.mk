@@ -4,12 +4,10 @@ C_SRCS += \
 ../src/vpb/tpl.c \
 ../src/vpb/con-manager.c
 
-
 OBJS += \
 ./src/vpb/common.o \
 ./src/vpb/tpl.o \
 ./src/vpb/con-manager.o
-
 
 # Each subdirectory must supply rules for building sources it contributes
 src/vpb/%.o: ../src/vpb/%.c
