@@ -212,7 +212,7 @@ static void tap_send(void *opaque)
         //1. it is the leader
         //2. the tap device is not what we want to replicate
         //otherwise, read the consensused msg. 
-    	if (is_leader() || (memcmp(NICID, s->nc.name) != 0) ){
+    	if (is_leader() || (memcmp(NICID, s->nc.name,3) != 0) ){
             	size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
             }
     	else{
@@ -226,7 +226,7 @@ static void tap_send(void *opaque)
 
 
         // Only make consensus on the Replicate NIC
-        if(is_leader() && (memcmp(NICID, s->nc.name) ==0)){
+        if(is_leader() && (memcmp(NICID, s->nc.name,3) ==0)){
             msg_handle(buf, size);
         }
         //else{
