@@ -25,7 +25,7 @@ void debugf(const char* format,...){
 void perrorf(const char* format,...){
 	int en = errno;
 	va_list args;
-	fprintf(stderr, "[DEBUG]: ");
+	fprintf(stderr, "[ERROR]: ");
 	va_start (args, format);
 	vfprintf(stderr, format, args);
 	va_end(args);

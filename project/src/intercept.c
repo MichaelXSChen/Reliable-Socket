@@ -185,6 +185,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     //TODO: Find what other options are necessary for the TCP connection. 
     ret = tcp_repair_on(*sk);
     if (ret != 0){
+        perrorf("1:%d", *sk);
         return ret;
     }
     
@@ -215,6 +216,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 
     ret = tcp_repair_on(*sk);
     if (ret != 0){
+        perror("2");
        return ret;
     }
     ret = set_tcp_queue_seq(*sk, TCP_RECV_QUEUE, recv_seq);

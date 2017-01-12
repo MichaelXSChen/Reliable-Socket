@@ -73,7 +73,7 @@ void create_connection(struct con_info_type *con_info){
 		perrorf("failed to send");
 	}
 	free(buffer);
-	close(sk_create);
+
 	return;
 
 }
