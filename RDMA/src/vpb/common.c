@@ -147,7 +147,7 @@ int recv_bytes(int sk, char** buf, int *length){
 
 
 	debugf("recv bytes with length: %d", *length);
-	return 0;
+	return *length;
 }
 
 
