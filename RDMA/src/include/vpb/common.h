@@ -41,7 +41,8 @@ struct con_id_type{
 
 struct con_info_type{
     struct con_id_type con_id;
-    uint32_t isn; 
+    uint32_t send_seq;
+    uint32_t recv_seq; 
 };
 
 

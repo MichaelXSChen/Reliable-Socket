@@ -42,7 +42,7 @@ int find_connection(con_list_entry **entry ,struct con_id_type *con){
 int insert_connection(con_list_entry* entry){
 	struct con_list_entry *tmp = NULL; 
 	find_connection(&tmp, &(entry->con_id));
-	debugf("trying to insert entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
+	debugf("trying to insert entry with src_ip=%"PRIu32", send_seq = %"PRIu32"", entry->con_id.src_ip, entry->send_seq);
 	
 
 	if (tmp == NULL){
@@ -52,7 +52,7 @@ int insert_connection(con_list_entry* entry){
 	else {
 		//TODO: How to do now;
 
-		debugf("conflict, isn = %"PRIu32"", tmp->isn);
+		debugf("conflict, send_seq = %"PRIu32"", tmp->send_seq);
 	}
 	return 0;
 }
@@ -68,7 +68,8 @@ int insert_connection_bytes(char* buf, int len){
 	}
 	con_list_entry entry;
 	entry.con_id = con_info.con_id;
-	entry.isn = con_info.isn;
+	entry.send_seq = con_info.send_seq;
+	entry.recv_seq = con_info.recv_seq;
 	ret = insert_connection(&entry);
 	if (ret <0){
 		perrorf("Failed to insert into hashmap");
@@ -131,7 +132,8 @@ void *serve(void *sk_arg){
 		debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
 		debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
-		debugf("ISN: %" PRIu32 "", con_info.isn);
+		debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
+		debugf("RECV_DEQ: %" PRIu32 "", con_info.recv_seq);
 
 		
 		if (is_leader()){
@@ -170,7 +172,7 @@ void *serve(void *sk_arg){
 				//TODO: improve this faster;
 				find_connection(&entry,&(con_info.con_id));
 			}
-			debugf("Match, isn = %"PRIu32"", entry->isn);
+			debugf("Match, send_seq = %"PRIu32"", entry->send_seq);
 			iamleader = 0;
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			if (ret < 0){
@@ -178,7 +180,8 @@ void *serve(void *sk_arg){
 				pthread_exit(0);
 			}
 
-			con_info.isn = entry->isn;
+			con_info.send_seq = entry->send_seq;
+			con_info.recv_seq = entry->recv_seq;
 			int len;
 			char* buf;
 			ret = con_info_serialize(&buf, &len, &con_info);
@@ -223,8 +226,8 @@ int con_manager_init(){
 	entry->con_id.src_ip = 16777343;
 	entry->con_id.dst_ip = 16777343;
 	entry->con_id.dst_port = htons(10060);
-	entry->isn = 931209;
-
+	entry->send_seq = 931209;
+	entry->recv_seq = 123456;
 	insert_connection(entry);
 
 
