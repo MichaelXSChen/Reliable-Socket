@@ -27,6 +27,7 @@
 
 int sk;
 
+int sk_to_guest;
 
 con_list_entry *con_list;
 
@@ -80,16 +81,12 @@ int insert_connection_bytes(char* buf, int len){
 int report_to_guest_manager(char* buf, int len){
 	struct sockaddr_in si;
 	int slen= sizeof(si);
-	sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sk < 0){
-		debugf("Failed to create sk");
-		return -1;
-	}
+	
 	memset(&si, 0, slen);
 	si.sin_family=AF_INET;
 	si.sin_port=htons(REPORT_PORT);
 	inet_aton(REPORT_SERVER, &si.sin_addr);
-	int send_len = sendto(sk, buf, len, 0, (struct sockaddr*)&si, slen);
+	int send_len = sendto(sk_to_guest, buf, len, 0, (struct sockaddr*)&si, slen);
 	debugf("Sent to guest manager with len: %d", send_len);
 	return len;
 
@@ -111,14 +108,14 @@ void *serve(void *sk_arg){
 			//TODO:exit??
 		}
 		uint8_t iamleader;
-	#ifdef ONE_NC_MODE
+		#ifdef ONE_NC_MODE
 		if (len == 1){
 			debugf("Check for leadership");
 			iamleader = (uint8_t) is_leader();
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
-			pthread_exit(0); 
+			continue;
 		}
-	#endif
+		#endif
 
 
 		struct con_info_type con_info;
@@ -143,10 +140,10 @@ void *serve(void *sk_arg){
 			tcpnewcon_handle((uint8_t *)buf,len); 
 
 			//
-		#ifdef ONE_NC_MODE
+			#ifdef ONE_NC_MODE
 			report_to_guest_manager(buf, len);
 
-		#endif
+			#endif
 
 			iamleader = 1;
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
@@ -189,11 +186,6 @@ void *serve(void *sk_arg){
 
 		}	
 
-
-
-
-		close(*sk);
-		pthread_exit(0);
 	}	
 }
 
@@ -230,8 +222,12 @@ int con_manager_init(){
 	insert_connection(entry);
 
 
-
-
+	sk_to_guest = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	debugf("socket to report to guest manager");
+	if (sk_to_guest < 0){
+		debugf("Failed to create sk");
+		return -1;
+	}
 
 
 
