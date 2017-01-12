@@ -31,6 +31,7 @@ void * serve_report(void * arg){
 	while(1)
 	{
 		recv_len = recvfrom(sk_udp, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
+		debugf("Report Port received packet of lenth %d", recv_len);
 		insert_connection_bytes(buf, recv_len);
 	}
 
@@ -63,6 +64,10 @@ void *serve_query(void *sk_arg){
 		if (ret < 0){
 			perror("Failed to recv bytes");
 			continue;
+		}
+		if (ret == 0){
+			close(*sk);
+			pthread_exit(0);
 		}
 		struct con_info_type con_info;
 		ret = con_info_deserialize(&con_info, buf, len);
@@ -173,15 +178,9 @@ int main(int argc, char *argv[]){
 	}
 
 
-
-
-
 	pthread_t report_thread;
 	int ret;
-
-
 	ret = pthread_create(&report_thread, NULL, serve_report, NULL);
-
 	if (ret != 0){
 		perror("Failed to create pthred");
 		exit(1);
@@ -232,7 +231,7 @@ int main(int argc, char *argv[]){
 
 	while(1){
 		struct sockaddr_in cliaddr;
-		socklen_t clilen;
+		socklen_t clilen=sizeof(cliladdr);
 		int ask = accept(sk, (struct sockaddr*)&cliaddr, &clilen);
 		if (ask < 0){
 			perror("Cannot accept new con");
