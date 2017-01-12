@@ -23,7 +23,7 @@ int find_connection(con_list_entry **entry ,struct con_id_type *con){
 int insert_connection(con_list_entry* entry){
 	struct con_list_entry *tmp = NULL; 
 	find_connection(&tmp, &(entry->con_id));
-	debugf("trying to insert entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
+	debugf("trying to insert entry with src_ip=%"PRIu32", send_seq = %"PRIu32"", entry->con_id.src_ip, entry->send_seq);
 	
 
 	if (tmp == NULL){
@@ -33,7 +33,7 @@ int insert_connection(con_list_entry* entry){
 	else {
 		//TODO: How to do now;
 
-		debugf("conflict, isn = %"PRIu32"", tmp->isn);
+		debugf("conflict, send_seq = %"PRIu32"", tmp->send_seq);
 	}
 	return 0;
 }
@@ -48,7 +48,8 @@ int insert_connection_bytes(char* buf, int len){
 	}
 	con_list_entry entry;
 	entry.con_id = con_info.con_id;
-	entry.isn = con_info.isn;
+	entry.send_seq = con_info.send_seq;
+	entry.recv_seq = con_info.recv_seq;
 	ret = insert_connection(&entry);
 	if (ret <0){
 		perrorf("Failed to insert into hashmap");
