@@ -14,8 +14,8 @@
 
 #include "include/common.h"
  
-#define CON_MGR_PORT 4321 
-#define CON_MGR_IP "10.22.1.3"
+#define CON_MGR_PORT 7777 
+#define CON_MGR_IP "127.0.0.1"
 
 typedef int (*orig_connect_func_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 typedef int (*orig_accpet_func_type)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
