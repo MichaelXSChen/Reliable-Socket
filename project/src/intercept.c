@@ -305,6 +305,30 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 // }
 
 
+int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
+    char *buf;
+    int ret,len;
+    ret = con_info_serialize(&buf, &len, con_info);
+    if (ret < 0){
+        perror("Failed to serialize connection info");
+        return -1;
+    }
+    
+    ret = send_bytes(sk_tomgr, buf, len);
+    if (ret < 0){
+        perror("Failed to send con_info");
+        return -1;
+    }
+    //No need after the change of code logic.  
+    //Keep it As an ack of consensus made. 
+    uint8_t success; 
+    ret = recv(sk_tomgr, &success, sizeof(success), 0);
+    debugf("Successfully asked for consensus");
+    free(buf);
+    return 0;
+}
+
+
 
 int handle_con_info(int orig_sk, struct con_info_type **con_info, uint8_t *is_leader){
     
@@ -397,47 +421,103 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     orig_accpet_func_type orig_accept_func; 
     orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
     int sk; 
+    
     sk = orig_accept_func(sockfd, addr, addrlen);
     debugf("System accept returned sk = %d", sk);
     uint32_t seq=0; 
    
-    ret = tcp_repair_on(sk);
-    if (ret < 0){
-        perrorf("Failed turn on");
-    }
+    //Check whether it is leader
 
-    ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
-    if (ret < 0){
-        perrorf("Failed to get tcp_seq");
+    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_tomgr < 0) {
+        perror("Can't create socket");
         return -1;
     }
-
-    ret = tcp_repair_off(sk);
-    if (ret < 0){
-        perrorf("Failed turn off");
-    }
-
-
-
-    struct con_info_type *con_info;
-    con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
-   
-    get_tcp_con_id(sk, con_info);
-    con_info->isn = seq;
-
-    uint8_t is_leader;
-    ret = handle_con_info(sk, &con_info, &is_leader);
-    if (ret < 0){
-        perrorf("Failed to send con_info");
+    struct sockaddr_in srvaddr;
+    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    memset(&srvaddr, 0, sizeof(srvaddr));
+    srvaddr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
         return -1;
     }
+    srvaddr.sin_port = htons(CON_MGR_PORT);
 
-    if (is_leader == 1){
-        debugf("I am the leader");
-    }else{
-        debugf("I am not leader, connection will be replcaed according to the con_info");
+    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+    uint8_t iamleader = 0;
+    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
+    char *buffer;
+    int recv_len; 
+    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
+    if (recv_len != 1){
+        perrorf("Failed to check for leadership, recv with len %d", recv_len);
+        return -1;
+    }
+    iamleader = (uint8_t) buffer[0];
+    free(buffer);
+
+
+    if(iamleader == 1){
+        // Ask for consensus
+        ret = tcp_repair_on(sk);
+        if (ret < 0){
+            perrorf("Failed turn on");
+        }
+        ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+        ret = tcp_repair_off(sk);
+        if (ret < 0){
+            perrorf("Failed turn off");
+        }
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+       
+        get_tcp_con_id(sk, con_info);
+        con_info->isn = seq;
+
+        ret = ask_for_consensus(sk_tomgr, con_info);
+        if (ret < 0){
+            perrorf("Failed to ask for consensus");
+        }
+    }
+    else{
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
+        char *in_buf;
+        int len;  
+        recv_bytes(sk, &in_buf, &len);
+        ret = con_info_deserialize(con_info, in_buf, len);
+        if (ret < 0){
+            perrorf("Failed to deserialize");
+        }
         ret =replace_tcp(&sk, con_info);
+        if (ret < 0){
+            perrorf("Failed to replace tcp");
+        }
+
     }
+
+    // uint8_t is_leader;
+    // ret = handle_con_info(sk, &con_info, &is_leader);
+    // if (ret < 0){
+    //     perrorf("Failed to send con_info");
+    //     return -1;
+    // }
+
+    // if (is_leader == 1){
+    //     debugf("I am the leader");
+    // }else{
+    //     debugf("I am not leader, connection will be replcaed according to the con_info");
+    //     ret =replace_tcp(&sk, con_info);
+    // }
 
     
     debugf("Before retrun accept");
