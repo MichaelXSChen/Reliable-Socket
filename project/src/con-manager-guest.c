@@ -260,13 +260,13 @@ int main(int argc, char *argv[]){
 
 	
 
-	struct con_info_type *con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
-	con_info->con_id.src_port = htons(9999);
-	con_info->con_id.dst_port = htons(10060);
-	con_info->con_id.dst_ip = 16777343;
-	con_info->con_id.dst_ip = 16777343;
-	con_info->send_seq = 931209;
-	con_info->recv_seq = 123456;
+	// struct con_info_type *con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
+	// con_info->con_id.src_port = htons(9999);
+	// con_info->con_id.dst_port = htons(10060);
+	// con_info->con_id.dst_ip = 16777343;
+	// con_info->con_id.dst_ip = 16777343;
+	// con_info->send_seq = 931209;
+	// con_info->recv_seq = 123456;
 
 
 
@@ -300,9 +300,9 @@ int main(int argc, char *argv[]){
 		perror("Failed to put sock into listen state");
 		return -1;
 	}
-	pthread_t thread;
+	// pthread_t thread;
 
-	create_connection(con_info);
+	// create_connection(con_info);
 
 
 	while(1){
