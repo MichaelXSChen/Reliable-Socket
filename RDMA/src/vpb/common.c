@@ -136,6 +136,8 @@ int recv_bytes(int sk, char** buf, int *length){
 			perrorf("Error recving request");
 			return -1;
 		}
+		if (ret == 0)
+			return 0;
 		else{
 			data += ret;
 			left -= ret;

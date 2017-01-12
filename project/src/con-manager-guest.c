@@ -21,32 +21,16 @@
 int iamleader;
 
 int skout; 
-
+int sk_udp;
 
 void * serve_report(void * arg){
-	int sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sk <= 0){
-		perror("Failed to create socket");
-		exit(1);
-	}
-	struct sockaddr_in si_me;
-	memset(&si_me, 0, sizeof(si_me));
-
-	si_me.sin_family = AF_INET;
-	si_me.sin_port = htons(REPORT_PORT);
-	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	if (bind (sk, (struct sockaddr*)&si_me, sizeof(si_me)) == -1){
-		perror("Failed to bind to address");
-		exit(1);
-	}
 	int recv_len;
 	char buf[BUFLEN];
 	struct sockaddr_in si_other;
 	int fromlen = sizeof(si_other);
 	while(1)
 	{
-		recv_len = recvfrom(sk, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
+		recv_len = recvfrom(sk_udp, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
 		insert_connection_bytes(buf, recv_len);
 	}
 
@@ -168,6 +152,27 @@ int check_for_leadership(){
 int main(int argc, char *argv[]){
 	init_con_hashmap();
 	iamleader = check_for_leadership();
+
+	
+	//Wait for consensused input
+	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sk_udp <= 0){
+		perror("Failed to create socket");
+		exit(1);
+	}
+	struct sockaddr_in si_me;
+	memset(&si_me, 0, sizeof(si_me));
+
+	si_me.sin_family = AF_INET;
+	si_me.sin_port = htons(REPORT_PORT);
+	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if (bind (sk_udp, (struct sockaddr*)&si_me, sizeof(si_me)) == -1){
+		perror("Failed to bind to address");
+		exit(1);
+	}
+
+
 
 
 

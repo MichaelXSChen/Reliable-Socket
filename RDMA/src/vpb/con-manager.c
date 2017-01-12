@@ -107,6 +107,11 @@ void *serve(void *sk_arg){
 			perror("Failed to recv bytes");
 			//TODO:exit??
 		}
+		if (ret == 0){
+			close(*sk);
+			pthread_exit(0);
+		}
+
 		uint8_t iamleader;
 		#ifdef ONE_NC_MODE
 		if (len == 1){
@@ -136,10 +141,11 @@ void *serve(void *sk_arg){
 			Consensus
 			**/
 
-
+			#ifndef ONE_NC_MODE
 			tcpnewcon_handle((uint8_t *)buf,len); 
-
+			#endif
 			//
+			
 			#ifdef ONE_NC_MODE
 			report_to_guest_manager(buf, len);
 
