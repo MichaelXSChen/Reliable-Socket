@@ -459,16 +459,26 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 // }
 
 
-// int socket(int domain, int type, int protocol){
-//     printf("socket func called:");
-//     orig_socket_func_type orig_socket;
-//     orig_socket = (orig_socket_func_type) dlsym(RTLD_NEXT,"socket");
-//     int sk =  orig_socket(domain, type, protocol);
+int socket(int domain, int type, int protocol){
+    printf("socket func called:");
+    orig_socket_func_type orig_socket;
+    orig_socket = (orig_socket_func_type) dlsym(RTLD_NEXT,"socket");
+    int sk =  orig_socket(domain, type, protocol);
+    int aux, ret;
+    aux = 1;
+    ret = setsockopt(sk, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
+    if (ret < 0){
+        perror("failed to setup reuse");
+        return -1;
+    }
+    ret = setsockopt(sk, SOL_SOCKET, SO_REUSEPORT, &aux, sizeof(aux));
+    if (ret < 0){
+        perror("failed to setup reuse");
+        return -1;
+    }
+
     
+    return sk;
 
-//     printf("sk: %d\n", sk);
-//     fflush(stdout);
-//     return sk;
-
-// }
+}
 
