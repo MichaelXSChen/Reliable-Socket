@@ -177,7 +177,7 @@ int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
 
 
 
-int replace_tcp (int *sk, uint32_t seq){
+int replace_tcp (int *sk, struct con_info_type *con_info){
     int ret, aux; 
     struct sockaddr_in localaddr, remoteaddr;
     int len=sizeof(localaddr);
@@ -188,16 +188,18 @@ int replace_tcp (int *sk, uint32_t seq){
         return ret;
     }
     
-    ret = getpeername(*sk, (struct sockaddr*)&remoteaddr, &len);
-    if (ret != 0){
-        perrorf("Failed to get addr for sk: %d", sk);
-        return -1;
-    }
+
     ret = getsockname(*sk, (struct sockaddr*)&localaddr, &len);
     if (ret != 0){
         perrorf("Failed to get addr for sk: %d", sk);
         return -1;
     }
+
+    memset(&remoteaddr, 0, sizeof(remoteaddr));
+    remoteaddr.sin_family = AF_INET;
+    remoteaddr.sin_port = con_info->con_id.dst_port;
+    remoteaddr.sin_addr.s_addr = con_info->con_id.dst_ip; 
+
 
 
     uint32_t recv_seq;
@@ -221,7 +223,7 @@ int replace_tcp (int *sk, uint32_t seq){
         return -1;
     }
 
-    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, seq);
+    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, con_info->isn);
     if (ret != 0) {
         perror("Failed to set send queue seq");
         return -1;
@@ -246,11 +248,11 @@ int replace_tcp (int *sk, uint32_t seq){
     }
 
     if (connect(*sk, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
-        perror("Cannot connect the inet socket back");
+        perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
         return -1;
     }
 
-
+    debugf("Backup created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
     tcp_repair_off(*sk);
  
     return 0;
@@ -304,23 +306,11 @@ int replace_tcp (int *sk, uint32_t seq){
 
 
 
-int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
+int handle_con_info(int orig_sk, struct con_info_type **con_info, uint8_t *is_leader){
     
     int ret; 
-    //Send the packet
-    //If it is the leader, it will be consensusd
-    //If it is a follower, it will get the ISN to apply locally.
-    char *buf;
-    int len;
-    ret = con_info_serialize(&buf, &len, *con_info);
 
-
-    printf("\n");
-
-    if (ret < 0){
-        perror("Failed to serialize connection info");
-        return -1;
-    }
+    //Connect to mgr
     int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sk < 0) {
         perror("Can't create socket");
@@ -344,42 +334,56 @@ int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
         return -1;
     }
 
-    ret = send_bytes(sk, buf, len);
-
-    if (ret < 0){
-        perror("Failed to send con_info");
+    //check whether it is leader
+    uint8_t iamleader = 0;
+    ret = send_bytes(sk, (char*)&iamleader, 1);
+    char *buffer;
+    int len; 
+    ret = recv_bytes(sk, &buffer, &len);
+    if (len != 1){
+        perrorf("Failed to check for leadership, recv with len %d", len);
         return -1;
     }
-
-    ret = recv(sk, is_leader, sizeof(*is_leader), 0);
-    debugf("Is leader:%"PRIu8"", is_leader);
-    if(*is_leader == 1){
-        return 0;
-    }else{
+    iamleader = (uint8_t) buffer[0];
+    free(buffer);
+    if (iamleader == 1){
+        //Send for consensus
         char *buf;
-        int ret, len;
-        ret = recv_bytes(sk, &buf, &len);
+        ret = con_info_serialize(&buf, &len, *con_info);
+
         if (ret < 0){
-            perrorf("failed to recv bytes");
+            perror("Failed to serialize connection info");
             return -1;
         }
-
-        //TODO: Check the correction of incoming data. 
-        free(*con_info);
-        ret = con_info_deserialize(*con_info, buf, len);
-        debugf("Serailize succeed, new isn= %"PRIu32"",(*con_info)->isn);
-    
+        
+        ret = send_bytes(sk, buf, len);
+        if (ret < 0){
+            perror("Failed to send con_info");
+            return -1;
+        }
+        //No need after the change of code logic.  
+        //Keep it As an ack of consensus made. 
+        ret = recv(sk, is_leader, sizeof(*is_leader), 0);
+        debugf("Is leader:%"PRIu8"", *is_leader);
+        free(buf);
         return 0;
     }
+    else{
+        //Tell the calller that it is a follower, 
+        //The con is constructed by the mgr. 
+        free(*con_info);
+        *con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
+        char *in_buf;
+        int len;  
+        recv_bytes(orig_sk, &in_buf, &len);
+        ret = con_info_deserialize(*con_info, in_buf, len);
 
-
-
-    
-    return 0;
-
-    //recv return value from con -manager
-
+        *is_leader = 0;
+        return 0;
+    }
 }
+
+
 
 
 
@@ -419,17 +423,10 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
    
     get_tcp_con_id(sk, con_info);
-    // //struct con_id_type con_id;
-    // con_info->con_id.src_ip = 12345;
-    // con_info->con_id.src_port = 1122;
-    // con_info->con_id.dst_ip = 67890;
-    // con_info->con_id.dst_port = 2211;
-    // //struct con_info_type con_info;
-    //con_info.con_id = con_id;
     con_info->isn = seq;
 
     uint8_t is_leader;
-    ret = handle_con_info(&con_info, &is_leader);
+    ret = handle_con_info(sk, &con_info, &is_leader);
     if (ret < 0){
         perrorf("Failed to send con_info");
         return -1;
@@ -438,10 +435,11 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     if (is_leader == 1){
         debugf("I am the leader");
     }else{
-        debugf("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
+        debugf("I am not leader, connection will be replcaed according to the con_info");
+        ret =replace_tcp(&sk, con_info);
     }
 
-    ret =replace_tcp(&sk, con_info->isn);
+    
     debugf("Before retrun accept");
     return sk; 
 }

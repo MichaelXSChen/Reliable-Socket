@@ -18,10 +18,66 @@
 #define CON_MGR_IP "10.22.1.5"
 #define CON_MGR_PORT 4321
 
+
+
 int iamleader;
 
 int skout; 
 int sk_udp;
+int sk_create;
+
+
+void create_connection(struct con_info_type *con_info){
+	int ret;
+
+	//insert into hashmap first 
+	con_list_entry entry;
+	entry.con_id = con_info->con_id;
+	entry.isn = con_info->isn;
+	
+
+	// ret = insert_connection(&entry);
+	// if (ret <0){
+	// 	perrorf("Failed to insert into hashmap");
+	// 	pthread_exit(0);
+	// }
+	
+	//create connection;
+	sk_create = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sk_create < 0){
+		perror("Can not create socket");
+		close(sk_create);
+		pthread_exit(0);
+	}
+	debugf("SK created for creating connection: sk_create = %d", sk_create);
+
+	struct sockaddr_in addr; 
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = con_info->con_id.src_ip;
+	addr.sin_port = con_info->con_id.src_port;
+
+	debugf("Creating connection to address %s:%d", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+	ret = connect(sk_create, (struct sockaddr *)&addr, sizeof(addr));
+	if (ret <0){
+		perror("Can not connect");
+		close(sk_create);
+		pthread_exit(0);
+	}
+	int len;
+	char* buffer;
+	con_info_serialize(&buffer, &len, con_info);
+
+	ret = send_bytes(sk_create, buffer, len);
+	if (ret < 0){
+		perrorf("failed to send");
+	}
+	free(buffer);
+	close(sk_create);
+	return;
+
+}
+
 
 void * serve_report(void * arg){
 	int recv_len;
@@ -31,11 +87,23 @@ void * serve_report(void * arg){
 	while(1)
 	{
 		recv_len = recvfrom(sk_udp, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
+		if (recv_len != CON_INFO_SERIAL_LEN){
+			continue;
+		}
+
 		debugf("Report Port received packet of lenth %d", recv_len);
-		insert_connection_bytes(buf, recv_len);
+		struct con_info_type *con_info;
+		con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
+		con_info_deserialize(con_info, buf, recv_len);
+		pthread_t thread;
+		create_connection(con_info);
+		//insert_connection_bytes(buf, recv_len);
 	}
 
 }
+
+
+
 
 
 int send_for_consensus(struct con_info_type *con_info){
@@ -55,20 +123,28 @@ int send_for_consensus(struct con_info_type *con_info){
 
 
 void *serve_query(void *sk_arg){
-	int *sk = (int *) sk_arg;
-	//debugf("sk: %d", *sk);
+	int sk = *((int *) sk_arg);
+	debugf("SK serving query: %d", sk);
 	while(1){
 		char *buf;
 		int ret, len;
-		ret = recv_bytes(*sk, &buf, &len);
+		ret = recv_bytes(sk, &buf, &len);
 		if (ret < 0){
 			perror("Failed to recv bytes");
 			continue;
 		}
 		if (ret == 0){
-			close(*sk);
+			close(sk);
 			pthread_exit(0);
 		}
+		if (len == 1){
+			ret = send_bytes(sk, (char*)&iamleader, 1);
+			// close(*sk);
+			// pthread_exit(0);
+			continue;
+		}
+
+
 		struct con_info_type con_info;
 		ret = con_info_deserialize(&con_info, buf, len);
 		
@@ -80,35 +156,37 @@ void *serve_query(void *sk_arg){
 		debugf("ISN: %" PRIu32 "", con_info.isn);
 
 		if(iamleader == 1){
-			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			send_for_consensus(&con_info);
-		}
+			ret = send(sk, &iamleader, sizeof(iamleader), 0);
+			// close(*sk);
+			// pthread_exit(0);
+			continue;
 
+		}
 		else{
 
-			con_list_entry *entry=NULL; 
-			find_connection(&entry,&(con_info.con_id));
-			while(entry == NULL){
-				debugf("NO match, try again");
-				sleep(1);
-				//TODO: improve this faster;
-				find_connection(&entry,&(con_info.con_id));
-			}
-			debugf("Match, isn = %"PRIu32"", entry->isn);
+			// con_list_entry *entry=NULL; 
+			// find_connection(&entry,&(con_info.con_id));
+			// while(entry == NULL){
+			// 	debugf("NO match, try again");
+			// 	sleep(1);
+			// 	//TODO: improve this faster;
+			// 	find_connection(&entry,&(con_info.con_id));
+			// }
+			// debugf("Match, isn = %"PRIu32"", entry->isn);
 			
 
-			con_info.isn = entry->isn;
+			// con_info.isn = entry->isn;
 
-			char* buffer;
-			ret = con_info_serialize(&buffer, &len, &con_info);
+			// char* buffer;
+			// ret = con_info_serialize(&buffer, &len, &con_info);
 
-			ret = send_bytes(*sk, buffer, len);
+			// ret = send_bytes(*sk, buffer, len);
 
-		    if (ret < 0)
-		        perror("Failed to send con_info");
+		 //    if (ret < 0)
+		 //        perror("Failed to send con_info");
 
-			close(*sk);
-			pthread_exit(0);
+			continue;
 		}
 	}	
 }
@@ -156,11 +234,12 @@ int check_for_leadership(){
 
 int main(int argc, char *argv[]){
 	init_con_hashmap();
-	iamleader = check_for_leadership();
-
+	//iamleader = check_for_leadership();
+	iamleader = 0;
 	
 	//Wait for consensused input
 	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	debugf("[SK-UDP] %d",sk_udp);
 	if (sk_udp <= 0){
 		perror("Failed to create socket");
 		exit(1);
@@ -188,20 +267,33 @@ int main(int argc, char *argv[]){
 
 
 	//DEBUG
-	con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
-	entry->con_id.src_port = htons(9999);
-	entry->con_id.src_ip = 16777343;
-	entry->con_id.dst_ip = 16777343;
-	entry->con_id.dst_port = htons(10060);
-	entry->isn = 931209;
-
-	insert_connection(entry);
-
+	// con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
+	// entry->con_id.src_port = htons(9999);
+	// entry->con_id.src_ip = 16777343;
+	// entry->con_id.dst_ip = 16777343;
+	// entry->con_id.dst_port = htons(10060);
+	// entry->isn = 931209;
+	// insert_connection(entry);
 
 
 
-	int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sk < 0){
+
+	
+
+	struct con_info_type *con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
+	con_info->con_id.src_port = htons(9999);
+	con_info->con_id.dst_port = htons(10060);
+	con_info->con_id.dst_ip = 16777343;
+	con_info->con_id.dst_ip = 16777343;
+	con_info->isn = 931209;
+	
+
+
+
+
+	int sk_listen = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	debugf("Listening sk:%d", sk_listen);
+	if (sk_listen < 0){
 		perror("Cannot create the socket");
 		return -1;
 	}
@@ -217,31 +309,39 @@ int main(int argc, char *argv[]){
 
 	debugf("binding to port: %d", QUERY_PORT);
 
-	ret = bind(sk, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
+	ret = bind(sk_listen, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
 	if (ret < 0){
 		perror("Cannot bind to sk");
 		return -1;
 	}
 
-	ret = listen(sk, 16);
+	ret = listen(sk_listen, 16);
 	if (ret < 0){
 		perror("Failed to put sock into listen state");
 		return -1;
 	}
+	pthread_t thread;
+
+	create_connection(con_info);
+
 
 	while(1){
 		struct sockaddr_in cliaddr;
 		socklen_t clilen=sizeof(cliaddr);
-		int ask = accept(sk, (struct sockaddr*)&cliaddr, &clilen);
+		int ask = accept(sk_listen, (struct sockaddr*)&cliaddr, &clilen);
 		if (ask < 0){
 			perror("Cannot accept new con");
 		}
 		pthread_t thread1;
 		ret = pthread_create(&thread1, NULL, &serve_query, (void *)&ask);
 		if (ret < 0){
-			pthread_exit(0);
+			perror("Faild to create");
+			return 0;
 		}
 	}
+
+
+
 }
 
 

@@ -6,6 +6,8 @@
 
 #define DEBUG_ON 1 
 
+#define CON_INFO_SERIAL_LEN 36
+
 void debugf(const char* format,...);
 
 
