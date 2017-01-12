@@ -231,7 +231,7 @@ int main(int argc, char *argv[]){
 
 	while(1){
 		struct sockaddr_in cliaddr;
-		socklen_t clilen=sizeof(cliladdr);
+		socklen_t clilen=sizeof(cliaddr);
 		int ask = accept(sk, (struct sockaddr*)&cliaddr, &clilen);
 		if (ask < 0){
 			perror("Cannot accept new con");
