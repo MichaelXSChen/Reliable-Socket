@@ -216,7 +216,7 @@ int check_for_leadership(){
 int main(int argc, char *argv[]){
 	init_con_hashmap();
 	iamleader = check_for_leadership();
-	iamleader = 0;
+	iamleader = 1;
 	
 	//Wait for consensused input
 	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
