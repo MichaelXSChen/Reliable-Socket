@@ -15,7 +15,10 @@
 #define REPORT_PORT 6666
 #define QUERY_PORT 7777
 #define BUFLEN 512
+#define CON_MGR_IP "10.22.1.5"
+#define CON_MGR_PORT 4321
 
+int iamleader;
 
 void * serve_report(void * arg){
 	int sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -47,8 +50,45 @@ void * serve_report(void * arg){
 }
 
 
+int send_for_consensus(struct con_info_type *con_info){
+	int ret;
+	int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    addr.sin_port = htons(CON_MGR_PORT);
 
-void *serve(void *sk_arg){
+    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+
+    int len; 
+    char* buffer;
+	ret = con_info_serialize(&buffer, &len, con_info);
+
+	ret = send_bytes(sk, buffer, len);
+	if (ret < 0) {
+        perror("Send for consensus failed");
+        return -1;
+    }
+    close(sk);
+	return 0;
+}
+
+
+
+void *serve_query(void *sk_arg){
 	int *sk = (int *) sk_arg;
 	//debugf("sk: %d", *sk);
 	while(1){
@@ -69,43 +109,87 @@ void *serve(void *sk_arg){
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		debugf("ISN: %" PRIu32 "", con_info.isn);
 
-		
-
-		con_list_entry *entry=NULL; 
-		find_connection(&entry,&(con_info.con_id));
-		while(entry == NULL){
-			debugf("NO match, try again");
-			sleep(1);
-			//TODO: improve this faster;
-			find_connection(&entry,&(con_info.con_id));
+		if(iamleader){
+			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
+			send_for_consensus(&con_info);
 		}
-		debugf("Match, isn = %"PRIu32"", entry->isn);
-		int iamleader = 0;
-		ret = send(*sk, &iamleader, sizeof(iamleader), 0);
-		if (ret < 0){
-			printf("Failed to send reply back");
+
+		else{
+
+			con_list_entry *entry=NULL; 
+			find_connection(&entry,&(con_info.con_id));
+			while(entry == NULL){
+				debugf("NO match, try again");
+				sleep(1);
+				//TODO: improve this faster;
+				find_connection(&entry,&(con_info.con_id));
+			}
+			debugf("Match, isn = %"PRIu32"", entry->isn);
+			
+
+			con_info.isn = entry->isn;
+
+			char* buffer;
+			ret = con_info_serialize(&buffer, &len, &con_info);
+
+			ret = send_bytes(*sk, buffer, len);
+
+		    if (ret < 0)
+		        perror("Failed to send con_info");
+
+			close(*sk);
 			pthread_exit(0);
 		}
-
-		con_info.isn = entry->isn;
-
-		char* buffer;
-		ret = con_info_serialize(&buffer, &len, &con_info);
-
-		ret = send_bytes(*sk, buffer, len);
-
-	    if (ret < 0)
-	        perror("Failed to send con_info");
-
-		close(*sk);
-		pthread_exit(0);
 	}	
+}
+
+
+int check_for_leadership(){
+	int ret;
+	int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    addr.sin_port = htons(CON_MGR_PORT);
+
+    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return 0;
+    }
+
+    uint8_t iamleader = 0;
+
+    ret = send_bytes(sk, &iamleader, 1);
+    if (ret < 0){
+    	return 0;
+    }
+    ret = recv(sk, &iamleader, sizeof(iamleader), 0);
+    if (ret < 0){
+    	perror("Faield to recv response!");
+    	return -1;
+    }
+    debugf("I am leader? %"PRIu8"", iamleader);
+    return iamleader;
 }
 
 
 
 int main(int argc, char *argv[]){
 	init_con_hashmap();
+	iamleader = check_for_leadership();
+
+
+
 	pthread_t report_thread;
 	int ret;
 
@@ -168,7 +252,7 @@ int main(int argc, char *argv[]){
 			perror("Cannot accept new con");
 		}
 		pthread_t thread1;
-		ret = pthread_create(&thread1, NULL, &serve, (void *)&ask);
+		ret = pthread_create(&thread1, NULL, &serve_query, (void *)&ask);
 		if (ret < 0){
 			pthread_exit(0);
 		}

@@ -110,6 +110,17 @@ void *serve(void *sk_arg){
 			perror("Failed to recv bytes");
 			//TODO:exit??
 		}
+		uint8_t iamleader;
+	#ifdef ONE_NC_MODE
+		if (len == 1){
+			debugf("Check for leadership");
+			iamleader = (uint8_t) is_leader();
+			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
+			pthread_exit(0); 
+		}
+	#endif
+
+
 		struct con_info_type con_info;
 		ret = con_info_deserialize(&con_info, buf, len);
 		
@@ -120,7 +131,7 @@ void *serve(void *sk_arg){
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		debugf("ISN: %" PRIu32 "", con_info.isn);
 
-		uint8_t iamleader;
+		
 		if (is_leader()){
 			//TODO: Cleaner
 
