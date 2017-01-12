@@ -95,10 +95,12 @@ void * serve_report(void * arg){
 		}
 
 		debugf("Report Port received packet of lenth %d", recv_len);
-		struct con_info_type *con_info;
-		con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
-		con_info_deserialize(con_info, buf, recv_len);
-		create_connection(con_info);
+		if (iamleader == 0){
+			struct con_info_type *con_info;
+			con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
+			con_info_deserialize(con_info, buf, recv_len);
+			create_connection(con_info);
+		}
 		//insert_connection_bytes(buf, recv_len);
 	}
 
