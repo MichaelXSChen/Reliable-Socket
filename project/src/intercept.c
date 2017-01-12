@@ -13,7 +13,6 @@
 #include <stdlib.h>
 
 #include "include/common.h"
-#include "include/util.h"
  
 #define CON_MGR_PORT 4321 
 #define CON_MGR_IP "10.22.1.3"
@@ -329,7 +328,7 @@ int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
     }
     
     struct sockaddr_in addr;
-    debug("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
@@ -353,7 +352,7 @@ int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
     }
 
     ret = recv(sk, is_leader, sizeof(*is_leader), 0);
-    debug("Is leader:%"PRIu8"", is_leader);
+    debugf("Is leader:%"PRIu8"", is_leader);
     if(*is_leader == 1){
         return 0;
     }else{
@@ -368,7 +367,7 @@ int handle_con_info(struct con_info_type **con_info, uint8_t *is_leader){
         //TODO: Check the correction of incoming data. 
         free(*con_info);
         ret = con_info_deserialize(*con_info, buf, len);
-        debug("Serailize succeed, new isn= %"PRIu32"",(*con_info)->isn);
+        debugf("Serailize succeed, new isn= %"PRIu32"",(*con_info)->isn);
     
         return 0;
     }
@@ -395,7 +394,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
     int sk; 
     sk = orig_accept_func(sockfd, addr, addrlen);
-    debug("System accept returned sk = %d", sk);
+    debugf("System accept returned sk = %d", sk);
     uint32_t seq=0; 
    
     ret = tcp_repair_on(sk);
@@ -437,13 +436,13 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     }
 
     if (is_leader == 1){
-        debug("I am the leader");
+        debugf("I am the leader");
     }else{
-        debug("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
+        debugf("I am not leader, isn will be set to :%"PRIu32"", con_info->isn);
     }
 
     ret =replace_tcp(&sk, con_info->isn);
-    debug("Before retrun accept");
+    debugf("Before retrun accept");
     return sk; 
 }
 

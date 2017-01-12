@@ -14,7 +14,6 @@
 
 #include "include/common.h"
 #include "include/tpl.h"
-#include "include/util.h"
 //#include <signal.h>
 
 
@@ -73,12 +72,12 @@ int monitor() {
 		//Exited by return or exit
 		int exstat = WEXITSTATUS(status);
 		//TODO: what to do here??
-		debug("Process %d exit with exit value: %d", (int)pid, exstat);
+		debugf("Process %d exit with exit value: %d", (int)pid, exstat);
 	}
 	else if (WIFSIGNALED(status)){
 		int sig = WTERMSIG(status);
 		//TODO: what to do here??
-		debug("Process %d exit because of signal: %s", (int)pid, strsignal(sig));
+		debugf("Process %d exit because of signal: %s", (int)pid, strsignal(sig));
 	}
 }
 
@@ -95,10 +94,10 @@ int serve_conn(int sk){
 			return -1;
 		}
 		else{
-			debug("length %d", length);
+			debugf("length %d", length);
 
-			//debug("strlen: %d", strlen(buf));
-			debug("str: %s", buf);
+			//debugf("strlen: %d", strlen(buf));
+			debugf("str: %s", buf);
 		}
 	}
 
@@ -122,7 +121,7 @@ int guard_listen(int port) {
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(port);
 
-	debug("Bingd to port %d", port);
+	debugf("Bingd to port %d", port);
 	ret = bind(sk, (struct sockaddr*)&addr, sizeof(addr));
 	if (ret < 0){
 		perror("[ERROR]: Cannot bind to socket");
@@ -133,7 +132,7 @@ int guard_listen(int port) {
 		perror("Cannot put socket to listen state");
 		return ret;
 	}
-	debug("Wating for connections");
+	debugf("Wating for connections");
 
 
 	int ask, pid; 
@@ -175,17 +174,17 @@ int main(int argc, char *argv){
 	struct arg_command cmd, cmd2;
 	cmd.argc = 6;
 	cmd.argv = array;
-	//debug("%s", cmd.argv[2]);
+	//debugf("%s", cmd.argv[2]);
 	char* buf;
 	int len;
 	arg_command_serialize(&buf,&len, &cmd);
-	debug("Len: %d", len);
+	debugf("Len: %d", len);
 	
 	arg_command_deserialize(&cmd2, buf, len);
-	debug("argc:%d", cmd2.argc);
+	debugf("argc:%d", cmd2.argc);
 	int i = 0;
 	for (i =0; i< cmd2.argc; i++){
-		debug("cmd:%s", cmd2.argv[i]);
+		debugf("cmd:%s", cmd2.argv[i]);
 	}
 	//This make the process a deamon program/
 	/*

@@ -1,6 +1,5 @@
 #include "include/common.h"
 #include "include/uthash.h"
-#include "include/util.h"
 #include "include/con-manager.h"
 #include <pthread.h>
 #include <stdint.h>
@@ -21,7 +20,7 @@ con_list_entry *con_list;
 
 
 int find_connection(con_list_entry **entry ,struct con_id_type *con){
-	//debug("Finding entry with src_ip:%" PRIu32", src_port:%"PRIu16", dst_ip:%"PRIu32", dst_port:%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
+	//debugf("Finding entry with src_ip:%" PRIu32", src_port:%"PRIu16", dst_ip:%"PRIu32", dst_port:%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
 	HASH_FIND(hh, con_list, con, sizeof(struct con_id_type), *entry);
 	return 0;
 }
@@ -31,13 +30,13 @@ int insert_connection(con_list_entry* entry){
 	find_connection(&tmp, &(entry->con_id));
 	if (tmp == NULL){
 		HASH_ADD(hh, con_list, con_id, sizeof(struct con_id_type), entry);
-	//	debug("adding entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
-	//	debug("\n\n Size of Hashtable: %d", HASH_COUNT(con_list));
+	//	debugf("adding entry with src_ip=%"PRIu32", isn = %"PRIu32"", entry->con_id.src_ip, entry->isn);
+	//	debugf("\n\n Size of Hashtable: %d", HASH_COUNT(con_list));
 	}
 	else {
 		//TODO: How to do now;
 
-		debug("conflict, isn = %"PRIu32"", tmp->isn);
+		debugf("conflict, isn = %"PRIu32"", tmp->isn);
 	}
 	return 0;
 }
@@ -59,7 +58,7 @@ int handle_con_info(){
 
 void *serve(void *sk_arg){
 	int *sk = (int *) sk_arg;
-	debug("sk: %d", *sk);
+	debugf("sk: %d", *sk);
 	while(1){
 		char *buf;
 		int ret, len;
@@ -72,11 +71,11 @@ void *serve(void *sk_arg){
 		ret = con_info_deserialize(&con_info, buf, len);
 		
 
-		debug("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
-		debug("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
-		debug("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
-		debug("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
-		debug("ISN: %" PRIu32 "", con_info.isn);
+		debugf("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
+		debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
+		debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
+		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
+		debugf("ISN: %" PRIu32 "", con_info.isn);
 
 		uint8_t is_leader;
 		if (iamleader()){
@@ -99,11 +98,11 @@ void *serve(void *sk_arg){
 			con_list_entry *entry=NULL; 
 			find_connection(&entry,&(con_info.con_id));
 			while(entry == NULL){
-				debug("NO match, try again");
+				debugf("NO match, try again");
 				sleep(1);
 				find_connection(&entry,&(con_info.con_id));
 			}
-			debug("Match, isn = %"PRIu32"", entry->isn);
+			debugf("Match, isn = %"PRIu32"", entry->isn);
 			is_leader = 0;
 			ret = send(*sk, &is_leader, sizeof(is_leader), 0);
 			if (ret < 0){
@@ -171,7 +170,7 @@ int con_manager_init(){
 	srvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	srvaddr.sin_port = htons(SERVICE_PORT); 
 
-	debug("binding to port: %d", SERVICE_PORT);
+	debugf("binding to port: %d", SERVICE_PORT);
 
 	ret = bind(sk, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
 	if (ret < 0){

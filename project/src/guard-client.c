@@ -14,7 +14,6 @@
 
 
 #include "include/common.h"
-#include "include/util.h"
 
 
 
@@ -28,7 +27,7 @@ int guard_client(char* ip, int port){
         return -1;
     }
 
-    debug("Connecting to %s:%d\n", ip, port);
+    debugf("Connecting to %s:%d\n", ip, port);
 
 
 
@@ -47,7 +46,7 @@ int guard_client(char* ip, int port){
         return -1;
     }
 
-    debug("connected");
+    debugf("connected");
     while(1){
     	char* argv_[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};	
     	char* str="abcdefghijklmn";
