@@ -23,14 +23,6 @@ typedef int (*orig_socket_func_type)(int domain, int type, int protocol);
 typedef int (*orig_bind_func_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
 
-typedef uint32_t u32;
-
-
-
-
-//int sock; 
-
-
 static int tcp_repair_on(int fd)
 {
     int ret, aux = 1;
@@ -52,7 +44,7 @@ static int tcp_repair_off(int fd)
      return ret;
 }
 
-static int get_tcp_queue_seq(int sk, int queue, u32 *seq){
+static int get_tcp_queue_seq(int sk, int queue, uint32_t *seq){
     if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)) < 0){
         perror("CANNOT SET TCP Repair Queue");
         return -1;
@@ -68,7 +60,7 @@ static int get_tcp_queue_seq(int sk, int queue, u32 *seq){
 
 
 
-static int set_tcp_queue_seq(int sk, int queue, u32 seq)
+static int set_tcp_queue_seq(int sk, int queue, uint32_t seq)
 {
 
     if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)) < 0) {
@@ -112,42 +104,6 @@ static int get_tcp_con_id(int sk, struct con_info_type *con_info){
 }
 
 
-
-/**
-
-int set_sequence (int sk, u32 seq) {
-    int aux = 1;
-    int ret = 0; 
-    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
-        if (ret < 0) {
-            perror("Cannot turn on TCP_REPAIR mode");
-            return ret;
-        }
-    socklen_t auxl;
-    int queue_id = TCP_SEND_QUEUE;
-    auxl = sizeof(queue_id);
-    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue_id, auxl);
-    if (ret < 0) {
-        perror("Failed to set to TCP_REPAIR_QUEUE for sentqueue");
-        return ret; 
-    }
-    
-    ret = setsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &seq, auxl);
-    if (ret < 0) {
-        perror("Failed to set the TCP send queue seq");
-        return ret;
-    }
-    printf("queue id: %" PRIu32 "\n", seq);
-
-    aux = 0;
-    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(auxyao));
-        if (ret < 0) {
-            perror("Cannot turn on TCP_REPAIR mode");
-            return ret;
-        }
-
-}
-**/
 
 int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
     printf("Bind Function intercepted\n\n\n");
@@ -202,11 +158,6 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     remoteaddr.sin_addr.s_addr = con_info->con_id.dst_ip; 
 
 
-
-    uint32_t recv_seq;
-    ret = get_tcp_queue_seq(*sk, TCP_RECV_QUEUE, &recv_seq);
-
-
     ret = close(*sk);
     
  
@@ -219,13 +170,13 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         perror("2");
        return ret;
     }
-    ret = set_tcp_queue_seq(*sk, TCP_RECV_QUEUE, recv_seq);
+    ret = set_tcp_queue_seq(*sk, TCP_RECV_QUEUE, con_info->recv_seq);
     if (ret != 0) {
         perror("Failed to set recv queue seq");
         return -1;
     }
 
-    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, con_info->isn);
+    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, con_info->send_seq);
     if (ret != 0) {
         perror("Failed to set send queue seq");
         return -1;
@@ -254,11 +205,149 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         return -1;
     }
 
-    debugf("Backup created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
+    debugf("(Backup) created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
     tcp_repair_off(*sk);
  
     return 0;
 }
+
+
+
+int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
+    char *buf;
+    int ret,len;
+    ret = con_info_serialize(&buf, &len, con_info);
+    if (ret < 0){
+        perror("Failed to serialize connection info");
+        return -1;
+    }
+    
+    ret = send_bytes(sk_tomgr, buf, len);
+    if (ret < 0){
+        perror("Failed to send con_info");
+        return -1;
+    }
+    //No need after the change of code logic.  
+    //Keep it As an ack of consensus made. 
+    uint8_t success; 
+    ret = recv(sk_tomgr, &success, sizeof(success), 0);
+    debugf("Successfully asked for consensus");
+    free(buf);
+    return 0;
+}
+
+
+
+
+
+
+
+
+int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+    int ret, port;
+    debugf("accept func intercepted \n\n");
+    int aux; 
+    socklen_t len;
+
+    orig_accpet_func_type orig_accept_func; 
+    orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
+    int sk; 
+    
+    sk = orig_accept_func(sockfd, addr, addrlen);
+    debugf("System accept returned sk = %d", sk);
+    //uint32_t seq=0; 
+    
+    /*********
+    /Check whether it is leader
+    **************/
+    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_tomgr < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+    struct sockaddr_in srvaddr;
+    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    memset(&srvaddr, 0, sizeof(srvaddr));
+    srvaddr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    srvaddr.sin_port = htons(CON_MGR_PORT);
+    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+    uint8_t iamleader = 0;
+    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
+    char *buffer;
+    int recv_len; 
+    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
+    if (recv_len != 1){
+        perrorf("Failed to check for leadership, recv with len %d", recv_len);
+        return -1;
+    }
+    iamleader = (uint8_t) buffer[0];
+    free(buffer);
+
+
+    if(iamleader == 1){
+        // Ask for consensus
+        uint32_t send_seq, recv_seq;
+        ret = tcp_repair_on(sk);
+        if (ret < 0){
+            perrorf("Failed turn on");
+        }
+        ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &send_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+        ret = get_tcp_queue_seq(sk, TCP_RECV_QUEUE, &recv_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+
+        ret = tcp_repair_off(sk);
+        if (ret < 0){
+            perrorf("Failed turn off");
+        }
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+       
+        get_tcp_con_id(sk, con_info);
+        con_info->send_seq = send_seq;
+        con_info->recv_seq = recv_seq;
+        ret = ask_for_consensus(sk_tomgr, con_info);
+        if (ret < 0){
+            perrorf("Failed to ask for consensus");
+        }
+    }
+    else{
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
+        char *in_buf;
+        int len;  
+        recv_bytes(sk, &in_buf, &len);
+        ret = con_info_deserialize(con_info, in_buf, len);
+        if (ret < 0){
+            perrorf("Failed to deserialize");
+        }
+        ret =replace_tcp(&sk, con_info);
+        if (ret < 0){
+            perrorf("Failed to replace tcp");
+        }
+
+    }
+    
+    debugf("Before retrun accept");
+    return sk; 
+}
+
+
 
 
 
@@ -305,227 +394,6 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 //     // }
 //     return ret;
 // }
-
-
-int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
-    char *buf;
-    int ret,len;
-    ret = con_info_serialize(&buf, &len, con_info);
-    if (ret < 0){
-        perror("Failed to serialize connection info");
-        return -1;
-    }
-    
-    ret = send_bytes(sk_tomgr, buf, len);
-    if (ret < 0){
-        perror("Failed to send con_info");
-        return -1;
-    }
-    //No need after the change of code logic.  
-    //Keep it As an ack of consensus made. 
-    uint8_t success; 
-    ret = recv(sk_tomgr, &success, sizeof(success), 0);
-    debugf("Successfully asked for consensus");
-    free(buf);
-    return 0;
-}
-
-
-
-int handle_con_info(int orig_sk, struct con_info_type **con_info, uint8_t *is_leader){
-    
-    int ret; 
-
-    //Connect to mgr
-    int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    
-    struct sockaddr_in addr;
-    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
-    if (ret < 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    addr.sin_port = htons(CON_MGR_PORT);
-
-    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-
-    //check whether it is leader
-    uint8_t iamleader = 0;
-    ret = send_bytes(sk, (char*)&iamleader, 1);
-    char *buffer;
-    int len; 
-    ret = recv_bytes(sk, &buffer, &len);
-    if (len != 1){
-        perrorf("Failed to check for leadership, recv with len %d", len);
-        return -1;
-    }
-    iamleader = (uint8_t) buffer[0];
-    free(buffer);
-    if (iamleader == 1){
-        //Send for consensus
-        char *buf;
-        ret = con_info_serialize(&buf, &len, *con_info);
-
-        if (ret < 0){
-            perror("Failed to serialize connection info");
-            return -1;
-        }
-        
-        ret = send_bytes(sk, buf, len);
-        if (ret < 0){
-            perror("Failed to send con_info");
-            return -1;
-        }
-        //No need after the change of code logic.  
-        //Keep it As an ack of consensus made. 
-        ret = recv(sk, is_leader, sizeof(*is_leader), 0);
-        debugf("Is leader:%"PRIu8"", *is_leader);
-        free(buf);
-        return 0;
-    }
-    else{
-        //Tell the calller that it is a follower, 
-        //The con is constructed by the mgr. 
-        free(*con_info);
-        *con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
-        char *in_buf;
-        int len;  
-        recv_bytes(orig_sk, &in_buf, &len);
-        ret = con_info_deserialize(*con_info, in_buf, len);
-
-        *is_leader = 0;
-        return 0;
-    }
-}
-
-
-
-
-
-int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
-    int ret, port;
-    printf("accept func intercepted \n\n");
-    fflush(stdout);
-    int aux; 
-    socklen_t len;
-
-    orig_accpet_func_type orig_accept_func; 
-    orig_accept_func = (orig_accpet_func_type) dlsym(RTLD_NEXT, "accept");
-    int sk; 
-    
-    sk = orig_accept_func(sockfd, addr, addrlen);
-    debugf("System accept returned sk = %d", sk);
-    uint32_t seq=0; 
-   
-    //Check whether it is leader
-
-    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk_tomgr < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    struct sockaddr_in srvaddr;
-    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
-    memset(&srvaddr, 0, sizeof(srvaddr));
-    srvaddr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
-    if (ret < 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    srvaddr.sin_port = htons(CON_MGR_PORT);
-
-    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-    uint8_t iamleader = 0;
-    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
-    char *buffer;
-    int recv_len; 
-    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
-    if (recv_len != 1){
-        perrorf("Failed to check for leadership, recv with len %d", recv_len);
-        return -1;
-    }
-    iamleader = (uint8_t) buffer[0];
-    free(buffer);
-
-
-    if(iamleader == 1){
-        // Ask for consensus
-        ret = tcp_repair_on(sk);
-        if (ret < 0){
-            perrorf("Failed turn on");
-        }
-        ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &seq);
-        if (ret < 0){
-            perrorf("Failed to get tcp_seq");
-            return -1;
-        }
-        ret = tcp_repair_off(sk);
-        if (ret < 0){
-            perrorf("Failed turn off");
-        }
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
-       
-        get_tcp_con_id(sk, con_info);
-        con_info->isn = seq;
-
-        ret = ask_for_consensus(sk_tomgr, con_info);
-        if (ret < 0){
-            perrorf("Failed to ask for consensus");
-        }
-    }
-    else{
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
-        char *in_buf;
-        int len;  
-        recv_bytes(sk, &in_buf, &len);
-        ret = con_info_deserialize(con_info, in_buf, len);
-        if (ret < 0){
-            perrorf("Failed to deserialize");
-        }
-        ret =replace_tcp(&sk, con_info);
-        if (ret < 0){
-            perrorf("Failed to replace tcp");
-        }
-
-    }
-
-    // uint8_t is_leader;
-    // ret = handle_con_info(sk, &con_info, &is_leader);
-    // if (ret < 0){
-    //     perrorf("Failed to send con_info");
-    //     return -1;
-    // }
-
-    // if (is_leader == 1){
-    //     debugf("I am the leader");
-    // }else{
-    //     debugf("I am not leader, connection will be replcaed according to the con_info");
-    //     ret =replace_tcp(&sk, con_info);
-    // }
-
-    
-    debugf("Before retrun accept");
-    return sk; 
-}
-
 
 
 // int accept_bk(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
@@ -604,211 +472,3 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 
 // }
 
-
-// int replace_tcp_bk (int *sk, struct sockaddr_in bind_address, struct sockaddr_in connect_address, uint32_t seq){
-//     int ret, aux; 
-//     struct tcp_info ti; 
-//     struct sockaddr addr_local, addr_remote;
-
-//     // turn on Repair mode
-//     ret = tcp_repair_on(*sk);
-//     if (ret != 0){
-//         return ret;
-//     }
-    
-//     // if (dump_opt(*sk, SOL_TCP, TCP_INFO, &ti)){
-//     //     perror("Failed to obtain TCP_INFO");
-//     //     return -1;
-//     // }
-//     // char *in_buf, *out_buf;
-//     // u32 inq_seq, outq_seq;
-//     // u32 inq_len;
-//     // u32 outq_len, unsq_len;
-
-//     // // The information got from refresh_inet_sk in criu
-//     // unsigned int rqlen, wqlen, uwqlen;
-
-//     // int size; 
-//     // if (ioctl(*sk, SIOCOUTQ, &size) == -1) {
-//     //     perror("Unable to get size of snd queue");
-//     //     return -1;
-//     // }
-
-//     // wqlen = size;
-//     // if (ioctl(*sk, SIOCOUTQNSD, &size) == -1) {
-//     //     perror("Unable to get size of unsent data");
-//     //     return -1;
-//     // }
-//     // uwqlen = size;
-
-//     // if (ioctl(*sk, SIOCINQ, &size) == -1) {
-//     //     perror("Unable to get size of recv queue");
-//     //     return -1;
-//     // }
-//     // rqlen = size;
-
-
-//     // /*
-//     //  * Read queue
-//     //  */
-
-//     // inq_len = rqlen; 
-//     // ret = tcp_stream_get_queue(*sk, TCP_RECV_QUEUE, &inq_seq, inq_len, &in_buf);
-//     // if (ret < 0){
-//     //     perror("Failed to get the RECV QUEUE");
-//     //     return -1;
-//     // }
-
-//     // /*
-//     //  * Write queue
-//     //  */
-
-//     // outq_len = wqlen;
-//     // unsq_len = uwqlen;
-
-//     // ret = tcp_stream_get_queue(*sk, TCP_SEND_QUEUE, &outq_seq, outq_len, &out_buf);
-//     // if (ret < 0){
-//     //     perror("Failed to get the Send QUEUE");
-//     //     return -1;
-//     // }
-
-//     // //TODO: Window size;
-
-//     // //TODO: Options
-
-//     // //options
-//     // int has_nodelay = 0; 
-//     // int nodelay = 0;
-//     // int has_cork = 0; 
-//     // int cork = 0;
-
-
-
-//     // if (dump_opt(*sk, SOL_TCP, TCP_NODELAY, &aux)){
-//     //     printf("failed to get the TCP_NODELAY opt\n");
-//     //     return -1;
-//     // }
-
-//     // if (aux) {
-//     //     has_nodelay = 1;
-//     //     nodelay = 1;
-//     // }
-
-//     // if (dump_opt(*sk, SOL_TCP, TCP_CORK, &aux)){
-//     //     printf("faied to get the TCP_CORK opt\n");
-//     //     return -1;
-//     // }
-
-//     // if (aux) {
-//     //     has_cork = 1;
-//     //     cork = 1;
-//     // }
-
-
-
-//     //shutdown(*sk, 0);
-//     //int sk_new = dup(*sk);
-//     ret = close(*sk);
-    
- 
-//     //int sk_new=0; 
-
-//     *sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-//     //Repair mode on
-//     //*sk = sk_new;
-//     ret = tcp_repair_on(*sk);
-//     if (ret != 0){
-//        return ret;
-//     }
-
-//     // //Restore tcp sequence
-//     // ret = set_tcp_queue_seq(sk_new, TCP_RECV_QUEUE, inq_seq - inq_len);
-//     // if (ret != 0) {
-//     //     perror("Failed to set recv queue");
-//     //     return -1;
-//     // }
-
-//     ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, 931209);
-//     if (ret != 0) {
-//         perror("Failed to set send queue");
-//         return -1;
-//     }
-
-//     // //bind to the addr. 
-//     // //TODO: not done
-//     aux = 1;
-//     ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
-//     if (ret < 0){
-//         perror("failed to setup reuse");
-//         return -1;
-//     }
-
-
-//     ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEPORT, &aux, sizeof(aux));
-//     if (ret < 0){
-//         perror("failed to setup reuse");
-//         return -1;
-//     }
-
-
-//     if (bind(*sk, (struct sockaddr *)&bind_address, sizeof(bind_address)) != 0){
-//         // getsockopt(*sk, SOL_TCP, TCP_REPAIR, &aux, NULL);
-
-//         // printf("TCP_REPAIR of new sk: %d\n\n", aux);
-//         // fflush(stdout);
-
-
-
-
-//         perror("Cannot bind socket here");
-//         fflush(stdout);
-//         return -1;
-//     }
-//     //connect
-//     if (connect(*sk, (struct sockaddr *)&connect_address, sizeof(connect_address)) != 0){
-//         perror("Cannot connect the inet socket back");
-//         return -1;
-//     }
-//     //Restore TCP_OPTs
-
-
-//     //Restore TCP_queue
-//     // u32 len;
-//     // len = inq_len;
-//     // if (len && send_tcp_queue(sk_new, TCP_RECV_QUEUE, len, in_buf)) 
-//     //     return -1;
-
-//     // len = outq_len - unsq_len; 
-//     // if (len && send_tcp_queue(sk_new, TCP_SEND_QUEUE, len, out_buf))
-//     //     return -1;
-//     // len = unsq_len;
-//     // tcp_repair_off(sk_new);
-//     // if (len && __send_tcp_queue(sk_new, TCP_SEND_QUEUE, len, out_buf))
-//     //     return -1;
-//     // if (tcp_repair_on(sk_new))
-//     //     return -1;
-
-//     // //todo:    restore Tcp window
-//     // //TODO: restore the TCP-buffersize
-
-//     // if (has_nodelay && nodelay) {
-//     //     aux = 1;
-//     //     if (restore_opt(sk_new, SOL_TCP, TCP_NODELAY, &aux)){
-//     //         perror("failed to set nodelay");
-//     //         return -1;
-//     //     }
-
-//     // }
-
-//     // if (has_cork && cork) {
-//     //     aux = 1;
-//     //     if (restore_opt(sk_new, SOL_TCP, TCP_CORK, &aux)){
-//     //         perror("failed to set cork");
-//     //         return -1;
-//     //     }
-//     // }
-
-//     tcp_repair_off(*sk);
- 
-//     return 0;
-// }

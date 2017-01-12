@@ -1,9 +1,9 @@
 CC=gcc
-all: guard guard-client intercept.so con-manager con-manager-guest
+all: guard guard-client intercept.so con-manager-guest
 
-con-manager:con-manager.c common.o 
-	gcc -c con-manager.c -I.
-	gcc -o con-manager con-manager.o common.o tpl.o -lpthread
+#con-manager:con-manager.c common.o 
+#	gcc -c con-manager.c -I.
+#	gcc -o con-manager con-manager.o common.o tpl.o -lpthread
 
 intercept.so: intercept.c common.c
 	gcc -fPIC -c common.c -o common_pic.o -I.

@@ -6,7 +6,7 @@
 
 #define DEBUG_ON 1 
 
-#define CON_INFO_SERIAL_LEN 36
+#define CON_INFO_SERIAL_LEN 41
 
 void debugf(const char* format,...);
 
@@ -35,7 +35,8 @@ struct con_id_type{
 
 struct con_info_type{
     struct con_id_type con_id;
-    uint32_t isn; 
+    uint32_t send_seq; 
+    uint32_t recv_seq;
 };
 
 

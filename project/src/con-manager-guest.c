@@ -20,6 +20,7 @@
 
 
 
+
 int iamleader;
 
 int skout; 
@@ -33,7 +34,8 @@ void create_connection(struct con_info_type *con_info){
 	//insert into hashmap first 
 	con_list_entry entry;
 	entry.con_id = con_info->con_id;
-	entry.isn = con_info->isn;
+	entry.recv_seq = con_info->recv_seq;
+	entry.send_seq = con_info->send_seq;
 	
 
 	// ret = insert_connection(&entry);
@@ -41,6 +43,7 @@ void create_connection(struct con_info_type *con_info){
 	// 	perrorf("Failed to insert into hashmap");
 	// 	pthread_exit(0);
 	// }
+
 	
 	//create connection;
 	sk_create = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -95,7 +98,6 @@ void * serve_report(void * arg){
 		struct con_info_type *con_info;
 		con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
 		con_info_deserialize(con_info, buf, recv_len);
-		pthread_t thread;
 		create_connection(con_info);
 		//insert_connection_bytes(buf, recv_len);
 	}
@@ -153,7 +155,8 @@ void *serve_query(void *sk_arg){
 		debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
 		debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
-		debugf("ISN: %" PRIu32 "", con_info.isn);
+		debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
+		debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 
 		if(iamleader == 1){
 			send_for_consensus(&con_info);
@@ -164,28 +167,6 @@ void *serve_query(void *sk_arg){
 
 		}
 		else{
-
-			// con_list_entry *entry=NULL; 
-			// find_connection(&entry,&(con_info.con_id));
-			// while(entry == NULL){
-			// 	debugf("NO match, try again");
-			// 	sleep(1);
-			// 	//TODO: improve this faster;
-			// 	find_connection(&entry,&(con_info.con_id));
-			// }
-			// debugf("Match, isn = %"PRIu32"", entry->isn);
-			
-
-			// con_info.isn = entry->isn;
-
-			// char* buffer;
-			// ret = con_info_serialize(&buffer, &len, &con_info);
-
-			// ret = send_bytes(*sk, buffer, len);
-
-		 //    if (ret < 0)
-		 //        perror("Failed to send con_info");
-
 			continue;
 		}
 	}	
@@ -234,12 +215,11 @@ int check_for_leadership(){
 
 int main(int argc, char *argv[]){
 	init_con_hashmap();
-	//iamleader = check_for_leadership();
+	iamleader = check_for_leadership();
 	iamleader = 0;
 	
 	//Wait for consensused input
 	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	debugf("[SK-UDP] %d",sk_udp);
 	if (sk_udp <= 0){
 		perror("Failed to create socket");
 		exit(1);
@@ -285,8 +265,8 @@ int main(int argc, char *argv[]){
 	con_info->con_id.dst_port = htons(10060);
 	con_info->con_id.dst_ip = 16777343;
 	con_info->con_id.dst_ip = 16777343;
-	con_info->isn = 931209;
-	
+	con_info->send_seq = 931209;
+	con_info->recv_seq = 123456;
 
 
 

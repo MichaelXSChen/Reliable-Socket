@@ -91,7 +91,7 @@ int arg_command_deserialize(struct arg_command *cmd, const char *buf, int len){
 
 int con_info_serialize(char **buf, int *len, const struct con_info_type *con_info){
 	tpl_node *tn;
-	tn = tpl_map("S($(uvuv)u)", con_info);
+	tn = tpl_map("S($(uvuv)uu)", con_info);
 	tpl_pack(tn, 0);
 	tpl_dump(tn, TPL_MEM, buf, len);
 	tpl_free(tn);
@@ -103,7 +103,7 @@ int con_info_serialize(char **buf, int *len, const struct con_info_type *con_inf
 int con_info_deserialize(struct con_info_type *con_info, const char *buf, int len){
 	//debugf("deserialize called, len: %d", len);
 	tpl_node *tn;
-	tn = tpl_map("S($(uvuv)u)", con_info);
+	tn = tpl_map("S($(uvuv)uu)", con_info);
 	tpl_load(tn, TPL_MEM, buf, len);
 	tpl_unpack(tn, 0);
 	tpl_free(tn);
