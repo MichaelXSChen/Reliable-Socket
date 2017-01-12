@@ -1,5 +1,5 @@
 CC=gcc
-all: guard guard-client intercept.so con-manager
+all: guard guard-client intercept.so con-manager con-manager-guest
 
 con-manager:con-manager.c common.o 
 	gcc -c con-manager.c -I.
@@ -31,3 +31,7 @@ con-hashmap.o: con-hashmap.c
 con-manager-guest: con-manager-guest.c con-hashmap.o common.o tpl.o
 	gcc -c con-manager-guest.c -I.
 	gcc -o con-manager-guest con-manager-guest.o con-hashmap.o common.o tpl.o -lpthread
+.PHONY: clean
+
+clean:
+	rm -f *.o *.so

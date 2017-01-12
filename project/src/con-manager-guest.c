@@ -20,6 +20,9 @@
 
 int iamleader;
 
+int skout; 
+
+
 void * serve_report(void * arg){
 	int sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk <= 0){
@@ -51,38 +54,16 @@ void * serve_report(void * arg){
 
 
 int send_for_consensus(struct con_info_type *con_info){
-	int ret;
-	int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
-    if (ret < 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    addr.sin_port = htons(CON_MGR_PORT);
-
-    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-
-    int len; 
+	
+    int len, ret; 
     char* buffer;
 	ret = con_info_serialize(&buffer, &len, con_info);
 
-	ret = send_bytes(sk, buffer, len);
+	ret = send_bytes(skout, buffer, len);
 	if (ret < 0) {
         perror("Send for consensus failed");
         return -1;
     }
-    close(sk);
 	return 0;
 }
 
@@ -109,7 +90,7 @@ void *serve_query(void *sk_arg){
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		debugf("ISN: %" PRIu32 "", con_info.isn);
 
-		if(iamleader){
+		if(iamleader == 1){
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			send_for_consensus(&con_info);
 		}
@@ -146,8 +127,8 @@ void *serve_query(void *sk_arg){
 
 int check_for_leadership(){
 	int ret;
-	int sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk < 0) {
+	skout = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (skout < 0) {
         perror("Can't create socket");
         return -1;
     }
@@ -161,7 +142,7 @@ int check_for_leadership(){
     }
     addr.sin_port = htons(CON_MGR_PORT);
 
-    ret = connect(sk, (struct sockaddr *)&addr, sizeof(addr));
+    ret = connect(skout, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0) {
         perror("Can't connect");
         return 0;
@@ -169,11 +150,11 @@ int check_for_leadership(){
 
     uint8_t iamleader = 0;
 
-    ret = send_bytes(sk, &iamleader, 1);
+    ret = send_bytes(skout, &iamleader, 1);
     if (ret < 0){
     	return 0;
     }
-    ret = recv(sk, &iamleader, sizeof(iamleader), 0);
+    ret = recv(skout, &iamleader, sizeof(iamleader), 0);
     if (ret < 0){
     	perror("Faield to recv response!");
     	return -1;
