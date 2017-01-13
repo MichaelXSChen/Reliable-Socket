@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <netinet/ip.h>
 
+#include <unistd.h>
 
 #define __STDC_FORMAT_MACROS
 
@@ -548,6 +549,12 @@ static void do_action_raw(void *data, size_t size){
                 debugf("syn detected port: %d -> port :%d, drop it", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
                 return;
             }
+            else{
+                //TODO: FIXIT:
+                //That is very bad 
+                sleep(1);
+            }
+
         }
 
     }
