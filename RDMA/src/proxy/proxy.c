@@ -535,6 +535,20 @@ static void do_action_tcpnewcon(void *data, size_t size){
     insert_connection_bytes((char*)data, size);
 }
 
+struct consensused_data{
+    uint8_t * data; 
+    size_t size
+};
+
+
+void *wait_insert(void* arg){
+    struct consensused_data *c = (struct consensused_data*)arg;
+    sleep(1);
+    write_to_packet_buffer((uint8_t*)c->data, c->size);
+    pthread_exit(0);
+}
+
+
 #define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 static void do_action_raw(void *data, size_t size){
@@ -552,7 +566,12 @@ static void do_action_raw(void *data, size_t size){
             else{
                 //TODO: FIXIT:
                 //That is very bad 
-                sleep(1);
+                struct consensused_data *arg = (struct consensused_data *)malloc(sizeof(struct consensused_data));
+                (*arg).size = size;
+                (*arg).data = data;
+                pthread_t thread;
+                pthread_create(&thread, NULL, wait_insert, (void*)arg);
+                return;
             }
 
         }
