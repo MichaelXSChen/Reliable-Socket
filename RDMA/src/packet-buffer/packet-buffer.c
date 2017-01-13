@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define RINGBUF_SIZE 65536
+#define RINGBUF_SIZE 16777216
 
 ringbuf_t rb;
 
