@@ -7,6 +7,13 @@
 #include "../include/vpb/con-manager.h"
 #include "../include/packet-buffer/packet-buffer.h"
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/if_ether.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+
+
 #define __STDC_FORMAT_MACROS
 
 static void stablestorage_save_request(void* data,void*arg);
@@ -527,7 +534,23 @@ static void do_action_tcpnewcon(void *data, size_t size){
     insert_connection_bytes((char*)data, size);
 }
 
+#define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
+
 static void do_action_raw(void *data, size_t size){
+    int eth_hdr_len = sizeof(struct ether_header);
+    if (size > MSG_OFF + eth_hdr_len){
+        //check ip header
+        struct ip* ip_header = (struct ip*)((uint8_t*)data + MSG_OFF + eth_hdr_len);
+        if (ip_header->ip_p == 0x06){
+            int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
+            struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
+            if ((tcp_header->th_flags & TH_SYN) == TH_SYN){
+                debugf("syn detected port: %d -> port :%d, drop it", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
+                return;
+            }
+        }
+
+    }
 
     write_to_packet_buffer((uint8_t*)data, size);
     //backup 
