@@ -541,15 +541,41 @@ struct consensused_data{
 };
 
 
+#define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
+
+
+#define DEBUG_TCP
 void *wait_insert(void* arg){
     struct consensused_data *c = (struct consensused_data*)arg;
     sleep(1);
+    #ifdef DEBUG_TCP 
+    uint8_t *data= c->data; 
+    int eth_hdr_len = sizeof(struct ether_header);
+    struct ip* ip_header = (struct ip*)(data + MSG_OFF + eth_hdr_len);
+    int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F);
+    struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
+    int tcp_header_size = 4 * (tcp_header->th_off &0x0F);
+    int i;
+
+    int total_header_len = MSG_OFF + eth_hdr_len + ip_header_size + tcp_header_size; 
+    debugf("TCP Packet, TCP header len: %d,port %d->port%d",tcp_header_size, ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
+    fprintf(stderr, "Payload: ");
+    for (i= total_header_len; i<c->size; i++){
+        fprintf(stderr, "%02x  ", data+i);
+    }
+    fprintf(stderr, "\n");
+
+    #endif
+
+
+
+
+
     write_to_packet_buffer((uint8_t*)c->data, c->size);
     pthread_exit(0);
 }
 
 
-#define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 static void do_action_raw(void *data, size_t size){
     int eth_hdr_len = sizeof(struct ether_header);
