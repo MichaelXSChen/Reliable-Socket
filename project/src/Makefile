@@ -31,7 +31,7 @@ con-hashmap.o: con-hashmap.c
 con-manager-guest.o: con-manager-guest.c
 	gcc -c con-manager-guest.c -I.
 
-guest-daemon: guest-daemon.c con-manager-guest.o 
+guest-daemon: guest-daemon.c con-manager-guest.o con-hashmap.o tpl.o common.o
 	gcc -c guest-daemon.c -I.
 	gcc -o guest-daemon common.o guest-daemon.o tpl.o con-hashmap.o con-manager-guest.o -lpthread
 
