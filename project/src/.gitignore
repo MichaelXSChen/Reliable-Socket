@@ -1,0 +1,7 @@
+#ign all
+*
+#include .c .h and makefile only
+!*.c
+!*.h
+!Makefile
+!.gitignore
