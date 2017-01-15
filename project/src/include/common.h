@@ -14,14 +14,14 @@ void debugf(const char* format,...);
 void perrorf(const char* format,...);
 
 
-struct arg_command{
+struct command_t{
 	char **argv;
 	int32_t argc;
 };
 
-int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd);
+int command_t_serialize(char **buf, int *len, const struct command_t* cmd);
 
-int arg_command_deserialize(struct arg_command *cmd, const char *buf, int len);
+int command_t_deserialize(struct command_t *cmd, const char *buf, int len);
 
 
 

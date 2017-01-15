@@ -19,14 +19,14 @@
 #define CON_MGR_PORT 4321
 
 
+#define DEBUG_BAKCUP
 
+static int iamleader;
 
-int iamleader;
-
-int skout; 
-int sk_udp;
-int sk_create;
-
+static int sk_consensus_module; 
+static int sk_udp;
+static int sk_create_connection;
+static int sk_listen;
 
 void create_connection(struct con_info_type *con_info){
 	int ret;
@@ -46,13 +46,13 @@ void create_connection(struct con_info_type *con_info){
 
 	
 	//create connection;
-	sk_create = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sk_create < 0){
+	sk_create_connection = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sk_create_connection < 0){
 		perror("Can not create socket");
-		close(sk_create);
+		close(sk_create_connection);
 		pthread_exit(0);
 	}
-	debugf("SK created for creating connection: sk_create = %d", sk_create);
+	debugf("SK created for creating connection: sk_create_connection = %d", sk_create_connection);
 
 	struct sockaddr_in addr; 
 	memset(&addr, 0, sizeof(addr));
@@ -61,17 +61,17 @@ void create_connection(struct con_info_type *con_info){
 	addr.sin_port = con_info->con_id.src_port;
 
 	debugf("Creating connection to address %s:%d", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-	ret = connect(sk_create, (struct sockaddr *)&addr, sizeof(addr));
+	ret = connect(sk_create_connection, (struct sockaddr *)&addr, sizeof(addr));
 	if (ret <0){
 		perror("Can not connect");
-		close(sk_create);
+		close(sk_create_connection);
 		pthread_exit(0);
 	}
 	int len;
 	char* buffer;
 	con_info_serialize(&buffer, &len, con_info);
 
-	ret = send_bytes(sk_create, buffer, len);
+	ret = send_bytes(sk_create_connection, buffer, len);
 	if (ret < 0){
 		perrorf("failed to send");
 	}
@@ -116,7 +116,7 @@ int send_for_consensus(struct con_info_type *con_info){
     char* buffer;
 	ret = con_info_serialize(&buffer, &len, con_info);
 
-	ret = send_bytes(skout, buffer, len);
+	ret = send_bytes(sk_consensus_module, buffer, len);
 	if (ret < 0) {
         perror("Send for consensus failed");
         return -1;
@@ -128,7 +128,6 @@ int send_for_consensus(struct con_info_type *con_info){
 
 void *serve_query(void *sk_arg){
 	int sk = *((int *) sk_arg);
-	debugf("SK serving query: %d", sk);
 	while(1){
 		char *buf;
 		int ret, len;
@@ -177,8 +176,8 @@ void *serve_query(void *sk_arg){
 
 int check_for_leadership(){
 	int ret;
-	skout = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (skout < 0) {
+	sk_consensus_module = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_consensus_module < 0) {
         perror("Can't create socket");
         return -1;
     }
@@ -192,7 +191,7 @@ int check_for_leadership(){
     }
     addr.sin_port = htons(CON_MGR_PORT);
 
-    ret = connect(skout, (struct sockaddr *)&addr, sizeof(addr));
+    ret = connect(sk_consensus_module, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0) {
         perror("Can't connect");
         return 0;
@@ -200,27 +199,47 @@ int check_for_leadership(){
 
     uint8_t iamleader = 0;
 
-    ret = send_bytes(skout, &iamleader, 1);
+    ret = send_bytes(sk_consensus_module, &iamleader, 1);
     if (ret < 0){
     	return 0;
     }
-    ret = recv(skout, &iamleader, sizeof(iamleader), 0);
+    ret = recv(sk_consensus_module, &iamleader, sizeof(iamleader), 0);
     if (ret < 0){
     	perror("Faield to recv response!");
     	return -1;
     }
-    debugf("I am leader? %"PRIu8"", iamleader);
+   
     return iamleader;
 }
 
+void *listen_for_accpet(){
+	
+	int ret;
+	while(1){
+		struct sockaddr_in cliaddr;
+		socklen_t clilen=sizeof(cliaddr);
+		int ask = accept(sk_listen, (struct sockaddr*)&cliaddr, &clilen);
+		if (ask < 0){
+			perror("Cannot accept new con");
+		}
+		pthread_t thread1;
+		ret = pthread_create(&thread1, NULL, &serve_query, (void *)&ask);
+		if (ret < 0){
+			perror("Faild to create");
+			pthread_exit(0);
+		}
+	}
+}
 
-
-int main(int argc, char *argv[]){
+int init_con_manager_guest(){
 	init_con_hashmap();
 	iamleader = 0;
+
+#ifndef DEBUG_BAKCUP
 	iamleader = check_for_leadership();
-	
-	
+#endif
+	debugf("I am leader? %"PRIu8"", iamleader);
+	//Create a UDP socket
 	//Wait for consensused input
 	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk_udp <= 0){
@@ -238,6 +257,7 @@ int main(int argc, char *argv[]){
 		perror("Failed to bind to address");
 		exit(1);
 	}
+	debugf("Listening for consensused connection info on port: %d",REPORT_PORT);
 
 
 	pthread_t report_thread;
@@ -249,32 +269,8 @@ int main(int argc, char *argv[]){
 	} 
 
 
-	//DEBUG
-	// con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
-	// entry->con_id.src_port = htons(9999);
-	// entry->con_id.src_ip = 16777343;
-	// entry->con_id.dst_ip = 16777343;
-	// entry->con_id.dst_port = htons(10060);
-	// entry->isn = 931209;
-	// insert_connection(entry);
 
-
-
-
-	
-
-	// struct con_info_type *con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
-	// con_info->con_id.src_port = htons(9999);
-	// con_info->con_id.dst_port = htons(10060);
-	// con_info->con_id.dst_ip = 16777343;
-	// con_info->con_id.dst_ip = 16777343;
-	// con_info->send_seq = 931209;
-	// con_info->recv_seq = 123456;
-
-
-
-
-	int sk_listen = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	sk_listen = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	debugf("Listening sk:%d", sk_listen);
 	if (sk_listen < 0){
 		perror("Cannot create the socket");
@@ -290,7 +286,7 @@ int main(int argc, char *argv[]){
 	srvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	srvaddr.sin_port = htons(QUERY_PORT); 
 
-	debugf("binding to port: %d", QUERY_PORT);
+	debugf("Listening to query from LD_PRELOAD module on port: %d", QUERY_PORT);
 
 	ret = bind(sk_listen, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
 	if (ret < 0){
@@ -308,23 +304,10 @@ int main(int argc, char *argv[]){
 	// create_connection(con_info);
 
 
-	while(1){
-		struct sockaddr_in cliaddr;
-		socklen_t clilen=sizeof(cliaddr);
-		int ask = accept(sk_listen, (struct sockaddr*)&cliaddr, &clilen);
-		if (ask < 0){
-			perror("Cannot accept new con");
-		}
-		pthread_t thread1;
-		ret = pthread_create(&thread1, NULL, &serve_query, (void *)&ask);
-		if (ret < 0){
-			perror("Faild to create");
-			return 0;
-		}
-	}
+	pthread_t listen_thread;
+	pthread_create(&listen_thread, NULL, listen_for_accpet, NULL);
 
-
-
+	return 0;
 }
 
 

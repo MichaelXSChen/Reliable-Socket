@@ -1,5 +1,5 @@
 CC=gcc
-all: guard guard-client intercept.so con-manager-guest
+all: guard-client intercept.so guest-daemon
 
 #con-manager:con-manager.c common.o 
 #	gcc -c con-manager.c -I.
@@ -11,9 +11,9 @@ intercept.so: intercept.c common.c
 	gcc -fPIC -c tpl.c -o tpl_pic.o -I.
 	gcc -fPIC -shared -o intercept.so common_pic.o intercept.o tpl_pic.o -ldl
 
-guard: guard.c guard.o tpl.o common.o
-	gcc -c guard.c -I.
-	gcc -o guard guard.o tpl.o common.o
+# guard: guard.c guard.o tpl.o common.o
+# 	gcc -c guard.c -I.
+# 	gcc -o guard guard.o tpl.o common.o
 	
 guard-client: guard-client.c common.o tpl.o 
 	gcc -c guard-client.c -I.
@@ -28,9 +28,14 @@ tpl.o: tpl.c
 con-hashmap.o: con-hashmap.c
 	gcc -c con-hashmap.c -I.
 
-con-manager-guest: con-manager-guest.c con-hashmap.o common.o tpl.o
+con-manager-guest.o: con-manager-guest.c
 	gcc -c con-manager-guest.c -I.
-	gcc -o con-manager-guest con-manager-guest.o con-hashmap.o common.o tpl.o -lpthread
+
+guest-daemon: guest-daemon.c con-manager-guest.o 
+	gcc -c guest-daemon.c -I.
+	gcc -o guest-daemon common.o guest-daemon.o tpl.o con-hashmap.o con-manager-guest.o -lpthread
+
+
 .PHONY: clean
 
 clean:

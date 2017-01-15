@@ -48,11 +48,17 @@ int guard_client(char* ip, int port){
 
     debugf("connected");
     while(1){
-    	char* argv_[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", NULL};	
-    	char* str="abcdefghijklmn";
 
+        struct command_t cmd; 
+    	char* argv_[]={"/home/michael/VPB-bk/project/src/test/tcp-how/tcp-howto", "127.0.0.1", "9999"};	
+    	cmd.argv = argv_;
+        cmd.argc = 3;
 
-    	ret = send_bytes(sk, str, 14);
+        char *buf; 
+        int len; 
+        command_t_serialize(&buf, &len, &cmd);
+
+    	ret = send_bytes(sk, buf, len);
     	if (ret < 0){
     		perrorf("Failed to send");
  			return -1;
@@ -67,7 +73,7 @@ int guard_client(char* ip, int port){
 
 
 int main(int argc, char *argv){
-	int ret = guard_client("127.0.0.1", 12346);
+	int ret = guard_client("127.0.0.1", 3120);
 	if (ret < 0){
 		perror("Failed run client");
 		return -1;

@@ -34,7 +34,7 @@ void perrorf(const char* format,...){
 
 }
 
-int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd){
+int command_t_serialize(char **buf, int *len, const struct command_t* cmd){
 	tpl_node *tn;
 	//debugf("size %d", cmd->argc);
 	//return 0;
@@ -65,7 +65,7 @@ int arg_command_serialize(char **buf, int *len, const struct arg_command* cmd){
 }
 
 
-int arg_command_deserialize(struct arg_command *cmd, const char *buf, int len){
+int command_t_deserialize(struct command_t *cmd, const char *buf, int len){
 	int32_t argc=0;
 
 	memcpy(&argc, buf, sizeof(argc));

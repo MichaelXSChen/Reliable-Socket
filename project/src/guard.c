@@ -171,16 +171,16 @@ int main(int argc, char *argv){
 	
 	
 	char* array[]={"/home/michael/VPB/test/tcp-how/tcp-howto", "127.0.0.1", "9999", "abcdefg", "aaaaaaa","bbbbbbb"};
-	struct arg_command cmd, cmd2;
+	struct command_t cmd, cmd2;
 	cmd.argc = 6;
 	cmd.argv = array;
 	//debugf("%s", cmd.argv[2]);
 	char* buf;
 	int len;
-	arg_command_serialize(&buf,&len, &cmd);
+	command_t_serialize(&buf,&len, &cmd);
 	debugf("Len: %d", len);
 	
-	arg_command_deserialize(&cmd2, buf, len);
+	command_t_deserialize(&cmd2, buf, len);
 	debugf("argc:%d", cmd2.argc);
 	int i = 0;
 	for (i =0; i< cmd2.argc; i++){
