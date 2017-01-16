@@ -10,4 +10,7 @@ int packet_buffer_to_buffer(uint8_t *buffer, int maxlen);
 
 int write_to_packet_buffer(const uint8_t *buffer, size_t len);
 
+int write_to_tcp_buffer(const uint8_t *buffer, size_t len);
+
+int dump_tcp_buffer();
 #endif

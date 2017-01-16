@@ -13,7 +13,7 @@ OBJS += \
 src/config-comp/%.o: ../src/config-comp/%.c
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C Compiler'
-	gcc -fPIC -rdynamic -std=gnu99 -DDEBUG=$(DEBUGOPT) -O0 -g3 -Wall -c -o "$@" "$<"
+	gcc -fPIC -rdynamic -std=gnu99 -DDEBUG=$(DEBUGOPT) -O0 -g3 -Wall -Wno-unused -c -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

@@ -9,7 +9,7 @@ ifeq ($(DEBUGOPT),1)
 else
 	FLAGS        = -fPIC -rdynamic -std=gnu99 -I"$(ROOT_DIR)/../src/include/dare" -I"$(ROOT_DIR)/../utils/rbtree/include" -I/usr/include
 endif
-CFLAGS       = #-Wall -Wunused-function #-Wextra
+CFLAGS       = -Wall -Wno-unused #-Wextra
 LDFLAGS      = -L/usr/lib -libverbs
 
 PREFIX = $(ROOT_DIR)/src/dare

@@ -33,14 +33,58 @@ static void do_action_tcpnewcon(void *data, size_t size);
 
 
 
-
 FILE *log_fp;
 
 proxy_node* proxy;
 
 
+
+pthread_spinlock_t sleep_time_lock;
+int sleep_time; 
+
+
+int increase_sleep_time(int additon){
+    pthread_spin_lock(&sleep_time_lock);
+    sleep_time = sleep_time + additon; 
+    int ret = sleep_time;
+    pthread_spin_unlock(&sleep_time_lock);
+    return ret;
+}
+
+int reset_sleep_time(){
+    pthread_spin_lock(&sleep_time_lock);
+    int ret = sleep_time; 
+    sleep_time = 0;
+    pthread_spin_unlock(&sleep_time_lock);
+    return ret; 
+}
+
+
+
+
+
+void *handle_tcp_buffer(void *useless){
+    int ret; 
+    while(1){
+        while(sleep_time ==0){
+            ret = dump_tcp_buffer();
+        }
+        int to_sleep = reset_sleep_time();
+        sleep(to_sleep);
+    }
+}
+
+
+
+
+
+
+
 int dare_main(proxy_node* proxy, const char* config_path)
 {
+    pthread_spin_init(&sleep_time_lock, 0);
+    
+
     int rc; 
     dare_server_input_t *input = (dare_server_input_t*)malloc(sizeof(dare_server_input_t));
     memset(input, 0, sizeof(dare_server_input_t));
@@ -103,6 +147,9 @@ int dare_main(proxy_node* proxy, const char* config_path)
     //fclose(log_fp);
     
     init_packet_buffer();
+
+    pthread_t thread;
+    pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
 
 
     return 0;
@@ -544,36 +591,38 @@ struct consensused_data{
 #define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 
-#define DEBUG_TCP
-void *wait_insert(void* arg){
-    struct consensused_data *c = (struct consensused_data*)arg;
-    sleep(1);
-    #ifdef DEBUG_TCP 
-    uint8_t *data= c->data; 
-    int eth_hdr_len = sizeof(struct ether_header);
-    struct ip* ip_header = (struct ip*)(data + MSG_OFF + eth_hdr_len);
-    int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F);
-    struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
-    int tcp_header_size = 4 * (tcp_header->th_off &0x0F);
-    int i;
+// #define DEBUG_TCP
+// void *wait_insert(void* arg){
+//     struct consensused_data *c = (struct consensused_data*)arg;
+//     sleep(1);
+//     #ifdef DEBUG_TCP 
+//     uint8_t *data= c->data; 
+//     int eth_hdr_len = sizeof(struct ether_header);
+//     struct ip* ip_header = (struct ip*)(data + MSG_OFF + eth_hdr_len);
+//     int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F);
+//     struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
+//     int tcp_header_size = 4 * (tcp_header->th_off &0x0F);
+//     int i;
 
-    int total_header_len = MSG_OFF + eth_hdr_len + ip_header_size + tcp_header_size; 
-    debugf("TCP Packet, TCP header len: %d,port %d->port%d",tcp_header_size, ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
-    fprintf(stderr, "Payload: ");
-    for (i= total_header_len; i<c->size; i++){
-        fprintf(stderr, "%02x  ", data+i);
-    }
-    fprintf(stderr, "\n");
+//     int total_header_len = MSG_OFF + eth_hdr_len + ip_header_size + tcp_header_size; 
+//     debugf("TCP Packet, TCP header len: %d,port %d->port%d",tcp_header_size, ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
+//     fprintf(stderr, "Payload: ");
+//     for (i= total_header_len; i<c->size; i++){
+//         fprintf(stderr, "%02x  ", data+i);
+//     }
+//     fprintf(stderr, "\n");
 
-    #endif
-
-
+//     #endif
 
 
 
-    write_to_packet_buffer((uint8_t*)c->data, c->size);
-    pthread_exit(0);
-}
+
+
+//     write_to_packet_buffer((uint8_t*)c->data, c->size);
+//     pthread_exit(0);
+// }
+
+
 
 
 
@@ -587,16 +636,15 @@ static void do_action_raw(void *data, size_t size){
             struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
             if ((tcp_header->th_flags & TH_SYN) == TH_SYN){
                 debugf("syn detected port: %d -> port :%d, drop it", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
+                //Drop the packet 
+
+                increase_sleep_time(2);
                 return;
             }
             else{
-                //TODO: FIXIT:
-                //That is very bad 
-                struct consensused_data *arg = (struct consensused_data *)malloc(sizeof(struct consensused_data));
-                (*arg).size = size;
-                (*arg).data = data;
-                pthread_t thread;
-                pthread_create(&thread, NULL, wait_insert, (void*)arg);
+
+                write_to_tcp_buffer((uint8_t*)data, size);
+
                 return;
             }
 
