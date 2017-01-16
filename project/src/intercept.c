@@ -254,7 +254,19 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     int sk; 
     
     sk = orig_accept_func(sockfd, addr, addrlen);
-    debugf("System accept returned sk = %d", sk);
+    
+    struct sockaddr_in localaddr;
+    int addr_length = sizeof(localaddr);
+    ret = getsockname(sk, (struct sockaddr*)&localaddr, &addr_length);
+
+    debugf("Accept on port %u returned sk = %d",ntohs(localaddr.sin_port), sk);
+
+    if (ntohs(localaddr.sin_port) == CON_MGR_PORT){
+        debugf("Accept called by guest daemon, no need to hook");
+        return sk; 
+    }
+
+
     //uint32_t seq=0; 
     
     /*********
