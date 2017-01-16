@@ -86,7 +86,7 @@ int dump_tcp_buffer(){
 
 	size_t len = ringbuf_bytes_used(tcp_buffer);
 	if (len <= 0){
-		pthread_spin_lock(&tcp_buffer_lock);
+		pthread_spin_unlock(&tcp_buffer_lock);
 		pthread_spin_unlock(&outgoing_buffer_lock);
 		return 0;
 	}
@@ -96,7 +96,7 @@ int dump_tcp_buffer(){
 	
 	write_to_packet_buffer(buffer, len);
 
-	pthread_spin_lock(&tcp_buffer_lock);
+	pthread_spin_unlock(&tcp_buffer_lock);
 	pthread_spin_unlock(&outgoing_buffer_lock);
 	return len;
 }
