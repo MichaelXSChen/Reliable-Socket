@@ -292,7 +292,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     iamleader = (uint8_t) buffer[0];
     free(buffer);
 
-
+    debugf("[Intercept.so] I am leader? %d", iamleader);
     if(iamleader == 1){
         // Ask for consensus
         uint32_t send_seq, recv_seq;
