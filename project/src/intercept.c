@@ -106,8 +106,8 @@ static int get_tcp_con_id(int sk, struct con_info_type *con_info){
 
 
 int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
-    printf("Bind Function intercepted\n\n\n");
-    fflush(stdout);
+    // printf("Bind Function intercepted\n\n\n");
+    // fflush(stdout);
 
     int aux = 1;
     int ret;
@@ -245,7 +245,7 @@ int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     int ret, port;
-    debugf("accept func intercepted \n\n");
+    debugf("accept func intercepted, sk = %d", sockfd);
     int aux; 
     socklen_t len;
 
@@ -460,7 +460,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 
 
 int socket(int domain, int type, int protocol){
-    printf("socket func called:");
+    // printf("socket func called:");
     orig_socket_func_type orig_socket;
     orig_socket = (orig_socket_func_type) dlsym(RTLD_NEXT,"socket");
     int sk =  orig_socket(domain, type, protocol);

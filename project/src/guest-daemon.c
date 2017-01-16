@@ -211,7 +211,7 @@ int main(int argc, char* argv[]){
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(COMMAND_PORT);
 
-	debugf("Listening for Command on port %d", COMMAND_PORT);
+	debugf("[SK-%d]: Listening for Command on port %d", sk_listen_command_con, COMMAND_PORT);
 	ret = bind(sk_listen_command_con, (struct sockaddr*)&addr, sizeof(addr));
 	if (ret < 0){
 		perror("[ERROR]: Cannot bind to socket");

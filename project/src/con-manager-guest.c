@@ -257,7 +257,7 @@ int init_con_manager_guest(){
 		perror("Failed to bind to address");
 		exit(1);
 	}
-	debugf("Listening for consensused connection info on port: %d",REPORT_PORT);
+	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_udp, REPORT_PORT);
 
 
 	pthread_t report_thread;
@@ -271,7 +271,6 @@ int init_con_manager_guest(){
 
 
 	sk_listen = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	debugf("Listening sk:%d", sk_listen);
 	if (sk_listen < 0){
 		perror("Cannot create the socket");
 		return -1;
@@ -286,7 +285,7 @@ int init_con_manager_guest(){
 	srvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	srvaddr.sin_port = htons(QUERY_PORT); 
 
-	debugf("Listening to query from LD_PRELOAD module on port: %d", QUERY_PORT);
+	debugf("[SK-%d]: Listening to query from LD_PRELOAD module on port: %d", sk_listen, QUERY_PORT);
 
 	ret = bind(sk_listen, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
 	if (ret < 0){
