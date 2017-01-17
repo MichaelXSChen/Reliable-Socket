@@ -50,7 +50,11 @@ int guard_client(char* ip, int port){
     while(1){
 
         struct command_t cmd; 
-    	char* argv_[]={"/home/michael/VPB-bk/project/src/test/tcp-how/tcp-howto", "127.0.0.1", "9999"};	
+        char buffer[4];
+        int value = 1111;
+        sprintf(buffer, "%d", value);
+        value++;
+    	char* argv_[]={"/home/michael/VPB-bk/project/src/test/tcp-how/tcp-howto", "127.0.0.1", buffer};	
     	cmd.argv = argv_;
         cmd.argc = 3;
 
