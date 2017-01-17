@@ -71,13 +71,13 @@ void *handle_tcp_buffer(void *useless){
     while(1){
         while(!is_leader() && sleep_time ==0){
             ret = dump_tcp_buffer();
-            debugf("[TCP] ret = %d", ret);
+            //debugf("[TCP] ret = %d", ret);
             if (ret == 0){
                 pthread_mutex_lock(&tcp_no_empty_lock);
                 pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
                 pthread_mutex_unlock(&tcp_no_empty_lock);
             }
-            debugf("[TCP] cond wait wakeup");
+            //debugf("[TCP] cond wait wakeup");
 
             //if (ret != 0)
                 //debugf("[TCP] Compied bytes of length %d", ret);
@@ -654,7 +654,7 @@ static void do_action_raw(void *data, size_t size){
             int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
             struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
             if ((tcp_header->th_flags & TH_SYN) == TH_SYN){
-                debugf("syn detected port: %d -> port :%d, drop it", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
+                debugf("syn detected port: %d -> port :%d, drop it, len=%zu", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport), size);
                 //Drop the packet 
 
                 increase_sleep_time(2);
