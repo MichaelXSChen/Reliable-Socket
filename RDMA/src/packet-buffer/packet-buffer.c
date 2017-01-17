@@ -90,14 +90,21 @@ int dump_tcp_buffer(){
 		pthread_spin_unlock(&outgoing_buffer_lock);
 		return 0;
 	}
+	
 
 	uint8_t *buffer =(uint8_t*)malloc(len);
 	ringbuf_memcpy_from(buffer, tcp_buffer, len);
 	
-	write_to_packet_buffer(buffer, len);
+
+	ringbuf_memcpy_into(outgoing_buffer, buffer, len);
+
+
+
 
 	pthread_spin_unlock(&tcp_buffer_lock);
 	pthread_spin_unlock(&outgoing_buffer_lock);
+
+
 	return len;
 }
 
