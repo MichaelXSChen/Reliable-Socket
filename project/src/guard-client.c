@@ -45,13 +45,12 @@ int guard_client(char* ip, int port){
         perror("Can't connect");
         return -1;
     }
-
+	int value=1111;
     debugf("connected");
     while(1){
 
         struct command_t cmd; 
         char buffer[4];
-        int value = 1111;
         sprintf(buffer, "%d", value);
         value++;
     	char* argv_[]={"/home/michael/VPB-bk/project/src/test/tcp-how/tcp-howto", "127.0.0.1", buffer};	
@@ -77,7 +76,7 @@ int guard_client(char* ip, int port){
 
 
 int main(int argc, char *argv){
-	int ret = guard_client("127.0.0.1", 3120);
+	int ret = guard_client("10.22.1.100", 3120);
 	if (ret < 0){
 		perror("Failed run client");
 		return -1;
