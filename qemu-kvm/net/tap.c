@@ -103,6 +103,8 @@ static void tap_writable(void *opaque)
     qemu_flush_queued_packets(&s->nc);
 }
 
+extern int fd_dev_null;
+
 static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt)
 {
     ssize_t len;
@@ -115,7 +117,7 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
              len = writev(s->fd, iov, iovcnt);
         }
          else{
-             len = writev(2, iov, iovcnt);
+             len = writev(fd_dev_null, iov, iovcnt);
         }
     } while (len == -1 && errno == EINTR);
 

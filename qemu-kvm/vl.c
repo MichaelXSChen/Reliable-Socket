@@ -234,6 +234,11 @@ uint8_t *boot_splash_filedata;
 int boot_splash_filedata_size;
 uint8_t qemu_extra_params_fw[2];
 
+//
+int fd_dev_null; 
+
+
+
 typedef struct FWBootEntry FWBootEntry;
 
 struct FWBootEntry {
@@ -2364,7 +2369,9 @@ int qemu_init_main_loop(void)
 int main(int argc, char **argv, char **envp)
 {
     
-    printf("\n\n\nhello world\n\n\n\n");
+    fd_dev_null = open("/dev/null", O_WRONLY);
+    printf("Craeted fd: %d to /dev/null\n", fd_dev_null);
+
     int i;
     int snapshot, linux_boot;
     const char *icount_option = NULL;
