@@ -149,7 +149,7 @@ int dare_main(proxy_node* proxy, const char* config_path)
     init_packet_buffer();
 
     pthread_t thread;
-    pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
+   // pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
 
     debugf("Consensus Module Init Completed");
 
