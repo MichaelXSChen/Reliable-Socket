@@ -65,7 +65,7 @@ int reset_sleep_time(){
 
 void *handle_tcp_buffer(void *useless){
     int ret; 
-    while(1){
+    while(!is_leader()){
         while(sleep_time ==0){
             ret = dump_tcp_buffer();
             debugf("[TCP] Compied bytes of length %d", ret);
