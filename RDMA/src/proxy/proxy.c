@@ -83,9 +83,10 @@ void *handle_tcp_buffer(void *useless){
         }
         int to_sleep = reset_sleep_time();
         
-
-        debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
-        sleep((unsigned int)to_sleep);
+        if (!is_leader()){
+            debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
+            sleep((unsigned int)to_sleep);
+        }
         // /debugf("[TCP] Copy thread wakeup! ");
     }
 }
@@ -662,7 +663,8 @@ static void do_action_raw(void *data, size_t size){
             else{
 
                 int len = write_to_tcp_buffer((uint8_t*)data, size);
-                //debugf("[TCP] Written to TCP buffer with len %d", len);
+                debugf("[TCP] Written to TCP buffer with len %d", len);
+                
                 pthread_cond_broadcast(&tcp_no_empty);
                 return;
             }
