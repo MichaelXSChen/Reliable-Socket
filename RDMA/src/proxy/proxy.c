@@ -68,9 +68,12 @@ void *handle_tcp_buffer(void *useless){
     while(1){
         while(sleep_time ==0){
             ret = dump_tcp_buffer();
+            debugf("[TCP] Compied bytes of length %d", ret);
         }
         int to_sleep = reset_sleep_time();
+        debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
         sleep(to_sleep);
+
     }
 }
 
