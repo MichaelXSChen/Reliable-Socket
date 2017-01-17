@@ -71,10 +71,12 @@ void *handle_tcp_buffer(void *useless){
     while(1){
         while(!is_leader() && sleep_time ==0){
             ret = dump_tcp_buffer();
+            debugf("[TCP] ret = %d", ret);
             if (ret == 0){
                 pthread_mutex_lock(&tcp_no_empty_lock);
                 pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
             }
+            debugf("[TCP] cond wait wakeup");
 
             //if (ret != 0)
                 //debugf("[TCP] Compied bytes of length %d", ret);
@@ -82,7 +84,7 @@ void *handle_tcp_buffer(void *useless){
         int to_sleep = reset_sleep_time();
         
 
-        //debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
+        debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
         sleep((unsigned int)to_sleep);
         // /debugf("[TCP] Copy thread wakeup! ");
     }
@@ -661,9 +663,7 @@ static void do_action_raw(void *data, size_t size){
 
                 int len = write_to_tcp_buffer((uint8_t*)data, size);
                 //debugf("[TCP] Written to TCP buffer with len %d", len);
-                pthread_mutex_lock(&tcp_no_empty_lock);
-                pthread_cond_signal(&tcp_no_empty);
-                pthread_mutex_unlock(&tcp_no_empty_lock);
+                pthread_cond_broadcast(&tcp_no_empty);
                 return;
             }
 
