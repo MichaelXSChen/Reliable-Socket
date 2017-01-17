@@ -64,6 +64,7 @@ int reset_sleep_time(){
 
 
 void *handle_tcp_buffer(void *useless){
+    sleep(5);
     int ret; 
     while(!is_leader()){
         while(sleep_time ==0){
