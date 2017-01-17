@@ -148,8 +148,11 @@ int dare_main(proxy_node* proxy, const char* config_path)
     
     init_packet_buffer();
 
+
+    reset_sleep_time();
+
     pthread_t thread;
-   // pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
+    pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
 
     debugf("Consensus Module Init Completed");
 
@@ -583,10 +586,6 @@ static void do_action_tcpnewcon(void *data, size_t size){
     insert_connection_bytes((char*)data, size);
 }
 
-struct consensused_data{
-    uint8_t * data; 
-    size_t size
-};
 
 
 #define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
