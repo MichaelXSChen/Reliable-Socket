@@ -83,10 +83,9 @@ void *handle_tcp_buffer(void *useless){
         }
         int to_sleep = reset_sleep_time();
         
-        if (!is_leader()){
-            debugf("[TCP] TCP thread will sleep %d seconds", to_sleep);
-            sleep((unsigned int)to_sleep);
-        }
+
+        sleep((unsigned int)to_sleep);
+    
         // /debugf("[TCP] Copy thread wakeup! ");
     }
 }
