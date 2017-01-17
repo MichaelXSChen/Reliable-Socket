@@ -182,6 +182,10 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         return -1;
     }
 
+    debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", con_info->send_seq, con_info->recv_seq);
+
+
+
     aux = 1;
     ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
     if (ret < 0){
@@ -322,6 +326,10 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
             perrorf("Failed to get tcp_seq");
             return -1;
         }
+
+        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
+
+
 
         ret = tcp_repair_off(sk);
         if (ret < 0){

@@ -657,7 +657,7 @@ static void do_action_raw(void *data, size_t size){
                 debugf("syn detected port: %d -> port :%d, drop it, len=%zu", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport), size);
                 //Drop the packet 
 
-                increase_sleep_time(2);
+                increase_sleep_time(4);
                 return;
             }
             else{
