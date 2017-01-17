@@ -75,6 +75,7 @@ void *handle_tcp_buffer(void *useless){
             if (ret == 0){
                 pthread_mutex_lock(&tcp_no_empty_lock);
                 pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
+                pthread_mutex_unlock(&tcp_no_empty_lock);
             }
             debugf("[TCP] cond wait wakeup");
 
