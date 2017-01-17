@@ -114,10 +114,18 @@ int con_info_deserialize(struct con_info_type *con_info, const char *buf, int le
 
 
 int recv_bytes(int sk, char** buf, int *length){
-
-
+	int ret = 0;
 	int32_t tmp;
-	recv(sk, &tmp, sizeof(tmp), 0);
+	ret = recv(sk, &tmp, sizeof(tmp), 0);
+	if (ret < 0){
+		perrorf("Error Recving with ret = %d", ret);
+		return ret;
+	}
+	if (ret == 0){
+		return 0;
+	}
+
+
 	*length = ntohl(tmp);
 	
 	*buf = (char *)malloc(*length); 
@@ -126,13 +134,13 @@ int recv_bytes(int sk, char** buf, int *length){
 
 	//memset(*buf, 1, *length);
 	int left = *length;
-	int ret = 0;
+	
 	do{
 		ret = recv(sk, data, left, 0);
 		if (ret < 0){
 			//TODO: Deal with errors;
 			perrorf("Error recving request");
-			return -1;
+			return ret;
 		}
 		if (ret == 0){
 			return 0;
