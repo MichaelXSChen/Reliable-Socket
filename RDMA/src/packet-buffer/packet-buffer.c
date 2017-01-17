@@ -16,7 +16,12 @@ static ringbuf_t tcp_buffer;
 static pthread_spinlock_t outgoing_buffer_lock;
 static pthread_spinlock_t tcp_buffer_lock;
 
+/**************
+Buffer Format
 
+....|size_t len_of_buffer| buffer contents |..... 
+
+*****************/
 void init_packet_buffer(){
 	outgoing_buffer = ringbuf_new(OUTGOING_BUFFER_SIZE);
 	tcp_buffer = ringbuf_new(TCP_BUFFER_SIZE);
@@ -34,15 +39,23 @@ int read_from_packet_buffer(uint8_t **buffer){
 		pthread_spin_unlock(&outgoing_buffer_lock);
 		return 0;
 	}
-	*buffer =(uint8_t*)malloc(len);
-	ringbuf_memcpy_from(*buffer, outgoing_buffer, len);
+	size_t buffer_len; 
+	//Get lenght of next packet
+	ringbuf_memcpy_from(&buffer_len, outgoing_buffer, sizeof(buffer_len));
+
+
+	*buffer =(uint8_t*)malloc(buffer_len);
+	ringbuf_memcpy_from(*buffer, outgoing_buffer, buffer_len);
 
 	pthread_spin_unlock(&outgoing_buffer_lock);
-	return len;
+	return buffer_len;
 }
 
 int write_to_packet_buffer(const uint8_t *buffer, size_t len){
 	pthread_spin_lock(&outgoing_buffer_lock);
+
+	//Write the length first
+	ringbuf_memcpy_into(outgoing_buffer, &len, sizeof(len));
 
 
 	ringbuf_memcpy_into(outgoing_buffer, buffer, len);
@@ -53,6 +66,8 @@ int write_to_packet_buffer(const uint8_t *buffer, size_t len){
 }
 
 int packet_buffer_to_buffer(uint8_t *buffer, int maxlen){
+	//TODO: Currently ignore max len
+
 	pthread_spin_lock(&outgoing_buffer_lock);
 
 
@@ -62,15 +77,21 @@ int packet_buffer_to_buffer(uint8_t *buffer, int maxlen){
 		pthread_spin_unlock(&outgoing_buffer_lock);
 		return 0;
 	}
-	int read_len = (len < maxlen) ? len : maxlen;
-	ringbuf_memcpy_from(buffer, outgoing_buffer, read_len);
+
+	size_t next_buffer_len;
+	ringbuf_memcpy_from(&next_buffer_len, outgoing_buffer, sizeof(next_buffer_len));
+
+
+	//int read_len = (len < maxlen) ? len : maxlen;
+	ringbuf_memcpy_from(buffer, outgoing_buffer, next_buffer_len);
 	pthread_spin_unlock(&outgoing_buffer_lock);
 
-	return read_len;
+	return next_buffer_len;
 }
 
 int write_to_tcp_buffer(const uint8_t *buffer, size_t len){
 	pthread_spin_lock(&tcp_buffer_lock);
+	ringbuf_memcpy_into(tcp_buffer, &len, sizeof(len));
 	ringbuf_memcpy_into(tcp_buffer, buffer, len);
 	pthread_spin_unlock(&tcp_buffer_lock);
 	return len;
