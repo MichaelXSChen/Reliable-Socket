@@ -362,7 +362,25 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         }
 
     }
-    
+    int buffer_size; 
+    int bl = sizeof(buffer_size);
+    ret = getsockopt(sk, SOL_SOCKET, SO_RCVBUF, &buffer_size, &bl);
+    if (ret != 0){
+        perrorf ("Failed to get rcv buffer_size\n");
+    }
+    else{
+        debugf("Buffer size of recv buffer: %d\n", buffer_size);
+    }
+
+
+    ret = getsockopt(sk, SOL_SOCKET, SO_SNDBUF, &buffer_size, &bl);
+    if (ret != 0){
+        perrorf ("Failed to get snd buffer_size\n");
+    }
+    else{
+        debugf("Buffer size of snd buffer: %d\n", buffer_size);
+    }
+
     debugf("Before retrun accept");
     return sk; 
 }
