@@ -22,6 +22,25 @@ typedef int (*orig_accpet_func_type)(int sockfd, struct sockaddr *addr, socklen_
 typedef int (*orig_socket_func_type)(int domain, int type, int protocol);
 typedef int (*orig_bind_func_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
+#ifndef CONFIG_HAS_TCP_REPAIR_WINDOW
+struct tcp_repair_window {
+    uint32_t   snd_wl1;
+    uint32_t   snd_wnd;
+    uint32_t   max_window;
+
+    uint32_t   rcv_wnd;
+    uint32_t   rcv_wup;
+};
+#endif
+
+
+
+
+#ifndef TCP_REPAIR_WINDOW
+#define TCP_REPAIR_WINDOW       29
+#endif
+
+
 
 static int tcp_repair_on(int fd)
 {
@@ -57,6 +76,47 @@ static int get_tcp_queue_seq(int sk, int queue, uint32_t *seq){
     
 
 }
+
+static int get_tcp_window(int sk, struct con_info_type *con_info){
+    struct tcp_repair_window *window = (struct tcp_repair_window *)malloc(sizeof(struct tcp_repair_window));
+    socklen_t optlen = sizeof(*window);
+    
+    int ret ;
+    ret = getsockopt(sk, SOL_TCP, TCP_REPAIR_WINDOW, window, &optlen);
+    if (ret != 0){
+        perrorf("Failed to get tcp window opt");
+        return ret; 
+    }
+    con_info->snd_wl1 = window->snd_wl1;
+    con_info->snd_wnd = window->snd_wnd;
+    con_info->max_window = window->max_window;
+    con_info->rcv_wnd = window->rcv_wnd;
+    con_info->rcv_wup = window->rcv_wup;
+    free(window);
+
+    return 0;
+}
+
+static int set_tcp_window(int sk, struct con_info_type *con_info){
+    struct tcp_repair_window *window = (struct tcp_repair_window *)malloc(sizeof(struct tcp_repair_window));
+    socklen_t optlen = sizeof(*window);
+
+    window->snd_wl1 = con_info->snd_wl1;
+    window->snd_wnd = con_info->snd_wnd;
+    window->max_window = con_info->max_window;
+    window->rcv_wnd = con_info->rcv_wnd;
+    window->rcv_wup = con_info->rcv_wup;
+
+
+
+    int ret = setsockopt(sk, SOL_TCP, TCP_REPAIR_WINDOW, window, optlen);
+    if (ret != 0){
+        perrorf("Failed to set tcp window");
+        return ret;
+    }
+    return 0;
+}
+
 
 
 
@@ -183,6 +243,9 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     }
 
     debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", con_info->send_seq, con_info->recv_seq);
+
+
+
 
 
 
@@ -330,17 +393,35 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
 
 
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+
+        //Get window
+        ret = get_tcp_window(sk, con_info);
+        if (ret != 0){
+            perrorf("Failed to get TCP window");
+            return ret; 
+        }
+
+
+
 
         ret = tcp_repair_off(sk);
         if (ret < 0){
             perrorf("Failed turn off");
         }
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+        
        
         get_tcp_con_id(sk, con_info);
         con_info->send_seq = send_seq;
         con_info->recv_seq = recv_seq;
+
+        
+       
+
+
+
+
         ret = ask_for_consensus(sk_tomgr, con_info);
         if (ret < 0){
             perrorf("Failed to ask for consensus");

@@ -37,6 +37,13 @@ struct con_info_type{
     struct con_id_type con_id;
     uint32_t send_seq; 
     uint32_t recv_seq;
+
+    uint32_t snd_wl1;
+    uint32_t snd_wnd;
+    uint32_t max_window;
+
+    uint32_t rcv_wnd;
+    uint32_t rcv_wup;
 };
 
 
