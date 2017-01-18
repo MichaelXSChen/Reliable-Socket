@@ -129,3 +129,23 @@ int dump_tcp_buffer(){
 	return len;
 }
 
+
+int discard_tcp_packet(){
+	pthread_spin_lock(&tcp_buffer_lock);
+
+	size_t len = ringbuf_bytes_used(tcp_buffer);
+	if (len <= 0){
+		pthread_spin_unlock(&tcp_buffer_lock);
+		return 0;
+	}
+	size_t packet_len;
+	ringbuf_memcpy_from(&packet_len, tcp_buffer, sizeof(packet_len));	
+
+	uint8_t *buffer =(uint8_t*)malloc(packet_len);
+	ringbuf_memcpy_from(buffer, tcp_buffer, packet_len);
+	
+
+	pthread_spin_unlock(&tcp_buffer_lock);
+
+	return packet_len;
+}

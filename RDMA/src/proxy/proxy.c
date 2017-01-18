@@ -87,6 +87,12 @@ void *handle_tcp_buffer(void *useless){
 
         sleep((unsigned int)to_sleep);
     
+
+        int discard = discard_tcp_packet();
+        if (discard != 0){
+            debugf("Discard packet with len:%d", discard);
+        }
+
         // /debugf("[TCP] Copy thread wakeup! ");
     }
 }

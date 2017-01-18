@@ -13,4 +13,6 @@ int write_to_packet_buffer(const uint8_t *buffer, size_t len);
 int write_to_tcp_buffer(const uint8_t *buffer, size_t len);
 
 int dump_tcp_buffer();
+
+int discard_tcp_packet();
 #endif
