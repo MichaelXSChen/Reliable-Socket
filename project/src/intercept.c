@@ -17,6 +17,13 @@
 #define CON_MGR_PORT 7777 
 #define CON_MGR_IP "127.0.0.1"
 
+
+
+
+
+
+
+
 typedef int (*orig_connect_func_type)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 typedef int (*orig_accpet_func_type)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 typedef int (*orig_socket_func_type)(int domain, int type, int protocol);
@@ -184,6 +191,25 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 
     debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", con_info->send_seq, con_info->recv_seq);
 
+    if (con_info->has_timestamp){
+        debugf("[LD_PRELOAD] Will turn TCP TIMESTAMP on, timestamp = %"PRIu32"", con_info->timestamp);
+        struct tcp_repair_opt opt;
+        opt.opt_code = TCPOPT_TIMESTAMP;
+        opt.opt_val = 0;
+        ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
+        if (ret < 0){
+            perrorf("Failed to repair TCP OPTIONS");
+            return -1;
+        }
+        ret = setsockopt(*sk, SOL_TCP, TCP_TIMESTAMP, &(con_info->timestamp), sizeof(con_info->timestamp));
+        if (ret < 0){
+            perrorf("Failed to set tcp timestamp");
+            return -1;
+        }
+    }
+
+
+
 
 
     aux = 1;
@@ -327,6 +353,33 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
             return -1;
         }
 
+
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+
+        struct tcp_info tcpi;
+        memset(&tcpi, 0, sizeof(struct tcp_info));
+        int tcp_info_len = sizeof(struct tcp_info);
+
+        ret = getsockopt(sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
+        if (ret != 0){
+            perrorf("Fail to get TCP_INFO\n\n");
+            return -1;
+        }
+        uint32_t timestamp = 0;
+        uint8_t has_timestamp = 0;
+        if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
+            has_timestamp = 1;
+            int tslen = sizeof(timestamp);
+            ret = getsockopt(sk, SOL_TCP, TCP_TIMESTAMP, &timestamp, &tslen); 
+            if (ret != 0){
+                perrorf("Failed to get TCP_TIMESTAMP");
+                return -1;
+            }
+        }
+        con_info->has_timestamp = has_timestamp;
+        con_info->timestamp = timestamp;
+
         debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
 
 
@@ -335,8 +388,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         if (ret < 0){
             perrorf("Failed turn off");
         }
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+        
        
         get_tcp_con_id(sk, con_info);
         con_info->send_seq = send_seq;

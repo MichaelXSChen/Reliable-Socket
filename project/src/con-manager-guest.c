@@ -90,9 +90,9 @@ void * serve_report(void * arg){
 	while(1)
 	{
 		recv_len = recvfrom(sk_udp, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
-		if (recv_len != CON_INFO_SERIAL_LEN){
-			continue;
-		}
+		// if (recv_len != CON_INFO_SERIAL_LEN){
+		// 	continue;
+		// }
 
 		debugf("Report Port received packet of lenth %d", recv_len);
 		if (iamleader == 0){
