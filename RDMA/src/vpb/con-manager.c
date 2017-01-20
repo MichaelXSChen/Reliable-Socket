@@ -41,11 +41,16 @@ int get_isn(uint32_t *isn, struct con_id_type *con){
 }
 
 int save_isn(uint32_t isn, struct con_id_type *con){
-	struct con_isn_entry entry;
-	memcpy(&(entry.con_id), con, sizeof(struct con_id_type));
+	con_isn_entry *entry = (con_isn_entry *) malloc(sizeof(con_isn_entry));
+	memcpy(&(entrycon_id), con, sizeof(struct con_id_type));
 	entry.isn = isn; 
-	struct con_isn_entry *replaced; 
-	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), &entry, replaced);
+	struct con_isn_entry *replaced;
+
+
+	debugf("trying to insert into hashtable");
+	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), entry, replaced);
+	
+	debugf("insert complete");
 	return 0;
 }
 
