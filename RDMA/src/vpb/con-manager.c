@@ -13,12 +13,11 @@
 #include <inttypes.h>
 #include <unistd.h>
 
-#define ONE_NC_MODE
 
-#ifdef ONE_NC_MODE
+
 #define REPORT_SERVER "10.22.1.100"
 #define REPORT_PORT 6666
-#endif
+
 
 
 
@@ -29,54 +28,74 @@ int sk;
 
 int sk_to_guest;
 
-con_list_entry *con_list;
+// con_list_entry *con_list;
+typedef struct con_isn_entry con_isn_entry;
 
+con_isn_entry *con_isn_list;
 
-
-int find_connection(con_list_entry **entry ,struct con_id_type *con){
-	//debugf("Finding entry with src_ip:%" PRIu32", src_port:%"PRIu16", dst_ip:%"PRIu32", dst_port:%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
-	HASH_FIND(hh, con_list, con, sizeof(struct con_id_type), *entry);
+int get_isn(uint32_t *isn, struct con_id_type *con){
+	con_isn_entry *entry;
+	HASH_FIND(hh, con_isn_list, con, sizeof(struct con_id_type), entry);
+	*isn = entry->isn; 
 	return 0;
 }
 
-int insert_connection(con_list_entry* entry){
-	struct con_list_entry *tmp = NULL; 
-	find_connection(&tmp, &(entry->con_id));
-	debugf("trying to insert entry with src_ip=%"PRIu32", send_seq = %"PRIu32"", entry->con_id.src_ip, entry->send_seq);
+int save_isn(uint32_t isn, struct con_id_type *con){
+	struct con_isn_entry entry;
+	memcpy(&(entry.con_id), con, sizeof(struct con_id_type));
+	entry.isn = isn; 
+	struct con_isn_entry *replaced; 
+	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), &entry, replaced);
+	return 0;
+}
+
+
+
+
+// int find_connection(con_list_entry **entry ,struct con_id_type *con){
+// 	//debugf("Finding entry with src_ip:%" PRIu32", src_port:%"PRIu16", dst_ip:%"PRIu32", dst_port:%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
+// 	HASH_FIND(hh, con_list, con, sizeof(struct con_id_type), *entry);
+// 	return 0;
+// }
+
+// int insert_connection(con_list_entry* entry){
+// 	struct con_list_entry *tmp = NULL; 
+// 	find_connection(&tmp, &(entry->con_id));
+// 	debugf("trying to insert entry with src_ip=%"PRIu32", send_seq = %"PRIu32"", entry->con_id.src_ip, entry->send_seq);
 	
 
-	if (tmp == NULL){
-		HASH_ADD(hh, con_list, con_id, sizeof(struct con_id_type), entry);
-		debugf("\nInsert success!! Size of Hashtable: %d", HASH_COUNT(con_list));
-	}
-	else {
-		//TODO: How to do now;
+// 	if (tmp == NULL){
+// 		HASH_ADD(hh, con_list, con_id, sizeof(struct con_id_type), entry);
+// 		debugf("\nInsert success!! Size of Hashtable: %d", HASH_COUNT(con_list));
+// 	}
+// 	else {
+// 		//TODO: How to do now;
 
-		debugf("conflict, send_seq = %"PRIu32"", tmp->send_seq);
-	}
-	return 0;
-}
+// 		debugf("conflict, send_seq = %"PRIu32"", tmp->send_seq);
+// 	}
+// 	return 0;
+// }
 
 
-int insert_connection_bytes(char* buf, int len){
-	int ret;
-	struct con_info_type con_info;
-	ret = con_info_deserialize(&con_info, buf, len);
-	if (ret <0){
-		perrorf("Failed to deserialize consensused req");
-		return -1;
-	}
-	con_list_entry entry;
-	entry.con_id = con_info.con_id;
-	entry.send_seq = con_info.send_seq;
-	entry.recv_seq = con_info.recv_seq;
-	ret = insert_connection(&entry);
-	if (ret <0){
-		perrorf("Failed to insert into hashmap");
-		return ret;
-	}
-	return 0;
-}
+// int insert_connection_bytes(char* buf, int len){
+// 	int ret;
+// 	struct con_info_type con_info;
+// 	ret = con_info_deserialize(&con_info, buf, len);
+// 	if (ret <0){
+// 		perrorf("Failed to deserialize consensused req");
+// 		return -1;
+// 	}
+// 	con_list_entry entry;
+// 	entry.con_id = con_info.con_id;
+// 	entry.send_seq = con_info.send_seq;
+// 	entry.recv_seq = con_info.recv_seq;
+// 	ret = insert_connection(&entry);
+// 	if (ret <0){
+// 		perrorf("Failed to insert into hashmap");
+// 		return ret;
+// 	}
+// 	return 0;
+// }
 
 
 int report_to_guest_manager(char* buf, int len){
@@ -114,14 +133,12 @@ void *serve(void *sk_arg){
 		}
 
 		uint8_t iamleader;
-		#ifdef ONE_NC_MODE
 		if (len == 1){
 			debugf("Check for leadership");
 			iamleader = (uint8_t) is_leader();
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
 			continue;
 		}
-		#endif
 
 
 		struct con_info_type con_info;
@@ -143,15 +160,11 @@ void *serve(void *sk_arg){
 			Consensus
 			**/
 
-			#ifndef ONE_NC_MODE
 			tcpnewcon_handle((uint8_t *)buf,len); 
-			#endif
 			//
 			
-			#ifdef ONE_NC_MODE
-			report_to_guest_manager(buf, len);
+			// report_to_guest_manager(buf, len);
 
-			#endif
 
 			iamleader = 1;
 			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
@@ -161,37 +174,9 @@ void *serve(void *sk_arg){
 				printf("Failed to send reply back");
 				pthread_exit(0);
 			}
-		}else{
-			//Get the entry
-			//return the entry
-			con_list_entry *entry=NULL; 
-			find_connection(&entry,&(con_info.con_id));
-			while(entry == NULL){
-				debugf("NO match, try again");
-				sleep(1);
-				//TODO: improve this faster;
-				find_connection(&entry,&(con_info.con_id));
-			}
-			debugf("Match, send_seq = %"PRIu32"", entry->send_seq);
-			iamleader = 0;
-			ret = send(*sk, &iamleader, sizeof(iamleader), 0);
-			if (ret < 0){
-				printf("Failed to send reply back");
-				pthread_exit(0);
-			}
-
-			con_info.send_seq = entry->send_seq;
-			con_info.recv_seq = entry->recv_seq;
-			int len;
-			char* buf;
-			ret = con_info_serialize(&buf, &len, &con_info);
-
-			ret = send_bytes(*sk, buf, len);
-
-		    if (ret < 0){
-		        perror("Failed to send con_info");
-		        pthread_exit(0);
-		    }
+		}
+		else{
+			debugf("[ERROR] NO LEADER, shouldn't ask for consensus");
 
 		}	
 
@@ -218,17 +203,18 @@ void *wait_for_connection(void *arg){
 
 int con_manager_init(){
 	// Init the hash table
-	con_list = NULL;
+	// con_list = NULL;
+	con_isn_list = NULL;
 	int ret;
 
-	con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
-	entry->con_id.src_port = htons(9999);
-	entry->con_id.src_ip = 16777343;
-	entry->con_id.dst_ip = 16777343;
-	entry->con_id.dst_port = htons(10060);
-	entry->send_seq = 931209;
-	entry->recv_seq = 123456;
-	insert_connection(entry);
+	// con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
+	// entry->con_id.src_port = htons(9999);
+	// entry->con_id.src_ip = 16777343;
+	// entry->con_id.dst_ip = 16777343;
+	// entry->con_id.dst_port = htons(10060);
+	// entry->send_seq = 931209;
+	// entry->recv_seq = 123456;
+	// insert_connection(entry);
 
 
 	sk_to_guest = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -275,4 +261,25 @@ int con_manager_init(){
 	return 0;
 }
 
+int handle_consensused_con(char* buf, int len){
+	struct con_info_type con_info; 
+	memset(&con_info, 0, sizeof(con_info));
 
+	int ret;
+	ret = con_info_deserialize(&con_info, buf, len);
+
+	uint32_t isn; 
+	find_isn(&isn, &(con_info.con_id));
+
+
+	con_info.recv_seq = isn; 
+
+
+	char *buffer; 
+	int length; 
+	con_info_serialize(&buffer, &length, &con_info);
+	report_to_guest_manager(buffer, length);
+
+	return 0; 
+
+}

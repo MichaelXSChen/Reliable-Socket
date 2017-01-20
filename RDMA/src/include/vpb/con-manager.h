@@ -11,11 +11,20 @@ struct con_list_entry{
     UT_hash_handle hh;
 };
 
-typedef struct con_list_entry con_list_entry;
+struct con_isn_entry{
+	struct con_id_type con_id;
+	uint32_t isn; 
+	UT_hash_handle hh;
+};
 
+int get_isn(uint32_t *isn, struct con_id_type *con);
 
-int insert_connection_bytes(char* buf, int len);
+int save_isn(uint32_t isn, struct con_id_type *con);
+
 
 int con_manager_init();
+
+
+int handle_consensused_con(char* buf, int len);
 
 #endif

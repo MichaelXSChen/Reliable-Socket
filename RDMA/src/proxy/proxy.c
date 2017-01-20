@@ -602,7 +602,7 @@ int tcpnewcon_handle(uint8_t *buf,int size){
 static void do_action_tcpnewcon(void *data, size_t size){
     //Backup 
     //Call insert in con-manager
-    insert_connection_bytes((char*)data, size);
+    handle_consensused_con((char*)data, size);
 }
 
 
@@ -644,7 +644,6 @@ static void do_action_tcpnewcon(void *data, size_t size){
 
 
 
-
 static void do_action_raw(void *data, size_t size){
     int eth_hdr_len = sizeof(struct ether_header);
     if (size > MSG_OFF + eth_hdr_len){
@@ -653,9 +652,25 @@ static void do_action_raw(void *data, size_t size){
         if (ip_header->ip_p == 0x06){
             int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
             struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
+            
             if ((tcp_header->th_flags & TH_SYN) == TH_SYN){
                 debugf("syn detected port: %d -> port :%d, drop it, len=%zu", ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport), size);
                 //Drop the packet 
+                uint32_t isn; 
+                struct con_id_type con_id; 
+                /****************************
+                *The packet is sent from client to server
+                *So from server's point of view, the src and dst should be 
+                *!!Opposite!!
+                *******************************/
+                con_id.src_ip = ip_header->ip_dst.s_addr;
+                con_id.src_port = tcp_header->th_dport;
+                con_id.dst_ip = ip_header->ip_src.s_addr;
+                con_id.dst_port = tcp_header->th_sport;
+
+                isn = tcp_header->th_seq;
+                save_isn(isn, &con_id);
+
 
                 increase_sleep_time(4);
                 return;
