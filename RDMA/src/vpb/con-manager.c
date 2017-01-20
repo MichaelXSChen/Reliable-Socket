@@ -42,8 +42,8 @@ int get_isn(uint32_t *isn, struct con_id_type *con){
 
 int save_isn(uint32_t isn, struct con_id_type *con){
 	con_isn_entry *entry = (con_isn_entry *) malloc(sizeof(con_isn_entry));
-	memcpy(&(entrycon_id), con, sizeof(struct con_id_type));
-	entry.isn = isn; 
+	memcpy(&(entry->con_id), con, sizeof(struct con_id_type));
+	entry->isn = isn; 
 	struct con_isn_entry *replaced;
 
 
