@@ -1,5 +1,5 @@
 CC=gcc
-all: guard-client intercept.so guest-daemon
+all: guard-client intercept.so guest-daemon tcp
 
 #con-manager:con-manager.c common.o 
 #	gcc -c con-manager.c -I.
@@ -35,6 +35,9 @@ guest-daemon: guest-daemon.c con-manager-guest.o con-hashmap.o tpl.o common.o
 	gcc -c guest-daemon.c -I.
 	gcc -o guest-daemon common.o guest-daemon.o tpl.o con-hashmap.o con-manager-guest.o -lpthread
 
+tcp: tcp.c tpl.o common.o
+	gcc -c tcp.c
+	gcc -o tcp tcp.o tpl.o common.o
 
 .PHONY: clean
 

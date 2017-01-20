@@ -53,4 +53,6 @@ struct con_info_reply{
 int recv_bytes(int sk, char** buf, int *length);
 int send_bytes(int sk, char* buf, int len);
 
+int show_socket_info(int sk);
+
 #endif // COMMON_H

@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
+
+
 
 void debugf(const char* format,...){
 	if (DEBUG_ON){
@@ -189,3 +192,78 @@ int send_bytes(int sk, char* buf, int len){
 	debugf("Sent bytes with len: %d", len);
 	return 0;
 }
+
+
+
+
+int show_socket_info(int sk){
+    int ret, aux; 
+    struct tcp_info tcpi;
+    memset(&tcpi, 0, sizeof(struct tcp_info));
+    int tcp_info_len = sizeof(struct tcp_info);
+
+    ret = getsockopt(sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
+    if (ret < 0){
+        perrorf("Failed to get tcp_info");
+        return -1;
+    }
+
+
+
+
+    uint32_t send_seq, recv_seq;
+
+    aux = 1;
+    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+    if (ret < 0)
+        perrorf("Can't turn TCP repair mode ON");
+  
+
+    socklen_t len = sizeof(send_seq);
+
+    int queue = TCP_SEND_QUEUE;
+    if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(TCP_SEND_QUEUE)) < 0){
+        perror("CANNOT SET TCP Repair Queue");
+        return -1;
+    }
+    if (getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &send_seq, &len) < 0){
+        perror("Cannot GET tcp sequece number");
+        return -1;
+    }
+
+
+    queue = TCP_RECV_QUEUE;
+    if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(TCP_RECV_QUEUE)) < 0){
+        perror("CANNOT SET TCP Repair Queue");
+        return -1;
+    }
+    if (getsockopt(sk, SOL_TCP, TCP_QUEUE_SEQ, &recv_seq, &len) < 0){
+        perror("Cannot GET tcp sequece number");
+        return -1;
+    }
+
+
+    aux = 0;
+    ret = setsockopt(sk, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+    if (ret < 0)
+        perrorf("Can't turn TCP repair mode ON");
+
+
+    printf("SOCKET INFO**********\n");
+    printf("state: %"PRIu8"\n", tcpi.tcpi_state);
+    printf("ca_state: %"PRIu8"\n", tcpi.tcpi_ca_state);
+    printf("retransmits: %"PRIu8"\n", tcpi.tcpi_retransmits);
+    printf("probes: %"PRIu8"\n", tcpi.tcpi_probes);
+    printf("backoff: %"PRIu8"\n", tcpi.tcpi_backoff);
+    printf("optionss: %"PRIu8"\n", tcpi.tcpi_options);
+    printf("snd_wscale: %"PRIu8"\n", tcpi.tcpi_snd_wscale);
+
+    printf("Send seq: %"PRIu32"\n", send_seq);
+    printf("Recv seq: %"PRIu32"\n", recv_seq);
+
+    printf("END ****************\n");
+}
+
+
+
+
