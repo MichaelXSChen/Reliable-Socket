@@ -196,7 +196,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         struct tcp_repair_opt opt;
         opt.opt_code = TCPOPT_TIMESTAMP;
         opt.opt_val = 0;
-        ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
+        //ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
         if (ret < 0){
             perrorf("Failed to repair TCP OPTIONS");
             return -1;
