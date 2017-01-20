@@ -269,7 +269,7 @@ int handle_consensused_con(char* buf, int len){
 	ret = con_info_deserialize(&con_info, buf, len);
 
 	uint32_t isn; 
-	find_isn(&isn, &(con_info.con_id));
+	get_isn(&isn, &(con_info.con_id));
 
 
 	con_info.recv_seq = isn; 
