@@ -668,7 +668,7 @@ static void do_action_raw(void *data, size_t size){
                 con_id.dst_ip = ip_header->ip_src.s_addr;
                 con_id.dst_port = tcp_header->th_sport;
 
-                isn = ntohl(tcp_header->th_seq);
+                isn = ntohl(tcp_header->th_seq)+1;
                 save_isn(isn, &con_id);
 
 
