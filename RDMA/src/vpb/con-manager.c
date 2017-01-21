@@ -15,21 +15,30 @@
 
 
 
-#define REPORT_SERVER "10.22.1.100"
+#define GUEST_IP "10.22.1.100"
 #define REPORT_PORT 6666
+#define HB_PORT 6667
 
 
+#define MY_IP "10.22.1.2"
 
 
+pthread_cond_t become_leader; 
+pthread_mutex_t become_leader_lock;
 
 
+static int sk;
 
-int sk;
 
-int sk_to_guest;
-
+static int report_sk;
 // con_list_entry *con_list;
+
+static int hb_sk;
+
+
 typedef struct con_isn_entry con_isn_entry;
+
+
 
 con_isn_entry *con_isn_list;
 
@@ -55,54 +64,6 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 }
 
 
-
-
-// int find_connection(con_list_entry **entry ,struct con_id_type *con){
-// 	//debugf("Finding entry with src_ip:%" PRIu32", src_port:%"PRIu16", dst_ip:%"PRIu32", dst_port:%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
-// 	HASH_FIND(hh, con_list, con, sizeof(struct con_id_type), *entry);
-// 	return 0;
-// }
-
-// int insert_connection(con_list_entry* entry){
-// 	struct con_list_entry *tmp = NULL; 
-// 	find_connection(&tmp, &(entry->con_id));
-// 	debugf("trying to insert entry with src_ip=%"PRIu32", send_seq = %"PRIu32"", entry->con_id.src_ip, entry->send_seq);
-	
-
-// 	if (tmp == NULL){
-// 		HASH_ADD(hh, con_list, con_id, sizeof(struct con_id_type), entry);
-// 		debugf("\nInsert success!! Size of Hashtable: %d", HASH_COUNT(con_list));
-// 	}
-// 	else {
-// 		//TODO: How to do now;
-
-// 		debugf("conflict, send_seq = %"PRIu32"", tmp->send_seq);
-// 	}
-// 	return 0;
-// }
-
-
-// int insert_connection_bytes(char* buf, int len){
-// 	int ret;
-// 	struct con_info_type con_info;
-// 	ret = con_info_deserialize(&con_info, buf, len);
-// 	if (ret <0){
-// 		perrorf("Failed to deserialize consensused req");
-// 		return -1;
-// 	}
-// 	con_list_entry entry;
-// 	entry.con_id = con_info.con_id;
-// 	entry.send_seq = con_info.send_seq;
-// 	entry.recv_seq = con_info.recv_seq;
-// 	ret = insert_connection(&entry);
-// 	if (ret <0){
-// 		perrorf("Failed to insert into hashmap");
-// 		return ret;
-// 	}
-// 	return 0;
-// }
-
-
 int report_to_guest_manager(char* buf, int len){
 	struct sockaddr_in si;
 	int slen= sizeof(si);
@@ -110,15 +71,12 @@ int report_to_guest_manager(char* buf, int len){
 	memset(&si, 0, slen);
 	si.sin_family=AF_INET;
 	si.sin_port=htons(REPORT_PORT);
-	inet_aton(REPORT_SERVER, &si.sin_addr);
-	int send_len = sendto(sk_to_guest, buf, len, 0, (struct sockaddr*)&si, slen);
+	inet_aton(GUEST_IP, &si.sin_addr);
+	int send_len = sendto(report_sk, buf, len, 0, (struct sockaddr*)&si, slen);
 	debugf("Sent to guest manager with len: %d", send_len);
 	return len;
 
 }
-
-
-
 
 
 void *serve(void *sk_arg){
@@ -207,27 +165,31 @@ void *wait_for_connection(void *arg){
 }
 
 int con_manager_init(){
+	
+	pthread_cond_init(&become_leader, NULL);
+    pthread_mutex_init(&become_leader_lock, NULL);
+
+
 	// Init the hash table
-	// con_list = NULL;
+
 	con_isn_list = NULL;
 	int ret;
 
-	// con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
-	// entry->con_id.src_port = htons(9999);
-	// entry->con_id.src_ip = 16777343;
-	// entry->con_id.dst_ip = 16777343;
-	// entry->con_id.dst_port = htons(10060);
-	// entry->send_seq = 931209;
-	// entry->recv_seq = 123456;
-	// insert_connection(entry);
 
 
-	sk_to_guest = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	report_sk= socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	debugf("socket to report to guest manager");
-	if (sk_to_guest < 0){
-		debugf("Failed to create sk");
+	if (report_sk< 0){
+		perrorf("Failed to create report_sk");
 		return -1;
 	}
+
+	hb_sk = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hb_sk < 0){
+		perror("Failed to create hb_sk");
+		return -1;
+	}
+
 
 
 
@@ -287,4 +249,32 @@ int handle_consensused_con(char* buf, int len){
 
 	return 0; 
 
+}
+
+
+void *hb_to_guest(void *arg){
+	struct in_addr myaddr;
+	memset(&myaddr, 0, sizeof(struct in_addr));
+	inet_aton(MY_IP, &myaddr);
+	uint64_t addr = myaddr.s_addr; 
+	struct sockaddr_in si;
+	int slen= sizeof(si);
+	
+	memset(&si, 0, slen);
+	si.sin_family=AF_INET;
+	si.sin_port=htons(HB_PORT);
+	inet_aton(GUEST_IP, &si.sin_addr);
+
+
+	while(1){
+		if(is_leader()){
+			 sendto(hb_sk, (struct sockaddr*)&addr, sizeof(addr), 0, &si, sizeof(si));
+			 usleep(100);
+		}	
+		else{
+			pthread_mutex_lock(&become_leader_lock);
+            pthread_cond_wait(&become_leader, &become_leader_lock);
+            pthread_mutex_unlock(&become_leader_lock);
+		}
+	}
 }

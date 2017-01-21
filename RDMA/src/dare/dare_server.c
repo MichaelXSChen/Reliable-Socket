@@ -28,6 +28,15 @@
 
 #include "../include/config-comp/config-dare.h"
 
+
+extern pthread_cond_t become_leader; 
+extern pthread_mutex_t become_leader_lock;
+
+
+
+
+
+
 /* Retry period before failures (seconds) */
 const double retry_exec_period = 0.355;
 
@@ -1396,6 +1405,14 @@ poll_vote_count()
             data.config.cid.state, data.config.cid.bitmask);
     text(log_fp, "SID:"); PRINT_SID_(data.ctrl_data->sid);
     
+
+    //Start HB to guest manager
+    //Wake up the thread waiting for hb. 
+    pthread_cond_broadcast(&become_leader);
+
+
+
+
     /* Go through the CONFIG entries => update configuration */
     poll_config_entries();
     
