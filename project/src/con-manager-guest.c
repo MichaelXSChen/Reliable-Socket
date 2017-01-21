@@ -238,6 +238,7 @@ void *listen_for_accpet(){
 
 
 void *recv_hb(void *useless){
+
 	int recv_len;
 	int buflen = 32;
 	char buf[buflen];
@@ -251,6 +252,7 @@ void *recv_hb(void *useless){
 		exit(1);
 	}
 
+	debugf("\n\n\nRECV HB thread working");
 	while(1)
 	{
 		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
