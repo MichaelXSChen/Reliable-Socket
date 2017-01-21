@@ -15,18 +15,23 @@
 #define REPORT_PORT 6666
 #define QUERY_PORT 7777
 #define BUFLEN 512
-#define CON_MGR_IP "10.22.1.5"
+#define MY_HOST_IP "10.22.1.2"
 #define CON_MGR_PORT 4321
 
 
-#define DEBUG_BAKCUP
+//#define DEBUG_BAKCUP
+typedef enum { false, true } bool;
 
-static int iamleader;
 
-static int sk_consensus_module; 
-static int sk_udp;
+
+static bool iamleader;
+
+static int sk_ask_consensus; 
+static int sk_con_info;
 static int sk_create_connection;
 static int sk_listen;
+static int sk_recv_hb;
+
 
 void create_connection(struct con_info_type *con_info){
 	int ret;
@@ -89,13 +94,13 @@ void * serve_report(void * arg){
 	int fromlen = sizeof(si_other);
 	while(1)
 	{
-		recv_len = recvfrom(sk_udp, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
+		recv_len = recvfrom(sk_con_info, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
 		// if (recv_len != CON_INFO_SERIAL_LEN){
 		// 	continue;
 		// }
 
 		debugf("Report Port received packet of lenth %d", recv_len);
-		if (iamleader == 0){
+		if (iamleader == false){
 			struct con_info_type *con_info;
 			con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
 			con_info_deserialize(con_info, buf, recv_len);
@@ -116,7 +121,7 @@ int send_for_consensus(struct con_info_type *con_info){
     char* buffer;
 	ret = con_info_serialize(&buffer, &len, con_info);
 
-	ret = send_bytes(sk_consensus_module, buffer, len);
+	ret = send_bytes(sk_ask_consensus, buffer, len);
 	if (ret < 0) {
         perror("Send for consensus failed");
         return -1;
@@ -159,7 +164,7 @@ void *serve_query(void *sk_arg){
 		debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
 		debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 
-		if(iamleader == 1){
+		if(iamleader){
 			send_for_consensus(&con_info);
 			ret = send(sk, &iamleader, sizeof(iamleader), 0);
 			// close(*sk);
@@ -174,43 +179,43 @@ void *serve_query(void *sk_arg){
 }
 
 
-int check_for_leadership(){
-	int ret;
-	sk_consensus_module = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk_consensus_module < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &addr.sin_addr);
-    if (ret < 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    addr.sin_port = htons(CON_MGR_PORT);
+// int check_for_leadership(){
+// 	int ret;
+// 	sk_ask_consensus = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+//     if (sk_ask_consensus < 0) {
+//         perror("Can't create socket");
+//         return -1;
+//     }
+//     struct sockaddr_in addr;
+//     memset(&addr, 0, sizeof(addr));
+//     addr.sin_family = AF_INET;
+//     ret = inet_aton(MY_HOST_IP, &addr.sin_addr);
+//     if (ret < 0) {
+//         perror("Can't convert addr");
+//         return -1;
+//     }
+//     addr.sin_port = htons(CON_MGR_PORT);
 
-    ret = connect(sk_consensus_module, (struct sockaddr *)&addr, sizeof(addr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return 0;
-    }
+//     ret = connect(sk_ask_consensus, (struct sockaddr *)&addr, sizeof(addr));
+//     if (ret < 0) {
+//         perror("Can't connect");
+//         return 0;
+//     }
 
-    uint8_t iamleader = 0;
+//     uint8_t iamleader = 0;
 
-    ret = send_bytes(sk_consensus_module, &iamleader, 1);
-    if (ret < 0){
-    	return 0;
-    }
-    ret = recv(sk_consensus_module, &iamleader, sizeof(iamleader), 0);
-    if (ret < 0){
-    	perror("Faield to recv response!");
-    	return -1;
-    }
+//     ret = send_bytes(sk_ask_consensus, &iamleader, 1);
+//     if (ret < 0){
+//     	return 0;
+//     }
+//     ret = recv(sk_ask_consensus, &iamleader, sizeof(iamleader), 0);
+//     if (ret < 0){
+//     	perror("Faield to recv response!");
+//     	return -1;
+//     }
    
-    return iamleader;
-}
+//     return iamleader;
+// }
 
 void *listen_for_accpet(){
 	
@@ -233,16 +238,16 @@ void *listen_for_accpet(){
 
 int init_con_manager_guest(){
 	init_con_hashmap();
-	iamleader = 0;
+	iamleader = false;
 
-#ifndef DEBUG_BAKCUP
-	iamleader = check_for_leadership();
-#endif
-	debugf("I am leader? %"PRIu8"", iamleader);
+// #ifndef DEBUG_BAKCUP
+// 	iamleader = check_for_leadership();
+// #endif
+	// debugf("I am leader? %"PRIu8"", iamleader);
 	//Create a UDP socket
 	//Wait for consensused input
-	sk_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sk_udp <= 0){
+	sk_con_info = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sk_con_info <= 0){
 		perror("Failed to create socket");
 		exit(1);
 	}
@@ -253,11 +258,11 @@ int init_con_manager_guest(){
 	si_me.sin_port = htons(REPORT_PORT);
 	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	if (bind (sk_udp, (struct sockaddr*)&si_me, sizeof(si_me)) == -1){
+	if (bind (sk_con_info, (struct sockaddr*)&si_me, sizeof(si_me)) == -1){
 		perror("Failed to bind to address");
 		exit(1);
 	}
-	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_udp, REPORT_PORT);
+	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_con_info, REPORT_PORT);
 
 
 	pthread_t report_thread;
@@ -298,15 +303,47 @@ int init_con_manager_guest(){
 		perror("Failed to put sock into listen state");
 		return -1;
 	}
-	// pthread_t thread;
-
-	// create_connection(con_info);
-
 
 	pthread_t listen_thread;
 	pthread_create(&listen_thread, NULL, listen_for_accpet, NULL);
+
+	sk_recv_hb = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sk_con_info <= 0){
+		perror("Failed to create socket to recv heartbeat");
+		return -1;
+	}
 
 	return 0;
 }
 
 
+
+void *recv_hb(void *useless){
+	int recv_len;
+	int buflen = 32;
+	char buf[buflen];
+	struct in_addr host_addr;
+	int ret = inet_aton(MY_HOST_IP, &host_addr);
+	uint64_t addr = host_addr.s_addr;
+
+
+	if (ret != 0){
+		perrorf("Wrong host ip foramt");
+		exit(1);
+	}
+
+	while(1)
+	{
+		recv_len = recvfrom(sk_con_info, buf, buflen, 0, NULL ,NULL);
+		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
+		if (*(uint64_t*)buf == addr){
+			iamleader = true;
+			debugf("I am leader");
+		}else{
+			
+			if (iamleader)
+				debugf("I am no longer leader");
+			iamleader = false;
+		}
+	}
+}

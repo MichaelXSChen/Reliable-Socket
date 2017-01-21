@@ -17,12 +17,13 @@ int monitor();
 
 #define COMMAND_PORT 3120
 
-
 #define DEBUG_NO_DAEMON
 #define DEBUG_NO_SHUTDOWN
 
 
 static int sk_listen_command_con;
+static int sk_recv_hb;
+
 
 static sem_t have_child;
 
@@ -223,14 +224,11 @@ int main(int argc, char* argv[]){
 		pthread_exit(0);
 	}
 
-
-
-
 	pthread_t listen_thread; 
 	pthread_create(&listen_thread, NULL, guard_listen, NULL);
 	debugf("Guest Daemon Initialization Completed");
 
+
+
 	monitor();
 }
-
-
