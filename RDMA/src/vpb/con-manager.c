@@ -164,6 +164,34 @@ void *wait_for_connection(void *arg){
 	}
 }
 
+void *hb_to_guest(void *arg){
+	struct in_addr myaddr;
+	memset(&myaddr, 0, sizeof(struct in_addr));
+	inet_aton(MY_IP, &myaddr);
+	uint64_t addr = myaddr.s_addr; 
+	struct sockaddr_in si;
+	int slen= sizeof(si);
+	
+	memset(&si, 0, slen);
+	si.sin_family=AF_INET;
+	si.sin_port=htons(HB_PORT);
+	inet_aton(GUEST_IP, &si.sin_addr);
+
+
+	while(1){
+		if(is_leader()){
+			 sendto(hb_sk, (struct sockaddr*)&addr, sizeof(addr), 0, &si, sizeof(si));
+			 usleep(100);
+		}	
+		else{
+			pthread_mutex_lock(&become_leader_lock);
+            pthread_cond_wait(&become_leader, &become_leader_lock);
+            pthread_mutex_unlock(&become_leader_lock);
+		}
+	}
+}
+
+
 int con_manager_init(){
 	
 	pthread_cond_init(&become_leader, NULL);
@@ -225,6 +253,9 @@ int con_manager_init(){
 
 	ret = pthread_create(&listen_thread, NULL, &wait_for_connection, (void*)&sk);
 
+	pthread_t hb_thread;
+	ret = pthread_create(&hb_thread, NULL, &hb_to_guest, NULL);
+
 	return 0;
 }
 
@@ -252,29 +283,3 @@ int handle_consensused_con(char* buf, int len){
 }
 
 
-void *hb_to_guest(void *arg){
-	struct in_addr myaddr;
-	memset(&myaddr, 0, sizeof(struct in_addr));
-	inet_aton(MY_IP, &myaddr);
-	uint64_t addr = myaddr.s_addr; 
-	struct sockaddr_in si;
-	int slen= sizeof(si);
-	
-	memset(&si, 0, slen);
-	si.sin_family=AF_INET;
-	si.sin_port=htons(HB_PORT);
-	inet_aton(GUEST_IP, &si.sin_addr);
-
-
-	while(1){
-		if(is_leader()){
-			 sendto(hb_sk, (struct sockaddr*)&addr, sizeof(addr), 0, &si, sizeof(si));
-			 usleep(100);
-		}	
-		else{
-			pthread_mutex_lock(&become_leader_lock);
-            pthread_cond_wait(&become_leader, &become_leader_lock);
-            pthread_mutex_unlock(&become_leader_lock);
-		}
-	}
-}

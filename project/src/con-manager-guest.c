@@ -236,6 +236,38 @@ void *listen_for_accpet(){
 	}
 }
 
+
+void *recv_hb(void *useless){
+	int recv_len;
+	int buflen = 32;
+	char buf[buflen];
+	struct in_addr host_addr;
+	int ret = inet_aton(MY_HOST_IP, &host_addr);
+	uint64_t addr = host_addr.s_addr;
+
+
+	if (ret != 0){
+		perrorf("Wrong host ip foramt");
+		exit(1);
+	}
+
+	while(1)
+	{
+		recv_len = recvfrom(sk_con_info, buf, buflen, 0, NULL ,NULL);
+		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
+		if (*(uint64_t*)buf == addr){
+			iamleader = true;
+			debugf("I am leader");
+		}else{
+			
+			if (iamleader)
+				debugf("I am no longer leader");
+			iamleader = false;
+		}
+	}
+}
+
+
 int init_con_manager_guest(){
 	init_con_hashmap();
 	iamleader = false;
@@ -313,37 +345,11 @@ int init_con_manager_guest(){
 		return -1;
 	}
 
+	pthread_t recv_hb_thread;
+	pthread_create(&recv_hb_thread, NULL, recv_hb, NULL);
+
+
 	return 0;
 }
 
 
-
-void *recv_hb(void *useless){
-	int recv_len;
-	int buflen = 32;
-	char buf[buflen];
-	struct in_addr host_addr;
-	int ret = inet_aton(MY_HOST_IP, &host_addr);
-	uint64_t addr = host_addr.s_addr;
-
-
-	if (ret != 0){
-		perrorf("Wrong host ip foramt");
-		exit(1);
-	}
-
-	while(1)
-	{
-		recv_len = recvfrom(sk_con_info, buf, buflen, 0, NULL ,NULL);
-		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
-		if (*(uint64_t*)buf == addr){
-			iamleader = true;
-			debugf("I am leader");
-		}else{
-			
-			if (iamleader)
-				debugf("I am no longer leader");
-			iamleader = false;
-		}
-	}
-}
