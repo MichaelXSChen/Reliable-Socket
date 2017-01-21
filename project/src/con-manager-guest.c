@@ -253,7 +253,7 @@ void *recv_hb(void *useless){
 
 	while(1)
 	{
-		recv_len = recvfrom(sk_con_info, buf, buflen, 0, NULL ,NULL);
+		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
 		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
 		if (*(uint64_t*)buf == addr){
 			iamleader = true;
@@ -340,7 +340,7 @@ int init_con_manager_guest(){
 	pthread_create(&listen_thread, NULL, listen_for_accpet, NULL);
 
 	sk_recv_hb = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sk_con_info <= 0){
+	if (sk_recv_hb <= 0){
 		perror("Failed to create socket to recv heartbeat");
 		return -1;
 	}
