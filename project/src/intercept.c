@@ -312,7 +312,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     memset(&srvaddr, 0, sizeof(srvaddr));
     srvaddr.sin_family = AF_INET;
     ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
-    if (ret < 0) {
+    if (ret == 0) {
         perror("Can't convert addr");
         return -1;
     }

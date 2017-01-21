@@ -246,7 +246,7 @@ void *recv_hb(void *useless){
 	uint64_t addr = host_addr.s_addr;
 
 
-	if (ret != 0){
+	if (ret == 0){
 		perrorf("Wrong host ip foramt");
 		exit(1);
 	}
