@@ -17,7 +17,7 @@
 #define BUFLEN 512
 #define MY_HOST_IP "10.22.1.2"
 #define CON_MGR_PORT 4321
-
+#define HB_PORT 6667
 
 //#define DEBUG_BAKCUP
 typedef enum { false, true } bool;
@@ -285,14 +285,14 @@ int init_con_manager_guest(){
 		perror("Failed to create socket");
 		exit(1);
 	}
-	struct sockaddr_in si_me;
-	memset(&si_me, 0, sizeof(si_me));
+	struct sockaddr_in si_con_info;
+	memset(&si_con_info, 0, sizeof(si_con_info));
 
-	si_me.sin_family = AF_INET;
-	si_me.sin_port = htons(REPORT_PORT);
-	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+	si_con_info.sin_family = AF_INET;
+	si_con_info.sin_port = htons(REPORT_PORT);
+	si_con_info.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	if (bind (sk_con_info, (struct sockaddr*)&si_me, sizeof(si_me)) == -1){
+	if (bind (sk_con_info, (struct sockaddr*)&si_con_info, sizeof(si_con_info)) == -1){
 		perror("Failed to bind to address");
 		exit(1);
 	}
@@ -346,6 +346,22 @@ int init_con_manager_guest(){
 		perror("Failed to create socket to recv heartbeat");
 		return -1;
 	}
+
+	struct sockaddr_in si_hb;
+	memset(&si_hb, 0, sizeof(si_hb));
+
+	si_hb.sin_family = AF_INET;
+	si_hb.sin_port = htons(HB_PORT);
+	si_hb.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if (bind (sk_recv_hb, (struct sockaddr*)&si_hb, sizeof(si_hb)) == -1){
+		perror("Failed to bind to address");
+		exit(1);
+	}
+	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_recv_hb, REPORT_PORT);
+
+
+
 
 	pthread_t recv_hb_thread;
 	pthread_create(&recv_hb_thread, NULL, recv_hb, NULL);
