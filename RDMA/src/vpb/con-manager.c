@@ -180,7 +180,7 @@ void *hb_to_guest(void *arg){
 
 	while(1){
 		if(is_leader()){
-			 sendto(hb_sk, (struct sockaddr*)&addr, sizeof(addr), 0, &si, sizeof(si));
+			 sendto(hb_sk, &addr, sizeof(addr), 0, (struct sockaddr*)&si, sizeof(si));
 			 usleep(100);
 		}	
 		else{
