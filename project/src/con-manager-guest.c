@@ -204,7 +204,7 @@ void *serve_query(void *sk_arg){
 		// debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		// debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
 		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
-
+		debugf("I am leader?? %d", iamleader);
 		if(iamleader){
 			ret = send_for_consensus(&con_info);
 			if (ret < 0){

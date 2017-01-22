@@ -257,6 +257,9 @@ int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
         perror("Failed to send con_info");
         return -1;
     }
+    debugf("Sent for asking for consensus , waiting for result");
+
+
     //No need after the change of code logic.  
     //Keep it As an ack of consensus made. 
     uint8_t success; 
