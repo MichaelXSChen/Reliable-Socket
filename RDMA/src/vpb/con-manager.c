@@ -260,10 +260,14 @@ void *watch_guest_out(void *useless){
 			// 	continue;
 			// }
 			if (eth_hdr->ether_type == ETHERTYPE_IP){
+				debugf("[OUTGOING] IP Packet intercepted");
+
 
 				struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
 				if (ip_header->ip_p == 0x06){
 					//TCP PACKET
+					debugf("[OUTGOING] TCP Packet intercepted");
+
 					int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
 	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
 

@@ -157,6 +157,6 @@ int dump_tcp_buffer(){
 	pthread_spin_unlock(&outgoing_buffer_lock);
 
 
-	return len;
+	return next_buffer_len;
 }
 

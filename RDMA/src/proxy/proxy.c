@@ -684,7 +684,7 @@ static void do_action_raw(void *data, size_t size){
 
 
 
-                int len = write_to_tcp_buffer(&con_id, tcp_header->th_ack, (uint8_t*)data, size);
+                int len = write_to_tcp_buffer(&con_id, ntohl(tcp_header->th_ack), (uint8_t*)data, size);
                 debugf("[TCP] Written to TCP buffer with len %d", len);
                 
                 pthread_cond_broadcast(&tcp_no_empty);
