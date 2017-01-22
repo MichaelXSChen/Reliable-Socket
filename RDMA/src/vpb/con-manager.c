@@ -203,7 +203,7 @@ void *hb_to_guest(void *arg){
 
 void *watch_guest_out(void *useless){
 	char buf[2048];
-	ine len;
+	int len;
 	while(1){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
 		debugf("received length %d, buf = %s", len, buf);
