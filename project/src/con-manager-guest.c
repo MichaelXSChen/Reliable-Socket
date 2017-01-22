@@ -113,6 +113,9 @@ void * serve_report(void * arg){
 
 
 int sk_ask_consensus_connect(){
+	debugf("SK ASK for consensus connected called");
+	fflush(stderr);
+
 	int ret;
 	struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -143,6 +146,9 @@ int send_for_consensus(struct con_info_type *con_info){
 
 	ret = send_bytes(sk_ask_consensus, buffer, len);
 	if (ret < 0) {
+		debugf("Send_bytes return with %d, erro = %s", ret, strerror(errno));
+
+
 		if(errno == ECONNRESET || errno == EDESTADDRREQ){
 			debugf("Not connect, try to reconnect %s", strerror(errno));
 			int tmp_errno = errno;
@@ -207,8 +213,6 @@ void *serve_query(void *sk_arg){
 		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 		debugf("I am leader?? %d", iamleader);
 		if(iamleader == true){
-			printf("here");
-			fflush(stdout);
 
 			ret = send_for_consensus(&con_info);
 			if (ret < 0){
