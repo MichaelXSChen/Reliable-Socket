@@ -201,7 +201,11 @@ void *serve_query(void *sk_arg){
 			pthread_exit(0);
 		}
 		if (len == 1){
-			ret = send_bytes(sk, (char*)&iamleader, 1);
+			uint8_t leader = (uint8_t)iamleader; 
+			debugf("[con-man-guest]: checking for leadership, I am ? %"PRIu8"", leader);
+
+
+			ret = send_bytes(sk, (char*)&leader, 1);
 			// close(*sk);
 			// pthread_exit(0);
 			continue;
