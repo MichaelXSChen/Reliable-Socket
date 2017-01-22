@@ -112,6 +112,25 @@ void * serve_report(void * arg){
 }
 
 
+int sk_ask_consensus_connect(){
+	int ret;
+	struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    ret = inet_aton(MY_HOST_IP, &addr.sin_addr);
+    if (ret < 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    addr.sin_port = htons(CON_MGR_PORT);
+
+    ret = connect(sk_ask_consensus, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+    return 0;
+}
 
 
 
@@ -123,8 +142,23 @@ int send_for_consensus(struct con_info_type *con_info){
 
 	ret = send_bytes(sk_ask_consensus, buffer, len);
 	if (ret < 0) {
-        perror("Send for consensus failed");
-        return -1;
+		if(errno == ECONNRESET || errno == EDESTADDRREQ){
+			int tmp_errno = errno;
+			ret = sk_ask_consensus_connect();
+			if (ret != 0){
+				perrorf("Failed to send due to :%s\n, Failed to connect: ", strerror(tmp_errno));
+				return -1;
+			}
+			ret = send_bytes(sk_ask_consensus, buffer, len);
+			if (ret != 0){
+				perrorf("Failed to send the first time :%s\n, Failed to send the second time", strerror(tmp_errno));
+				return -1;
+			}
+		}
+		else{
+	        perror("Send for consensus failed");
+	        return -1;
+	    }
     }
 	return 0;
 }
@@ -256,7 +290,7 @@ void *recv_hb(void *useless){
 	while(1)
 	{
 		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
-		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
+		//debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
 		if (*(uint64_t*)buf == addr){
 			iamleader = true;
 			//debugf("I am leader");
@@ -281,6 +315,14 @@ int init_con_manager_guest(){
 	// debugf("I am leader? %"PRIu8"", iamleader);
 	//Create a UDP socket
 	//Wait for consensused input
+
+	sk_ask_consensus = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_ask_consensus < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+
+
 	sk_con_info = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk_con_info <= 0){
 		perror("Failed to create socket");
@@ -359,7 +401,7 @@ int init_con_manager_guest(){
 		perror("Failed to bind to address");
 		exit(1);
 	}
-	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_recv_hb, REPORT_PORT);
+	debugf("[SK-%d]: Listening for heartbeat on port: %d",sk_recv_hb, HB_PORT);
 
 
 
