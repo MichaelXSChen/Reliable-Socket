@@ -29,14 +29,14 @@ pthread_mutex_t become_leader_lock;
 
 
 static int sk;
-static int unix_listen_fd;
+// static int guest_out_sk;
 
 static int report_sk;
 // con_list_entry *con_list;
 
 static int hb_sk;
 
-static int guest_out_socket; 
+static int guest_out_sk; 
 
 
 typedef struct con_isn_entry con_isn_entry;
@@ -198,17 +198,17 @@ void *hb_to_guest(void *arg){
 
 
 
-void *unix_sock_listen(void *useless){
-    guest_out_socket = accept(unix_listen_fd, NULL, NULL);
-    if (guest_out_socket == -1){
-        perror("Failed to accpet unix socket");
-        exit(1);
-    }
-    debugf("Guest out socket connected");
-    pthread_exit(0);
+
+
+
+void *watch_guest_out(void *useless){
+	char buf[2048];
+	ine len;
+	while(1){
+		len = recv(guest_out_sk, buf, sizeof(buf), 0);
+		debugf("received length %d, buf = %s", len, buf);
+	}
 }
-
-
 
 int con_manager_init(){
 	
@@ -217,8 +217,8 @@ int con_manager_init(){
 
     char *server_filename = "/tmp/socket-server";
 
-    unix_listen_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-    if (unix_listen_fd < 0){
+    guest_out_sk = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (guest_out_sk < 0){
         perror("Failed to create unix socket for listening");
         exit(1);
     }
@@ -232,13 +232,13 @@ int con_manager_init(){
 
     int ret_val;
 
-    ret_val = bind(unix_listen_fd, (struct sockaddr*)&unix_addr, sizeof(unix_addr));
+    ret_val = bind(guest_out_sk, (struct sockaddr*)&unix_addr, sizeof(unix_addr));
     if (ret_val == -1){
         perror("Failed to bind listeing unix socket");
         exit(1);
     }
 
-    // ret_val = listen(unix_listen_fd, 5);
+    // ret_val = listen(guest_out_sk, 5);
     // if (ret_val == -1){
     //     perror("Failed to put the unix listening socket into listen state");
     //     exit(1);

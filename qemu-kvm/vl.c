@@ -2405,9 +2405,11 @@ int main(int argc, char **argv, char **envp)
         perror("Failed to conenct unix socket");
         exit(-1);
     }
-    printf("unix socket for backup output connected: %d", fd_out_bk);
+    printf("unix socket for backup output connected: %d\n", fd_out_bk);
 
-
+    char *test = "test";
+    ret_val = send(fd_out_bk, test, sizeof(test), 0);
+    pritnf("sent %d\n", ret_val);
 
 
 
