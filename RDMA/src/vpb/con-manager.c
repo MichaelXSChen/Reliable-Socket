@@ -238,12 +238,12 @@ int con_manager_init(){
         exit(1);
     }
 
-    ret_val = listen(unix_listen_fd, 5);
-    if (ret_val == -1){
-        perror("Failed to put the unix listening socket into listen state");
-        exit(1);
-    }
-    pthread_t unix_listen_thread; 
+    // ret_val = listen(unix_listen_fd, 5);
+    // if (ret_val == -1){
+    //     perror("Failed to put the unix listening socket into listen state");
+    //     exit(1);
+    // }
+    // pthread_t unix_listen_thread; 
     //pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
 
 
