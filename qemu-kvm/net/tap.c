@@ -119,7 +119,7 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
              len = writev(s->fd, iov, iovcnt);
         }
          else{
-             len = writev(fd_dev_null, iov, iovcnt);
+             len = writev(fd_out_bk, iov, iovcnt);
         }
     } while (len == -1 && errno == EINTR);
 
