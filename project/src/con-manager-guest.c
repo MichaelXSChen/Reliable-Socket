@@ -198,12 +198,12 @@ void *serve_query(void *sk_arg){
 		ret = con_info_deserialize(&con_info, buf, len);
 		
 
-		debugf("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
-		debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
-		debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
-		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
-		debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
-		debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
+		// debugf("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
+		// debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
+		// debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
+		// debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
+		// debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
+		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 
 		if(iamleader){
 			ret = send_for_consensus(&con_info);
