@@ -252,15 +252,16 @@ void *recv_hb(void *useless){
 		exit(1);
 	}
 
-	debugf("\n\n\nRECV HB thread working");
+	debugf("RECV HB thread working");
 	while(1)
 	{
 		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
 		debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
 		if (*(uint64_t*)buf == addr){
 			iamleader = true;
-			debugf("I am leader");
-		}else{
+			//debugf("I am leader");
+		}
+		else{
 			
 			if (iamleader)
 				debugf("I am no longer leader");
