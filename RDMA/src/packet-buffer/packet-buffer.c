@@ -138,7 +138,9 @@ int dump_tcp_buffer(){
 	get_con_out_seq(&outgoing_seq, con_id_ptr);
 
 	debugf("outgoing_seq: %"PRIu32"ack: %"PRIu32"", outgoing_seq, *ack_ptr);
-
+	if (outgoing_seq < *ack_ptr){
+		return -1;
+	}
 
 
 

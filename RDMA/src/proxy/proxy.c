@@ -77,6 +77,9 @@ void *handle_tcp_buffer(void *useless){
                 pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
                 pthread_mutex_unlock(&tcp_no_empty_lock);
             }
+            if (ret == -1){
+                continue;
+            }
             //debugf("[TCP] cond wait wakeup");
 
             //if (ret != 0)
@@ -685,7 +688,7 @@ static void do_action_raw(void *data, size_t size){
 
 
                 int len = write_to_tcp_buffer(&con_id, ntohl(tcp_header->th_ack), (uint8_t*)data, size);
-                debugf("[TCP] Written to TCP buffer with len %d", len);
+                //debugf("[TCP] Written to TCP buffer with len %d", len);
                 
                 pthread_cond_broadcast(&tcp_no_empty);
                 return;
