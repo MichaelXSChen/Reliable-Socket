@@ -242,7 +242,7 @@ int con_manager_init(){
         exit(1);
     }
     pthread_t unix_listen_thread; 
-    pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
+    //pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
 
 
 
