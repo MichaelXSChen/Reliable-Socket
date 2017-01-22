@@ -25,6 +25,8 @@ typedef enum { false, true } bool;
 
 
 static bool iamleader;
+static bool sk_consensus_connected;
+
 
 static int sk_ask_consensus; 
 static int sk_con_info;
@@ -144,13 +146,15 @@ int send_for_consensus(struct con_info_type *con_info){
     char* buffer;
 	ret = con_info_serialize(&buffer, &len, con_info);
 
-
-	debugf("before sens bytes");
-	fflush(stderr);
+	if (sk_consensus_connected == false){
+		ret = sk_ask_consensus_connect();
+		if (ret < 0){
+			perrorf("failed to connect to qemu");
+			return -1;
+		}
+	}
+	
 	ret = send_bytes(sk_ask_consensus, buffer, len);
-	debugf("After send bytes");
-	fflush(stderr);
-
 
 	if (ret < 0) {
 		debugf("Send_bytes return with %d, erro = %s", ret, strerror(errno));
@@ -337,6 +341,7 @@ int init_con_manager_guest(){
 	init_con_hashmap();
 	iamleader = false;
 
+
 // #ifndef DEBUG_BAKCUP
 // 	iamleader = check_for_leadership();
 // #endif
@@ -349,7 +354,7 @@ int init_con_manager_guest(){
         perror("Can't create socket");
         return -1;
     }
-
+    sk_consensus_connected = false;
 
 	sk_con_info = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk_con_info <= 0){
