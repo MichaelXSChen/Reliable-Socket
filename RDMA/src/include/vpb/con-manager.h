@@ -27,4 +27,6 @@ int con_manager_init();
 
 int handle_consensused_con(char* buf, int len);
 
+int get_con_out_seq(uint32_t *seq, struct con_id_type *con);
+
 #endif

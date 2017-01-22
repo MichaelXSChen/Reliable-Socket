@@ -14,6 +14,12 @@
 #include <unistd.h>
 #include <sys/un.h>
 
+#include <netinet/tcp.h>
+#include <netinet/if_ether.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+
+
 
 
 #define GUEST_IP "10.22.1.100"
@@ -198,21 +204,88 @@ void *hb_to_guest(void *arg){
 
 
 
+struct con_out_seq_entry{
+	struct con_id_type con_id;
+	uint32_t seq; 
+	UT_hash_handle hh;
+};
 
+typedef struct con_out_seq_entry con_out_seq_entry; 
+
+con_out_seq_entry *con_out_seq_list;
+
+int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
+	con_out_seq_entry *entry;
+	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
+	if (entry != NULL){
+		*seq = entry->seq;
+		return 0;
+	}
+	else{
+		*seq = 0;
+		return -1;
+	}
+}
+
+int update_con_out_seq(uint32_t seq, struct con_id_type *con){
+	con_out_seq_entry *find_entry;
+	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), find_entry);
+	if (find_entry != NULL && find_entry->seq >= seq){
+		//No need to update, only keep max value
+		return 0;
+	}
+	con_out_seq_entry *entry = (con_out_seq_entry *) malloc(sizeof(con_out_seq_entry));
+	memcpy(&(entry->con_id), con, sizeof(struct con_id_type));
+	entry->seq = seq; 
+	struct con_out_seq_entry *replaced;
+	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
+	debugf("connection: port%"PRIu16" to port %"PRIu16", seq increased to %"PRIu32"", ntohs(con->dst_port), ntohs(con->src_port), seq);
+	return 0;
+}
 
 
 void *watch_guest_out(void *useless){
 	char buf[2048];
 	int len;
+	int eth_hdr_len = sizeof(struct ether_header);
 	while(1){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
-		debugf("received length %d, buf = %s", len, buf);
-		
+		//analyze the outgoing packets
+		if(len > eth_hdr_len){
+			struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len);
+			if (ip_header->ip_p == 0x06){
+				//TCP PACKET
+				int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
+            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size);
+
+            	/****************************
+                *The packet is sent from client to server
+                *So from server's point of view, the src and dst should be 
+                *!!Opposite!!
+                *******************************/
+            	struct con_id_type con_id; 
+                con_id.src_ip = ip_header->ip_dst.s_addr;
+                con_id.src_port = tcp_header->th_dport;
+                con_id.dst_ip = ip_header->ip_src.s_addr;
+                con_id.dst_port = tcp_header->th_sport;
+
+                //Don't forget ntohl to compare
+                uint32_t seq = ntohl(tcp_header->th_seq);
+                update_con_out_seq(seq, &con_id);
+			}
+		}
+
 	}
 }
 
 int con_manager_init(){
 	
+	con_isn_list = NULL;
+	con_out_seq_list = NULL;
+
+
+
+
 	pthread_cond_init(&become_leader, NULL);
     pthread_mutex_init(&become_leader_lock, NULL);
 
@@ -255,7 +328,7 @@ int con_manager_init(){
 
 	// Init the hash table
 
-	con_isn_list = NULL;
+	
 	int ret;
 
 

@@ -118,7 +118,6 @@ int dump_tcp_buffer(){
 	
 
 	ringbuf_memcpy_into(outgoing_buffer, buffer, len);
-	ringbuf_memcpy_into(outgoing_buffer, buffer, len);
 
 
 
