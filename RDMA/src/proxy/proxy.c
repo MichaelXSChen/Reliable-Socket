@@ -676,8 +676,15 @@ static void do_action_raw(void *data, size_t size){
                 return;
             }
             else{
+                struct con_id_type con_id; 
+                con_id.src_ip = ip_header->ip_src.s_addr;
+                con_id.src_port = tcp_header->th_sport;
+                con_id.dst_ip = ip_header->ip_dst.s_addr;
+                con_id.dst_port = tcp_header->th_dport;
 
-                int len = write_to_tcp_buffer((uint8_t*)data, size);
+
+
+                int len = write_to_tcp_buffer(&con_id, tcp_header->th_ack, (uint8_t*)data, size);
                 debugf("[TCP] Written to TCP buffer with len %d", len);
                 
                 pthread_cond_broadcast(&tcp_no_empty);

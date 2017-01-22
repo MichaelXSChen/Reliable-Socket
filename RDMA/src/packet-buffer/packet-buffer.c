@@ -1,4 +1,7 @@
 #include "../../utils/ringbuf/ringbuf.h"
+#include "../include/vpb/common.h"
+#include "../include/packet-buffer/packet-buffer.h"
+
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,7 +20,7 @@ static pthread_spinlock_t outgoing_buffer_lock;
 static pthread_spinlock_t tcp_buffer_lock;
 
 /**************
-Buffer Format
+PACKET Buffer Format
 
 ....|size_t len_of_buffer| buffer contents |..... 
 
@@ -88,11 +91,23 @@ int packet_buffer_to_buffer(uint8_t *buffer, int maxlen){
 
 	return next_buffer_len;
 }
+/****************
+*TCP buffer format. 
+* CON_ID, ACK, Packet Length, Packet
+********************/
 
-int write_to_tcp_buffer(const uint8_t *buffer, size_t len){
+
+int write_to_tcp_buffer(struct con_id_type *con_id, uint32_t ack,  const uint8_t *buffer, size_t len){
 	pthread_spin_lock(&tcp_buffer_lock);
+	
+
+	ringbuf_memcpy_into(tcp_buffer, &con_id, sizeof(struct con_id_type));
+	ringbuf_memcpy_into(tcp_buffer, &ack, sizeof(ack));	
+
 	ringbuf_memcpy_into(tcp_buffer, &len, sizeof(len));
 	ringbuf_memcpy_into(tcp_buffer, buffer, len);
+	
+
 	pthread_spin_unlock(&tcp_buffer_lock);
 	return len;
 }
@@ -112,12 +127,29 @@ int dump_tcp_buffer(){
 		return 0;
 	}
 	
+	//Make compare using head pointer. 
 
-	uint8_t *buffer =(uint8_t*)malloc(len);
-	ringbuf_memcpy_from(buffer, tcp_buffer, len);
+
+	struct con_id_type con_id; 
+	ringbuf_memcpy_from(&con_id, tcp_buffer, sizeof(struct con_id_type));
+	uint32_t ack;
+	ringbuf_memcpy_from(&ack, tcp_buffer, sizeof(ack));
+
+
+
+	size_t next_buffer_len;
+
+	
+	ringbuf_memcpy_from(&next_buffer_len, tcp_buffer, sizeof(next_buffer_len));
+	
+	uint8_t *buffer = (uint8_t *)malloc(next_buffer_len);
 	
 
-	ringbuf_memcpy_into(outgoing_buffer, buffer, len);
+
+	ringbuf_memcpy_from(buffer, tcp_buffer, next_buffer_len);
+
+
+	ringbuf_memcpy_into(outgoing_buffer, buffer, next_buffer_len);
 
 
 
