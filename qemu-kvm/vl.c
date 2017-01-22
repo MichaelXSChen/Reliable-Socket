@@ -2409,7 +2409,7 @@ int main(int argc, char **argv, char **envp)
 
     char *test = "test";
     ret_val = send(fd_out_bk, test, sizeof(test), 0);
-    pritnf("sent %d\n", ret_val);
+    printf("sent %d\n", ret_val);
 
 
 
