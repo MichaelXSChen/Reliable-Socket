@@ -178,6 +178,9 @@ int send_bytes(int sk, char* buf, int len){
 	fflush(stderr);
 	do{
 		ret = send(sk, data, left, 0);
+		debugf("send return value: %d", ret);
+		fflush(stderr);
+
 		if (ret < 0){
 			//TODO: Deal with error
 			perrorf("Error sending request");
