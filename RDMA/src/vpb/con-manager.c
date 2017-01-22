@@ -216,7 +216,7 @@ con_out_seq_entry *con_out_seq_list;
 
 int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 	con_out_seq_entry *entry;
-	debugf("[connection]: Trying to find src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
+	debugf("[connection]: Trying to find src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port%"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
 
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
 	if (entry != NULL){
@@ -241,7 +241,7 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	entry->seq = seq; 
 	struct con_out_seq_entry *replaced;
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	debugf("[connection]: src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port"PRIu16", seq increased to %"PRIu32"", con->src_ip, con->src_port, con->dst_ip, con->dst_port, seq);
+	debugf("[connection]: src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port%"PRIu16", seq increased to %"PRIu32"", con->src_ip, con->src_port, con->dst_ip, con->dst_port, seq);
 	return 0;
 }
 
