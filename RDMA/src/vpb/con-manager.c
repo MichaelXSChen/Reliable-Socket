@@ -245,7 +245,8 @@ int con_manager_init(){
     // }
     // pthread_t unix_listen_thread; 
     //pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
-
+    pthread_t watch_output_thread;
+    pthread_create(&watch_output_thread, NULL, watch_guest_out, NULL);
 
 
 
