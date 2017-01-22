@@ -144,11 +144,11 @@ int dump_tcp_buffer(){
 	
 	uint8_t *buffer = (uint8_t *)malloc(next_buffer_len);
 	
-
-
 	ringbuf_memcpy_from(buffer, tcp_buffer, next_buffer_len);
 
 
+
+	ringbuf_memcpy_into(outgoing_buffer, &next_buffer_len, sizeof(next_buffer_len));
 	ringbuf_memcpy_into(outgoing_buffer, buffer, next_buffer_len);
 
 
