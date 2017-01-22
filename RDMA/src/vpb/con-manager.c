@@ -243,6 +243,7 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	return 0;
 }
 
+#define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 void *watch_guest_out(void *useless){
 	char buf[2048];
@@ -251,12 +252,12 @@ void *watch_guest_out(void *useless){
 	while(1){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
 		//analyze the outgoing packets
-		if(len > eth_hdr_len){
-			struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len);
+		if(len > eth_hdr_len + MSG_OFF){
+			struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
 			if (ip_header->ip_p == 0x06){
 				//TCP PACKET
 				int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
-            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size);
+            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
 
             	/****************************
                 *The packet is sent from client to server
