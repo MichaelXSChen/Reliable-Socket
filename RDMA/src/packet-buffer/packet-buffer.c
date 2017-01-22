@@ -139,6 +139,8 @@ int dump_tcp_buffer(){
 
 	debugf("outgoing_seq: %"PRIu32"ack: %"PRIu32"", outgoing_seq, *ack_ptr);
 	if (outgoing_seq < *ack_ptr){
+		pthread_spin_unlock(&tcp_buffer_lock);
+		pthread_spin_unlock(&outgoing_buffer_lock);
 		return -1;
 	}
 
