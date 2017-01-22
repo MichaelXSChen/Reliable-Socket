@@ -94,13 +94,26 @@ void * serve_report(void * arg){
 	char buf[BUFLEN];
 	struct sockaddr_in si_other;
 	int fromlen = sizeof(si_other);
+
+
+
+	struct in_addr host_addr;
+	int ret = inet_aton(MY_HOST_IP, &host_addr);
+	uint64_t addr = host_addr.s_addr;
+
+
+
+
+
 	while(1)
 	{
 		recv_len = recvfrom(sk_con_info, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
 		// if (recv_len != CON_INFO_SERIAL_LEN){
 		// 	continue;
 		// }
-
+		if( si_other.sin_addr.s_addr !=  addr ){
+			continue;
+		}
 		debugf("[Con-Manager] Received consensused connection of lenth %d", recv_len);
 		if (iamleader == false){
 			struct con_info_type *con_info;
