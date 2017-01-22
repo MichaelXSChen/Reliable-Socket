@@ -101,7 +101,7 @@ void * serve_report(void * arg){
 		// 	continue;
 		// }
 
-		debugf("Report Port received packet of lenth %d", recv_len);
+		debugf("[Con-Manager] Received consensused connection of lenth %d", recv_len);
 		if (iamleader == false){
 			struct con_info_type *con_info;
 			con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
@@ -132,7 +132,7 @@ int sk_ask_consensus_connect(){
         perror("Can't connect");
         return -1;
     }
-    debugf("SK ASK for consensus connected");
+    debugf("[Con-Manager] socket for asking for consensus connected !");
     sk_consensus_connected =true;
 
 
@@ -172,11 +172,11 @@ int send_for_consensus(struct con_info_type *con_info){
 				perrorf("Failed to send the first time :%s\n, Failed to send the second time", strerror(tmp_errno));
 				return -1;
 			}
-			debugf("Reconnected and sent");
+			debugf("[Con-Manager] Reconnected and sent, previous error was: %s", strerror(tmp_errno));
 			return 0;
 		}
 		else{
-	        perror("Send for consensus failed");
+	        perror("[Con-Manager] Send for consensus failed");
 	        return -1;
 	    }
     }
@@ -202,8 +202,7 @@ void *serve_query(void *sk_arg){
 		}
 		if (len == 1){
 			uint8_t leader = (uint8_t)iamleader; 
-			debugf("[con-man-guest]: checking for leadership, I am ? %"PRIu8"", leader);
-
+			debugf("[Con-Manager]: LD_PRELOAD module is checking for leadership, I am ? %"PRIu8"", leader);
 
 			ret = send_bytes(sk, (char*)&leader, 1);
 			// close(*sk);
@@ -222,7 +221,6 @@ void *serve_query(void *sk_arg){
 		// debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		// debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
 		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
-		debugf("I am leader?? %d", iamleader);
 		if(iamleader == true){
 
 			ret = send_for_consensus(&con_info);
@@ -230,7 +228,7 @@ void *serve_query(void *sk_arg){
 				perrorf("Faild to Send for consensus");
 				pthread_exit(0);
 			}
-			debugf("Successfully sent to QEMU for consensus");
+			debugf("[Con-Manager] Successfully sent connection info to QEMU for consensus");
 
 			ret = send(sk, &iamleader, sizeof(iamleader), 0);
 			// close(*sk);
@@ -291,12 +289,12 @@ void *listen_for_accpet(){
 		socklen_t clilen=sizeof(cliaddr);
 		int ask = accept(sk_listen, (struct sockaddr*)&cliaddr, &clilen);
 		if (ask < 0){
-			perror("Cannot accept new con");
+			perror("[Con-Manager] Cannot accept new con");
 		}
 		pthread_t thread1;
 		ret = pthread_create(&thread1, NULL, &serve_query, (void *)&ask);
 		if (ret < 0){
-			perror("Faild to create");
+			perror("[Con-Manager] Faild to create");
 			pthread_exit(0);
 		}
 	}
@@ -314,11 +312,11 @@ void *recv_hb(void *useless){
 
 
 	if (ret == 0){
-		perrorf("Wrong host ip foramt");
+		perrorf("[Con-Manager] Wrong host ip foramt");
 		exit(1);
 	}
 
-	debugf("RECV HB thread working");
+	debugf("[Con-Manager] RECV HB thread working");
 	while(1)
 	{
 		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
@@ -330,7 +328,7 @@ void *recv_hb(void *useless){
 		else{
 			
 			if (iamleader == true)
-				debugf("I am no longer leader");
+				debugf("[Con-Manager] I am no longer leader");
 			iamleader = false;
 		}
 	}
@@ -351,14 +349,14 @@ int init_con_manager_guest(){
 
 	sk_ask_consensus = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sk_ask_consensus < 0) {
-        perror("Can't create socket");
+        perror("[Con-Manager] Can't create socket");
         return -1;
     }
     sk_consensus_connected = false;
 
 	sk_con_info = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk_con_info <= 0){
-		perror("Failed to create socket");
+		perror("[Con-Manager] Failed to create socket");
 		exit(1);
 	}
 	struct sockaddr_in si_con_info;
@@ -369,17 +367,17 @@ int init_con_manager_guest(){
 	si_con_info.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (sk_con_info, (struct sockaddr*)&si_con_info, sizeof(si_con_info)) == -1){
-		perror("Failed to bind to address");
+		perror("[Con-Manager] Failed to bind to address");
 		exit(1);
 	}
-	debugf("[SK-%d]: Listening for consensused connection info on port: %d",sk_con_info, REPORT_PORT);
+	debugf("[Con-Manager] [SK-%d]: Listening for consensused connection info on port: %d",sk_con_info, REPORT_PORT);
 
 
 	pthread_t report_thread;
 	int ret;
 	ret = pthread_create(&report_thread, NULL, serve_report, NULL);
 	if (ret != 0){
-		perror("Failed to create pthred");
+		perror("[Con-Manager] Failed to create pthred");
 		exit(1);
 	} 
 
@@ -387,7 +385,7 @@ int init_con_manager_guest(){
 
 	sk_listen = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sk_listen < 0){
-		perror("Cannot create the socket");
+		perror("[Con-Manager] Cannot create the socket");
 		return -1;
 	}
 
@@ -400,17 +398,17 @@ int init_con_manager_guest(){
 	srvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	srvaddr.sin_port = htons(QUERY_PORT); 
 
-	debugf("[SK-%d]: Listening to query from LD_PRELOAD module on port: %d", sk_listen, QUERY_PORT);
+	debugf("[Con-Manager] [SK-%d]: Listening to query from LD_PRELOAD module on port: %d", sk_listen, QUERY_PORT);
 
 	ret = bind(sk_listen, (struct sockaddr*)&srvaddr, sizeof(srvaddr));
 	if (ret < 0){
-		perror("Cannot bind to sk");
+		perror("[Con-Manager] Cannot bind to sk");
 		return -1;
 	}
 
 	ret = listen(sk_listen, 16);
 	if (ret < 0){
-		perror("Failed to put sock into listen state");
+		perror("[Con-Manager] Failed to put sock into listen state");
 		return -1;
 	}
 
@@ -419,7 +417,7 @@ int init_con_manager_guest(){
 
 	sk_recv_hb = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (sk_recv_hb <= 0){
-		perror("Failed to create socket to recv heartbeat");
+		perror("[Con-Manager] Failed to create socket to recv heartbeat");
 		return -1;
 	}
 
@@ -431,10 +429,10 @@ int init_con_manager_guest(){
 	si_hb.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (sk_recv_hb, (struct sockaddr*)&si_hb, sizeof(si_hb)) == -1){
-		perror("Failed to bind to address");
+		perror("[Con-Manager] Failed to bind to address");
 		exit(1);
 	}
-	debugf("[SK-%d]: Listening for heartbeat on port: %d",sk_recv_hb, HB_PORT);
+	debugf("[Con-Manager] [SK-%d]: Listening for heartbeat on port: %d",sk_recv_hb, HB_PORT);
 
 
 
