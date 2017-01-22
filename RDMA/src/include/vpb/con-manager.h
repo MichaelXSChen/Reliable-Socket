@@ -3,6 +3,7 @@
 
 #define SERVICE_PORT 4321
 #include "common.h"
+#include "../../../utils/uthash/uthash.h"
 
 struct con_list_entry{
 	struct con_id_type con_id;

@@ -1,6 +1,7 @@
 #include "../../utils/ringbuf/ringbuf.h"
 #include "../include/vpb/common.h"
 #include "../include/packet-buffer/packet-buffer.h"
+#include "../include/vpb/con-manager.h"
 
 #include <pthread.h>
 #include <stdint.h>
@@ -128,6 +129,13 @@ int dump_tcp_buffer(){
 	}
 	
 	//Make compare using head pointer. 
+	struct con_id_type *con_id_ptr = (struct con_id_type *)ringbuf_tail(tcp_buffer);
+	uint32_t *ack_ptr = (uint32_t *)(ringbuf_tail(tcp_buffer)+sizeof(struct con_id_type));
+	uint32_t outgoing_seq; 
+	get_con_out_seq(&outgoing_seq, con_id_ptr);
+	debugf("outgoing_seq: %"PRIu32"ack: %"PRIu32"", outgoing_seq, *ack_ptr);
+
+
 
 
 	struct con_id_type con_id; 
