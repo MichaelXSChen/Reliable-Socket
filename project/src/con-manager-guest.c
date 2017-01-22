@@ -129,6 +129,7 @@ int sk_ask_consensus_connect(){
         perror("Can't connect");
         return -1;
     }
+    debugf("SK ASK for consensus connected");
     return 0;
 }
 
@@ -154,12 +155,18 @@ int send_for_consensus(struct con_info_type *con_info){
 				perrorf("Failed to send the first time :%s\n, Failed to send the second time", strerror(tmp_errno));
 				return -1;
 			}
+			debugf("Reconnected and sent");
+			return 0;
 		}
 		else{
 	        perror("Send for consensus failed");
 	        return -1;
 	    }
     }
+	debugf("[SK-consensus]: sent successful");
+
+
+
 	return 0;
 }
 
