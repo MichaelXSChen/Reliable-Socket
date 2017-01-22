@@ -144,7 +144,14 @@ int send_for_consensus(struct con_info_type *con_info){
     char* buffer;
 	ret = con_info_serialize(&buffer, &len, con_info);
 
+
+	debugf("before sens bytes");
+	fflush(stderr);
 	ret = send_bytes(sk_ask_consensus, buffer, len);
+	debugf("After send bytes");
+	fflush(stderr);
+
+
 	if (ret < 0) {
 		debugf("Send_bytes return with %d, erro = %s", ret, strerror(errno));
 
