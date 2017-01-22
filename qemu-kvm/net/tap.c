@@ -104,6 +104,8 @@ static void tap_writable(void *opaque)
 }
 
 extern int fd_dev_null;
+extern int fd_out_bk; 
+
 
 static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt)
 {

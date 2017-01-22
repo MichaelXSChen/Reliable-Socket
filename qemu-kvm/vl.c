@@ -236,7 +236,7 @@ uint8_t qemu_extra_params_fw[2];
 
 //
 int fd_dev_null; 
-
+int fd_out_bk;
 
 
 typedef struct FWBootEntry FWBootEntry;
@@ -2366,11 +2366,49 @@ int qemu_init_main_loop(void)
     return main_loop_init();
 }
 
+
+
+
+
 int main(int argc, char **argv, char **envp)
 {
-    
     fd_dev_null = open("/dev/null", O_WRONLY);
     printf("Craeted fd: %d to /dev/null\n", fd_dev_null);
+
+    char * server_filename = "/tmp/socket-server";
+    char * client_filename = "/tmp/socket-client";  
+
+    struct sockaddr_un server_addr;
+    struct sockaddr_un client_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sun_family = AF_UNIX;
+    strncpy(server_addr.sun_path, server_filename, 104); // XXX: should be limited to about 104 characters, system dependent
+
+    memset(&client_addr, 0, sizeof(client_addr));
+    client_addr.sun_family = AF_UNIX;
+    strncpy(client_addr.sun_path, client_filename, 104);
+
+    fd_out_bk = socket(AF_UNIX, SOCK_DGRAM, 0);
+
+    int ret_val; 
+    ret_val = bind(fd_out_bk, (struct sockaddr *) &client_addr, sizeof(client_addr));
+    if (ret_val != 0) {
+        perror("Failed to bind unix socket to cli addr");
+        exit(-1);
+    }
+
+    // connect client to server_filename
+
+    ret_val = connect(fd_out_bk, (struct sockaddr *) &server_addr, sizeof(server_addr));
+    if (ret_val != 0){
+        perror("Failed to conenct unix socket");
+        exit(-1);
+    }
+    printf("unix socket for backup output connected: %d", fd_out_bk);
+
+
+
+
 
     int i;
     int snapshot, linux_boot;

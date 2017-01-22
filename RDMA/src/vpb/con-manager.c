@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <unistd.h>
+#include <sys/un.h>
 
 
 
@@ -28,12 +29,14 @@ pthread_mutex_t become_leader_lock;
 
 
 static int sk;
-
+static int unix_listen_fd;
 
 static int report_sk;
 // con_list_entry *con_list;
 
 static int hb_sk;
+
+static int guest_out_socket; 
 
 
 typedef struct con_isn_entry con_isn_entry;
@@ -194,10 +197,56 @@ void *hb_to_guest(void *arg){
 }
 
 
+
+void *unix_sock_listen(void *useless){
+    guest_out_socket = accept(unix_listen_fd, NULL, NULL);
+    if (guest_out_socket == -1){
+        perror("Failed to accpet unix socket");
+        exit(1);
+    }
+    debugf("Guest out socket connected");
+    pthread_exit(0);
+}
+
+
+
 int con_manager_init(){
 	
 	pthread_cond_init(&become_leader, NULL);
     pthread_mutex_init(&become_leader_lock, NULL);
+
+    char *server_filename = "/tmp/socket-server";
+
+    unix_listen_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (unix_listen_fd < 0){
+        perror("Failed to create unix socket for listening");
+        exit(1);
+    }
+
+    struct sockaddr_un unix_addr; 
+    memset(&unix_addr, 9, sizeof(unix_addr));
+    unix_addr.sun_family = AF_UNIX;
+    strncpy(unix_addr.sun_path, server_filename, 104);
+
+    int ret_val;
+
+    ret_val = bind(unix_listen_fd, (struct sockaddr*)&unix_addr, sizeof(unix_addr));
+    if (ret_val == -1){
+        perror("Failed to bind listeing unix socket");
+        exit(1);
+    }
+
+    ret_val = listen(unix_listen_fd, 5);
+    if (ret_val == -1){
+        perror("Failed to put the unix listening socket into listen state");
+        exit(1);
+    }
+    pthread_t unix_listen_thread; 
+    pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
+
+
+
+
 
 
 	// Init the hash table
