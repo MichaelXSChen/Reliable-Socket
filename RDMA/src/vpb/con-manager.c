@@ -223,7 +223,7 @@ int con_manager_init(){
         exit(1);
     }
 
-    ulink(server_filename);
+    unlink(server_filename);
 
     struct sockaddr_un unix_addr; 
     memset(&unix_addr, 9, sizeof(unix_addr));
