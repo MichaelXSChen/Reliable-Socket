@@ -259,8 +259,8 @@ void *watch_guest_out(void *useless){
 			// 	debugf("ARP PACKET");
 			// 	continue;
 			// }
-			debugf("ether_type %04x", eth_hdr->ether_type);
-			if (eth_hdr->ether_type == ETHERTYPE_IP){
+			//debugf("ether_type %04x", eth_hdr->ether_type);
+			if (eth_hdr->ether_type == 0x0008){
 				debugf("[OUTGOING] IP Packet intercepted");
 
 
