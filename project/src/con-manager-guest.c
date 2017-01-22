@@ -207,6 +207,9 @@ void *serve_query(void *sk_arg){
 		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 		debugf("I am leader?? %d", iamleader);
 		if(iamleader == true){
+			printf("here");
+			fflush(stdout);
+
 			ret = send_for_consensus(&con_info);
 			if (ret < 0){
 				perrorf("Faild to Send for consensus");
