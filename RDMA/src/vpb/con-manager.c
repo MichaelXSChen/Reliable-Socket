@@ -261,7 +261,7 @@ void *watch_guest_out(void *useless){
 			// }
 			//debugf("ether_type %04x", eth_hdr->ether_type);
 			if (eth_hdr->ether_type == 0x0008){
-				debugf("[OUTGOING] IP Packet intercepted");
+				//debugf("[OUTGOING] IP Packet intercepted");
 
 
 				struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
