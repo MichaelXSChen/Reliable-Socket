@@ -102,7 +102,10 @@ int write_to_tcp_buffer(struct con_id_type *con_id, uint32_t ack,  const uint8_t
 	pthread_spin_lock(&tcp_buffer_lock);
 	
 
-	ringbuf_memcpy_into(tcp_buffer, &con_id, sizeof(struct con_id_type));
+	ringbuf_memcpy_into(tcp_buffer, con_id, sizeof(struct con_id_type));
+	
+
+
 	ringbuf_memcpy_into(tcp_buffer, &ack, sizeof(ack));	
 
 	ringbuf_memcpy_into(tcp_buffer, &len, sizeof(len));
@@ -133,6 +136,7 @@ int dump_tcp_buffer(){
 	uint32_t *ack_ptr = (uint32_t *)(ringbuf_tail(tcp_buffer)+sizeof(struct con_id_type));
 	uint32_t outgoing_seq; 
 	get_con_out_seq(&outgoing_seq, con_id_ptr);
+
 	debugf("outgoing_seq: %"PRIu32"ack: %"PRIu32"", outgoing_seq, *ack_ptr);
 
 

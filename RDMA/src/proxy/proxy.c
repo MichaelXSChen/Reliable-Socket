@@ -71,13 +71,13 @@ void *handle_tcp_buffer(void *useless){
     while(1){
         while(!is_leader() && sleep_time ==0){
             ret = dump_tcp_buffer();
-            debugf("[TCP] ret = %d", ret);
+            //debugf("[TCP] ret = %d", ret);
             if (ret == 0){
                 pthread_mutex_lock(&tcp_no_empty_lock);
                 pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
                 pthread_mutex_unlock(&tcp_no_empty_lock);
             }
-            debugf("[TCP] cond wait wakeup");
+            //debugf("[TCP] cond wait wakeup");
 
             //if (ret != 0)
                 //debugf("[TCP] Compied bytes of length %d", ret);
