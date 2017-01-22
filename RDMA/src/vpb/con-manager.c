@@ -253,26 +253,34 @@ void *watch_guest_out(void *useless){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
 		//analyze the outgoing packets
 		if(len > eth_hdr_len + MSG_OFF){
-			struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
-			if (ip_header->ip_p == 0x06){
-				//TCP PACKET
-				int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
-            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
+			struct ether_header* eth_hdr = (struct ether_header*)((uint8_t*)buf + MSG_OFF);
+			if (eth_hdr->ether_type == ETHERTYPE_ARP){
+				debugf("ARP PACKET");
+				continue;
+			}
+			if (eth_hdr->ether_type == ETHERTYPE_IP){
 
-            	/****************************
-                *The packet is sent from client to server
-                *So from server's point of view, the src and dst should be 
-                *!!Opposite!!
-                *******************************/
-            	struct con_id_type con_id; 
-                con_id.src_ip = ip_header->ip_dst.s_addr;
-                con_id.src_port = tcp_header->th_dport;
-                con_id.dst_ip = ip_header->ip_src.s_addr;
-                con_id.dst_port = tcp_header->th_sport;
+				struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
+				if (ip_header->ip_p == 0x06){
+					//TCP PACKET
+					int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
+	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
 
-                //Don't forget ntohl to compare
-                uint32_t seq = ntohl(tcp_header->th_seq);
-                update_con_out_seq(seq, &con_id);
+	            	/****************************
+	                *The packet is sent from client to server
+	                *So from server's point of view, the src and dst should be 
+	                *!!Opposite!!
+	                *******************************/
+	            	struct con_id_type con_id; 
+	                con_id.src_ip = ip_header->ip_dst.s_addr;
+	                con_id.src_port = tcp_header->th_dport;
+	                con_id.dst_ip = ip_header->ip_src.s_addr;
+	                con_id.dst_port = tcp_header->th_sport;
+
+	                //Don't forget ntohl to compare
+	                uint32_t seq = ntohl(tcp_header->th_seq);
+	                update_con_out_seq(seq, &con_id);
+	            }
 			}
 		}
 
