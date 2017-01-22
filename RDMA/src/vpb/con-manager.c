@@ -207,6 +207,7 @@ void *watch_guest_out(void *useless){
 	while(1){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
 		debugf("received length %d, buf = %s", len, buf);
+		
 	}
 }
 
