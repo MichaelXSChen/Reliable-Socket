@@ -115,8 +115,6 @@ void * serve_report(void * arg){
 
 
 int sk_ask_consensus_connect(){
-	debugf("SK ASK for consensus connected called");
-	fflush(stderr);
 
 	int ret;
 	struct sockaddr_in addr;
@@ -135,6 +133,9 @@ int sk_ask_consensus_connect(){
         return -1;
     }
     debugf("SK ASK for consensus connected");
+    sk_consensus_connected =true;
+
+
     return 0;
 }
 
@@ -157,11 +158,9 @@ int send_for_consensus(struct con_info_type *con_info){
 	ret = send_bytes(sk_ask_consensus, buffer, len);
 
 	if (ret < 0) {
-		debugf("Send_bytes return with %d, erro = %s", ret, strerror(errno));
 
 
 		if(errno == ECONNRESET || errno == EDESTADDRREQ){
-			debugf("Not connect, try to reconnect %s", strerror(errno));
 			int tmp_errno = errno;
 			ret = sk_ask_consensus_connect();
 			if (ret != 0){
@@ -181,9 +180,6 @@ int send_for_consensus(struct con_info_type *con_info){
 	        return -1;
 	    }
     }
-	debugf("[SK-consensus]: sent successful");
-
-
 
 	return 0;
 }
