@@ -216,6 +216,8 @@ con_out_seq_entry *con_out_seq_list;
 
 int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 	con_out_seq_entry *entry;
+	debugf("[connection]: Trying to find src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port"PRIu16"", con->src_ip, con->src_port, con->dst_ip, con->dst_port);
+
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
 	if (entry != NULL){
 		*seq = entry->seq;
@@ -239,7 +241,7 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	entry->seq = seq; 
 	struct con_out_seq_entry *replaced;
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	debugf("connection: port%"PRIu16" to port %"PRIu16", seq increased to %"PRIu32"", ntohs(con->dst_port), ntohs(con->src_port), seq);
+	debugf("[connection]: src_ip %"PRIu32", src_port%"PRIu16" to dst_ip %"PRIu32" dst_port"PRIu16", seq increased to %"PRIu32"", con->src_ip, con->src_port, con->dst_ip, con->dst_port, seq);
 	return 0;
 }
 
@@ -267,7 +269,7 @@ void *watch_guest_out(void *useless){
 				struct ip* ip_header = (struct ip*)((uint8_t*)buf + eth_hdr_len + MSG_OFF);
 				if (ip_header->ip_p == 0x06){
 					//TCP PACKET
-					debugf("[OUTGOING] TCP Packet intercepted");
+					//debugf("[OUTGOING] TCP Packet intercepted");
 
 					int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
 	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
