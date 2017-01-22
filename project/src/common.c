@@ -174,7 +174,8 @@ int send_bytes(int sk, char* buf, int len){
 	// memcpy(&data[sizeof(length)], &tmp, sizeof(tmp));
 	memcpy(&data[sizeof(length)], buf, len);
 
-	
+	debugf("trying to send bytes with len: %d", len);
+	fflush(stderr);
 	do{
 		ret = send(sk, data, left, 0);
 		if (ret < 0){
