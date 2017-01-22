@@ -252,13 +252,14 @@ void *watch_guest_out(void *useless){
 	while(1){
 		len = recv(guest_out_sk, buf, sizeof(buf), 0);
 		//analyze the outgoing packets
-		debugf("recv len: %d", len);
+		//debugf("recv len: %d", len);
 		if(len > eth_hdr_len + MSG_OFF){
 			struct ether_header* eth_hdr = (struct ether_header*)((uint8_t*)buf + MSG_OFF);
 			// if (eth_hdr->ether_type == ETHERTYPE_ARP){
 			// 	debugf("ARP PACKET");
 			// 	continue;
 			// }
+			debugf("ether_type %04x", eth_hdr->ether_type);
 			if (eth_hdr->ether_type == ETHERTYPE_IP){
 				debugf("[OUTGOING] IP Packet intercepted");
 
