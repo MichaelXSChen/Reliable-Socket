@@ -206,7 +206,11 @@ void *serve_query(void *sk_arg){
 		debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 
 		if(iamleader){
-			send_for_consensus(&con_info);
+			ret = send_for_consensus(&con_info);
+			if (ret < 0){
+				perrorf("Faild to Send for consensus");
+				pthread_exit(0);
+			}
 			ret = send(sk, &iamleader, sizeof(iamleader), 0);
 			// close(*sk);
 			// pthread_exit(0);
