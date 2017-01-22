@@ -33,6 +33,8 @@
 pthread_cond_t become_leader; 
 pthread_mutex_t become_leader_lock;
 
+extern pthread_cond_t tcp_outgoing;
+
 
 static int sk;
 // static int guest_out_sk;
@@ -250,8 +252,10 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	// struct in_addr src_ip, dst_ip;
 	// src_ip.s_addr = con->src_ip;
 	// dst_ip.s_addr = con->dst_ip;
-	
+
 	//debugf("[INSERT]: src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16", seq increased to %"PRIu32"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port), seq);
+	pthread_cond_broadcast(&tcp_outgoing);
+
 	return 0;
 }
 

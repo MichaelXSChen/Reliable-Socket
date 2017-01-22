@@ -45,6 +45,10 @@ int sleep_time;
 pthread_cond_t tcp_no_empty;
 pthread_mutex_t tcp_no_empty_lock;
 
+pthread_cond_t tcp_outgoing;
+pthread_mutex_t tcp_outgoing_lock;
+
+
 int increase_sleep_time(int additon){
     pthread_spin_lock(&sleep_time_lock);
     sleep_time = sleep_time + additon; 
@@ -78,7 +82,9 @@ void *handle_tcp_buffer(void *useless){
                 pthread_mutex_unlock(&tcp_no_empty_lock);
             }
             if (ret == -1){
-                continue;
+                pthread_mutex_lock(&tcp_outgoing_lock);
+                pthread_cond_wait(&tcp_outgoing, &tcp_outgoing_lock);
+                pthread_mutex_unlock(&tcp_outgoing_lock);
             }
             //debugf("[TCP] cond wait wakeup");
 
@@ -105,6 +111,9 @@ int dare_main(proxy_node* proxy, const char* config_path)
     pthread_spin_init(&sleep_time_lock, 0);
     pthread_cond_init(&tcp_no_empty, NULL);
     pthread_mutex_init(&tcp_no_empty_lock, NULL);
+
+    pthread_cond_init(&tcp_outgoing, NULL);
+    pthread_mutex_init(&tcp_outgoing_lock, NULL);
 
 
     int rc; 
