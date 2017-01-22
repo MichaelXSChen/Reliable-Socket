@@ -2377,6 +2377,7 @@ int main(int argc, char **argv, char **envp)
 
     char * server_filename = "/tmp/socket-server";
     char * client_filename = "/tmp/socket-client";  
+    unlink(client_filename);
 
     struct sockaddr_un server_addr;
     struct sockaddr_un client_addr;
