@@ -177,6 +177,8 @@ void *hb_to_guest(void *arg){
 	si.sin_port=htons(HB_PORT);
 	inet_aton(GUEST_IP, &si.sin_addr);
 
+	//Wait for the initilization to be completed.
+	sleep(5);
 
 	while(1){
 		if(is_leader()){
