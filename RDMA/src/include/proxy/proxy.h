@@ -100,6 +100,7 @@ typedef struct proxy_close_msg_t{
 
 int tcpnewcon_handle(uint8_t *buf,int size);
 
+void wakeup_tcp();
 
 #define PROXY_CLOSE_MSG_SIZE (sizeof(proxy_close_msg))
 

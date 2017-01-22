@@ -100,7 +100,9 @@ void *handle_tcp_buffer(void *useless){
     }
 }
 
-
+void wakeup_tcp(){
+    pthread_cond_broadcast(&tcp_outgoing);
+}
 
 
 
@@ -109,6 +111,7 @@ void *handle_tcp_buffer(void *useless){
 int dare_main(proxy_node* proxy, const char* config_path)
 {
     pthread_spin_init(&sleep_time_lock, 0);
+    
     pthread_cond_init(&tcp_no_empty, NULL);
     pthread_mutex_init(&tcp_no_empty_lock, NULL);
 
