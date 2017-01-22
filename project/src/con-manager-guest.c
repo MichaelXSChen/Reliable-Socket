@@ -144,6 +144,7 @@ int send_for_consensus(struct con_info_type *con_info){
 	ret = send_bytes(sk_ask_consensus, buffer, len);
 	if (ret < 0) {
 		if(errno == ECONNRESET || errno == EDESTADDRREQ){
+			debugf("Not connect, try to reconnect %s", strerror(errno));
 			int tmp_errno = errno;
 			ret = sk_ask_consensus_connect();
 			if (ret != 0){
@@ -211,6 +212,8 @@ void *serve_query(void *sk_arg){
 				perrorf("Faild to Send for consensus");
 				pthread_exit(0);
 			}
+			debugf("Successfully sent to QEMU for consensus");
+
 			ret = send(sk, &iamleader, sizeof(iamleader), 0);
 			// close(*sk);
 			// pthread_exit(0);
