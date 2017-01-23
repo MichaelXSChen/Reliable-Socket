@@ -224,7 +224,7 @@ con_out_seq_entry *con_out_seq_list;
 
 
 int flust_con_out_seq(struct con_id_type *con){
-
+	return 0;
 }
 
 
@@ -280,7 +280,14 @@ int check_block(uint32_t ack, struct con_id_type *con){
 
 	uint32_t isn; 
 	int ret; 
-	ret = get_isn(&isn, con);
+
+	struct con_id_type con_id; 
+	con_id.src_ip = con->dst_ip;
+	con_id.src_port = con->dst_port;
+	con_id.dst_ip = con->src_ip;
+	con_id.dst_port = con->src_port;
+
+	ret = get_isn(&isn, &con_id);
 	if (ret < 0){
 		debugf("not my managed connection");
 		//This is not the packet manageed.  
@@ -294,7 +301,7 @@ int check_block(uint32_t ack, struct con_id_type *con){
 		return 1;
 	}
 	else{
-		debugf("out_seq: %"PRIu32" ack: %"PRIu32" PASS!", out_seq, ack);
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" PASS", out_seq, ack);
 
 		return 0;
 	}
