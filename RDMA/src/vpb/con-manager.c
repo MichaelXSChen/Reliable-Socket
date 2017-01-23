@@ -307,17 +307,17 @@ void *watch_guest_out(void *useless){
 	                	payload_length = 0;
 
 
-	                printf("outgoing *****************\n");
-	                printf("len = %d\n", len);
-	                printf("eth_hdr_len = %d\n",eth_hdr_len);
-	                printf("ip_len = %d\n", ip_len);
-	                printf("ip_header_len = %d\n", ip_header_size);
-	                printf("tcp_header_len = %d\n", tcp_header_size);
-	                printf("payload_length = %d\n", payload_length);
+	                // printf("outgoing *****************\n");
+	                // printf("len = %d\n", len);
+	                // printf("eth_hdr_len = %d\n",eth_hdr_len);
+	                // printf("ip_len = %d\n", ip_len);
+	                // printf("ip_header_len = %d\n", ip_header_size);
+	                // printf("tcp_header_len = %d\n", tcp_header_size);
+	                // printf("payload_length = %d\n", payload_length);
 
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 
-	                printf("seq increased to %"PRIu32"\n", seq);
+	                // printf("seq increased to %"PRIu32"\n", seq);
 	                int i = 0;
 	                for (i = 0; i<len; i++){
 	                	printf("%#02x  ", buf[i]&0xff);
@@ -328,12 +328,12 @@ void *watch_guest_out(void *useless){
 	                		}
 	                	}
 	                }
-	                printf("\n");
+	                // printf("\n");
 
 
 
-	                printf("**************************\n\n");
-	                fflush(stdout);
+	                // printf("**************************\n\n");
+	                // fflush(stdout);
 
 	                update_con_out_seq(seq, &con_id);
 	            }
