@@ -223,7 +223,29 @@ con_out_seq_entry *con_out_seq_list;
 
 
 
-int flust_con_out_seq(struct con_id_type *con){
+int flush_con_out_seq(struct con_id_type *server_con){
+
+
+
+
+
+	con_out_seq_entry *entry = (con_out_seq_entry *) malloc(sizeof(con_out_seq_entry));
+	
+	entry->con_id.src_port = server_con->dst_port;
+	entry->con_id.dst_port = server_con->src_port;
+
+	entry->con_id.src_ip = server_con->dst_ip;
+	entry->con_id.dst_ip = server_con->src_ip;
+
+	entry->seq = 0;
+
+	struct con_out_seq_entry *replaced;
+	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
+
+	if (replaced != NULL)
+		debugf("Flushed outgoing seq, from %"PRIu32"to 0", replaced->seq);
+	else
+		debugf("new connection form port %d to port %d, seq set to 0", ntohs(server_con->dst_port), ntohs(server_con->src_port));
 	return 0;
 }
 
@@ -507,11 +529,16 @@ int handle_consensused_con(char* buf, int len){
 	struct con_info_type con_info; 
 	memset(&con_info, 0, sizeof(con_info));
 
+
+
+
 	int ret;
 	ret = con_info_deserialize(&con_info, buf, len);
 
 	uint32_t isn; 
 	get_isn(&isn, &(con_info.con_id));
+
+	flush_con_out_seq(&(con_info.con_id));
 
 
 	con_info.recv_seq = isn; 
