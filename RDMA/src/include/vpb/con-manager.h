@@ -33,4 +33,6 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con);
 
 int check_block(uint32_t ack, struct con_id_type *con);
 
+int flush_con_out_seq(struct con_id_type *server_con);
+
 #endif

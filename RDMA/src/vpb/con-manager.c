@@ -68,6 +68,8 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 	entry->isn = isn; 
 	struct con_isn_entry *replaced;
 
+ 
+	flush_con_out_seq(con);
 
 	debugf("trying to insert into hashtable");
 	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), entry, replaced);
@@ -75,7 +77,6 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 
 
 
-	debugf("insert complete");
 	return 0;
 }
 
@@ -538,7 +539,6 @@ int handle_consensused_con(char* buf, int len){
 	uint32_t isn; 
 	get_isn(&isn, &(con_info.con_id));
 
-	flush_con_out_seq(&(con_info.con_id));
 
 
 	con_info.recv_seq = isn; 
