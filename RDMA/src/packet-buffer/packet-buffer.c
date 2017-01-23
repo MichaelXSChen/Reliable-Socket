@@ -134,11 +134,14 @@ int dump_tcp_buffer(){
 	//Make compare using head pointer. 
 	struct con_id_type *con_id_ptr = (struct con_id_type *)ringbuf_tail(tcp_buffer);
 	uint32_t *ack_ptr = (uint32_t *)(ringbuf_tail(tcp_buffer)+sizeof(struct con_id_type));
-	uint32_t outgoing_seq; 
-	get_con_out_seq(&outgoing_seq, con_id_ptr);
+	// uint32_t outgoing_seq; 
+	// get_con_out_seq(&outgoing_seq, con_id_ptr);
 
-	debugf("outgoing_seq: %"PRIu32"ack: %"PRIu32"", outgoing_seq, *ack_ptr);
-	if (outgoing_seq != 0 && outgoing_seq  + 1 < *ack_ptr){
+
+
+	int ret= check_block(*ack_ptr, con_id_ptr);
+	
+	if (ret == 1){
 		pthread_spin_unlock(&tcp_buffer_lock);
 		pthread_spin_unlock(&outgoing_buffer_lock);
 		return -1;

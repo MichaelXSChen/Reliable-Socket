@@ -30,4 +30,7 @@ int handle_consensused_con(char* buf, int len);
 
 int get_con_out_seq(uint32_t *seq, struct con_id_type *con);
 
+
+int check_block(uint32_t ack, struct con_id_type *con);
+
 #endif

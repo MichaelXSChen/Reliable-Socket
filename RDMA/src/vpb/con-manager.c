@@ -55,6 +55,9 @@ con_isn_entry *con_isn_list;
 int get_isn(uint32_t *isn, struct con_id_type *con){
 	con_isn_entry *entry;
 	HASH_FIND(hh, con_isn_list, con, sizeof(struct con_id_type), entry);
+	if (entry == NULL){
+		return -1;
+	}
 	*isn = entry->isn; 
 	return 0;
 }
@@ -68,7 +71,10 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 
 	debugf("trying to insert into hashtable");
 	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	
+
+
+
+
 	debugf("insert complete");
 	return 0;
 }
@@ -215,6 +221,14 @@ typedef struct con_out_seq_entry con_out_seq_entry;
 
 con_out_seq_entry *con_out_seq_list;
 
+
+
+int flust_con_out_seq(struct con_id_type *con){
+
+}
+
+
+
 int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 	con_out_seq_entry *entry;
 	// struct in_addr src_ip, dst_ip;
@@ -258,6 +272,36 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	return 0;
 }
 
+int check_block(uint32_t ack, struct con_id_type *con){
+	//Return 0 if no need to block
+	//Return 1 if need to block the incoming queue for a while
+	//		because the outgoing packet hasn't been generated
+
+
+	uint32_t isn; 
+	int ret; 
+	ret = get_isn(&isn, con);
+	if (ret < 0){
+		debugf("not my managed connection");
+		//This is not the packet manageed.  
+		return 0;
+	}
+	
+	uint32_t out_seq;
+	ret = get_con_out_seq(&out_seq, con);
+	if(out_seq  + 1 < ack){
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block", out_seq, ack);
+		return 1;
+	}
+	else{
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" PASS!", out_seq, ack);
+
+		return 0;
+	}
+
+
+}
+
 #define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 void *watch_guest_out(void *useless){
@@ -289,8 +333,8 @@ void *watch_guest_out(void *useless){
 	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
 
 	            	/****************************
-	                *The packet is sent from client to server
-	                *So from server's point of view, the src and dst should be 
+	                *That is outgoing packet, in roder to match src and dst for incoming packet, 
+	                *Save it in
 	                *!!Opposite!!
 	                *******************************/
 	            	struct con_id_type con_id; 
