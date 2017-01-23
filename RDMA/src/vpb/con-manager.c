@@ -285,6 +285,7 @@ void *watch_guest_out(void *useless){
 					//debugf("[OUTGOING] TCP Packet intercepted");
 
 					int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
+	            	short ip_len = ip_header->ip_len; 
 	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
 
 	            	/****************************
@@ -301,7 +302,7 @@ void *watch_guest_out(void *useless){
 	                //Don't forget ntohl to compare
 
 	                int tcp_header_size = 4 * (tcp_header->th_off & 0X0F);
-	                int payload_length = len - MSG_OFF - eth_hdr_len - ip_header_size - tcp_header_size; 
+	                int payload_length = ip_len - ip_header_size - tcp_header_size; 
 	                if (payload_length < 0)
 	                	payload_length = 0;
 
