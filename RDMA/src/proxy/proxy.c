@@ -702,11 +702,13 @@ static void do_action_raw(void *data, size_t size){
             else{
                 struct con_id_type con_id; 
 
-                if (ip_header->ip_src.s_addr  !=  guest_vm_ip.s_addr){
-                    debugf("not for me, drop!");
+                if (ip_header->ip_dst.s_addr  !=  guest_vm_ip.s_addr){
+                    debugf("not for me, drop!, ip = %s", inet_ntoa(ip_header->ip_dst));
+                    return;
                 }
                 if (tcp_header->th_sport == htons(SERVICE_PORT)){
-                    debugf("control packet, drop");
+                    debugf("control packet, drop, src_ip = %s", inet_ntoa(ip_header->ip_src));
+                    return;
                 }
 
                 con_id.src_ip = ip_header->ip_src.s_addr;
