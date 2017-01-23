@@ -305,7 +305,20 @@ void *watch_guest_out(void *useless){
 	                if (payload_length < 0)
 	                	payload_length = 0;
 
+
+	                printf("outgoing *****************\n");
+	                printf("len = %d\n", len);
+	                printf("eth_hdr_len = %d\n",eth_hdr_len);
+	                printf("ip_header_len = %d\n", ip_header_size);
+	                printf("tcp_header_len = %d\n", tcp_header_size);
+	                printf("payload_length = %d\n", payload_length);
+
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
+
+	                printf("seq increased to %"PRIu32"", seq);
+	                printf("**************************\n\n");
+	                fflush(stdout);
+
 	                update_con_out_seq(seq, &con_id);
 	            }
 			}
