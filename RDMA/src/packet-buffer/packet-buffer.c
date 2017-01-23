@@ -8,8 +8,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define OUTGOING_BUFFER_SIZE 16777216
-#define TCP_BUFFER_SIZE 16777216
+#define OUTGOING_BUFFER_SIZE 5120000000
+#define TCP_BUFFER_SIZE 5120000000
 
 
 static ringbuf_t outgoing_buffer;
