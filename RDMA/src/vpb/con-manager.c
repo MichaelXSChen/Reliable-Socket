@@ -318,10 +318,10 @@ void *watch_guest_out(void *useless){
 	                printf("seq increased to %"PRIu32"\n", seq);
 	                int i = 0;
 	                for (i = 0; i<len; i++){
-	                	printf("%#02x", buf[i]&0xff);
-	                	if (i % 8 == 0){
-	                		printf("  ");
-	                		if(i %16 == 0){
+	                	printf("%#02x  ", buf[i]&0xff);
+	                	if ((i+1) % 8 == 0){
+	                		printf("     ");
+	                		if((i+1) %16 == 0){
 	                			printf("\n");
 	                		}
 	                	}
