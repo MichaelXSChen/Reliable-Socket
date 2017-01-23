@@ -302,7 +302,8 @@ void *watch_guest_out(void *useless){
 
 	                int tcp_header_size = 4 * (tcp_header->th_off & 0X0F);
 	                int payload_length = len - MSG_OFF - eth_hdr_len - ip_header_size - tcp_header_size; 
-
+	                if (payload_length < 0)
+	                	payload_length = 0;
 
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 	                update_con_out_seq(seq, &con_id);
