@@ -318,16 +318,16 @@ void *watch_guest_out(void *useless){
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 
 	                // printf("seq increased to %"PRIu32"\n", seq);
-	                int i = 0;
-	                for (i = 0; i<len; i++){
-	                	printf("%#02x  ", buf[i]&0xff);
-	                	if ((i+1) % 8 == 0){
-	                		printf("     ");
-	                		if((i+1) %16 == 0){
-	                			printf("\n");
-	                		}
-	                	}
-	                }
+	                // int i = 0;
+	                // for (i = 0; i<len; i++){
+	                // 	printf("%#02x  ", buf[i]&0xff);
+	                // 	if ((i+1) % 8 == 0){
+	                // 		printf("     ");
+	                // 		if((i+1) %16 == 0){
+	                // 			printf("\n");
+	                // 		}
+	                // 	}
+	                // }
 	                // printf("\n");
 
 
