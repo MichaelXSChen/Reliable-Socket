@@ -183,7 +183,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         return -1;
     }
 
-    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, con_info->send_seq);
+    ret = set_tcp_queue_seq(*sk, TCP_SEND_QUEUE, con_info->send_seq-1);
     if (ret != 0) {
         perror("Failed to set send queue seq");
         return -1;
@@ -236,6 +236,11 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     }
 
     debugf("(Backup) created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
+    
+    uint8_t triger = 1;
+    ret = send(*sk, &triger, 1, 0);
+    debugf("[Intercept.so]  Sent out 1 bytes for trigering");
+
     tcp_repair_off(*sk);
  
     return 0;
