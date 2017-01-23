@@ -31,6 +31,11 @@ static int set_blocking(int fd, int blocking);
 static void do_action_raw(void *data, size_t size);
 static void do_action_tcpnewcon(void *data, size_t size);
 
+#define GUEST_IP "10.22.1.100"
+
+
+struct in_addr guest_vm_ip; 
+
 
 
 FILE *log_fp;
@@ -110,6 +115,10 @@ void wakeup_tcp(){
 
 int dare_main(proxy_node* proxy, const char* config_path)
 {
+    
+    inet_aton(GUEST_IP, &guest_vm_ip);
+
+
     pthread_spin_init(&sleep_time_lock, 0);
     
     pthread_cond_init(&tcp_no_empty, NULL);
@@ -692,10 +701,19 @@ static void do_action_raw(void *data, size_t size){
             }
             else{
                 struct con_id_type con_id; 
+
+                if (ip_header->ip_src.s_addr  !=  guest_vm_ip.s_addr){
+                    debugf("not for me, drop!");
+                }
+                if (tcp_header->th_sport == htons(SERVICE_PORT)){
+                    debugf("control packet, drop");
+                }
+
                 con_id.src_ip = ip_header->ip_src.s_addr;
                 con_id.src_port = tcp_header->th_sport;
                 con_id.dst_ip = ip_header->ip_dst.s_addr;
                 con_id.dst_port = tcp_header->th_dport;
+
 
 
 
