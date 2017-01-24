@@ -51,6 +51,7 @@ static int guest_out_sk;
 
 typedef struct con_isn_entry con_isn_entry;
 
+extern pthread_mutex_t tcp_outgoing_lock;
 
 
 con_isn_entry *con_isn_list;
@@ -314,6 +315,9 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	struct con_out_seq_entry *replaced;
 	
 
+
+	pthread_mutex_lock(&tcp_outgoing_lock);
+
 	pthread_rwlock_wrlock(&out_lock);
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
 	pthread_rwlock_unlock(&out_lock);
@@ -326,6 +330,7 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 
 	//debugf("[INSERT]: src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16", seq increased to %"PRIu32"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port), seq);
 	wakeup_tcp();
+	pthread_mutex_unlock(&tcp_outgoing_lock);
 
 	return 0;
 }
