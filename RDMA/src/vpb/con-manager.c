@@ -428,6 +428,8 @@ void *watch_guest_out(void *useless){
 
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 
+	                debugf("seq = %"PRIu32" + %d = %"PRIu32"", ntohl(tcp_header->th_seq), payload_length, seq);
+
 	                // printf("seq increased to %"PRIu32"\n", seq);
 	                // //int i = 0;
 	                // // for (i = 0; i<len; i++){
