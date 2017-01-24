@@ -130,7 +130,14 @@ void *serve(void *sk_arg){
 		debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
 		debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
 		debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
-		debugf("RECV_DEQ: %" PRIu32 "", con_info.recv_seq);
+		debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
+		debugf("has timestamp? %"PRIu16 " val = %"PRIu32"", con_info.has_timestamp, con_info.timestamp);
+		debugf("MSS_CLAMP:%" PRIu32 "", con_info.mss_clamp);
+		debugf("snd_wscale:%" PRIu32 "", con_info.snd_wscale);
+		debugf("rcv_wscale:%" PRIu32 "", con_info.rcv_wscale);
+		debugf("has rcv wsacle? %"PRIu16 "", con_info.has_rcv_wscale);
+
+
 
 		
 		if (is_leader()){
