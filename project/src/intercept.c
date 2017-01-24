@@ -211,6 +211,36 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         }
     }
 
+    struct tcp_repair_opt opt_for_mss;  
+    opt_for_mss.opt_code = TCPOPT_MAXSEG;
+    opt_for_mss.opt_val = con_info->mss_clamp;
+
+    ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_mss, sizeof(struct tcp_repair_opt));
+    if (ret < 0){
+        perrorf("Failed to set mss_clamp\n\n\n");
+        return -1;
+    }
+    
+    debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+
+
+
+
+    if (con_info->has_rcv_wscale){
+        struct tcp_repair_opt opt_for_wscale;
+        opt_for_wscale.opt_code = TCPOPT_WINDOW;
+
+        opt_for_wscale.opt_val = con_info->snd_wscale + (con_info->rcv_wscale << 16);
+        ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_wscale, sizeof(struct tcp_repair_opt));
+        if (ret < 0){
+            perrorf("Faield to set wscale\n\n\n");
+            return -1;
+        } 
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+
+    }
+
+
 
 
 
@@ -375,11 +405,18 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         memset(&tcpi, 0, sizeof(struct tcp_info));
         int tcp_info_len = sizeof(struct tcp_info);
 
+
+
         ret = getsockopt(sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
         if (ret != 0){
             perrorf("Fail to get TCP_INFO\n\n");
             return -1;
         }
+
+        //Time stamp;
+
+
+
         uint32_t timestamp = 0;
         uint8_t has_timestamp = 0;
         if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
@@ -393,6 +430,33 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
         }
         con_info->has_timestamp = has_timestamp;
         con_info->timestamp = timestamp;
+
+
+
+        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
+            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
+            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
+            con_info->has_rcv_wscale = 1;
+        }
+
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+
+        //Get max seg size 
+
+        int size_mss = sizeof(con_info->mss_clamp);
+
+        ret = getsockopt(sk, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
+        if (ret < 0){
+            perrorf("Faailed to get mss_clamp\n\n");
+            return -1;
+
+        }
+
+        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+
+
+
+
 
         debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
 
@@ -567,6 +631,33 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags){
         }
         con_info->has_timestamp = has_timestamp;
         con_info->timestamp = timestamp;
+
+        
+        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
+            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
+            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
+            con_info->has_rcv_wscale = 1;
+        }
+
+
+
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+
+        //Get max seg size 
+
+        int size_mss = sizeof(con_info->mss_clamp);
+
+        ret = getsockopt(sk, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
+        if (ret < 0){
+            perrorf("Faailed to get mss_clamp\n\n");
+            return -1;
+
+        }
+
+        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+
+
+
 
         debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
 

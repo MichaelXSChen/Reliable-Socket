@@ -39,6 +39,12 @@ struct con_info_type{
     uint32_t recv_seq;
     uint16_t has_timestamp;
     uint32_t timestamp;
+
+    uint32_t mss_clamp;
+    uint32_t snd_wscale;
+    uint32_t rcv_wscale;
+    uint16_t has_rcv_wscale;
+
 };
 
 
