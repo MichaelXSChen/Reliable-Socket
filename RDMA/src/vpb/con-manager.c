@@ -114,6 +114,7 @@ void *serve(void *sk_arg){
 		ret = recv_bytes(*sk, &buf, &len);
 		if (ret < 0){
 			perror("Failed to recv bytes");
+			pthread_exit(0);
 			//TODO:exit??
 		}
 		if (ret == 0){

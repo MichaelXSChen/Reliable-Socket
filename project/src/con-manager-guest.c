@@ -207,7 +207,7 @@ void *serve_query(void *sk_arg){
 		ret = recv_bytes(sk, &buf, &len);
 		if (ret < 0){
 			perror("Failed to recv bytes");
-			continue;
+			pthread_exit(0);
 		}
 		if (ret == 0){
 			close(sk);
