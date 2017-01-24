@@ -289,6 +289,8 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	// src_ip.s_addr = con->src_ip;
 	// dst_ip.s_addr = con->dst_ip;
 
+
+
 	//debugf("[INSERT]: src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16", seq increased to %"PRIu32"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port), seq);
 	wakeup_tcp();
 
@@ -320,7 +322,7 @@ int check_block(uint32_t ack, struct con_id_type *con){
 	uint32_t out_seq;
 	ret = get_con_out_seq(&out_seq, con);
 	if(out_seq  + 1 < ack){
-		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block", out_seq, ack);
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from port: %d to port: %d)", out_seq, ack, ntohs(con->src_port), ntohs(con->dst_port));
 		return 1;
 	}
 	else{
