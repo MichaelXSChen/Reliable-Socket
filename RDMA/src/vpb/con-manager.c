@@ -329,7 +329,10 @@ int check_block(uint32_t ack, struct con_id_type *con){
 	uint32_t out_seq;
 	ret = get_con_out_seq(&out_seq, con);
 	if(out_seq  + 1 < ack){
-		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from port: %d to port: %d)", out_seq, ack, ntohs(con->src_port), ntohs(con->dst_port));
+		struct in_addr src_addr, dst_addr;
+		src_addr.s_addr = con->src_ip;
+		dst_addr.s_addr = con->dst_ip;
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from %s:%d to %s:%d)", out_seq, ack, inet_ntoa(src_addr), ntohs(con->src_port), inet_ntoa(dst_addr), ntohs(con->dst_port));
 		return 1;
 	}
 	else{
