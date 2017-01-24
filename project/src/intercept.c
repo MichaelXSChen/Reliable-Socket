@@ -192,6 +192,36 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         return -1;
     }
 
+
+
+
+
+
+
+
+    aux = 1;
+    ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
+    if (ret < 0){
+        perror("failed to setup reuse");
+        return -1;
+    }
+    ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEPORT, &aux, sizeof(aux));
+    if (ret < 0){
+        perror("failed to setup reuse");
+        return -1;
+    }
+
+
+    if (bind(*sk, (struct sockaddr *)&localaddr, sizeof(localaddr)) != 0){
+        perror("Cannot bind socket here");
+        return -1;
+    }
+
+    if (connect(*sk, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
+        perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
+        return -1;
+    }
+
     debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", con_info->send_seq, con_info->recv_seq);
 
     if (con_info->has_timestamp){
@@ -240,33 +270,6 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 
     }
 
-
-
-
-
-
-    aux = 1;
-    ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
-    if (ret < 0){
-        perror("failed to setup reuse");
-        return -1;
-    }
-    ret = setsockopt(*sk, SOL_SOCKET, SO_REUSEPORT, &aux, sizeof(aux));
-    if (ret < 0){
-        perror("failed to setup reuse");
-        return -1;
-    }
-
-
-    if (bind(*sk, (struct sockaddr *)&localaddr, sizeof(localaddr)) != 0){
-        perror("Cannot bind socket here");
-        return -1;
-    }
-
-    if (connect(*sk, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
-        perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
-        return -1;
-    }
 
     debugf("(Backup) created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
     
