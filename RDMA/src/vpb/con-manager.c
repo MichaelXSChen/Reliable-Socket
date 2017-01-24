@@ -34,6 +34,9 @@ pthread_cond_t become_leader;
 pthread_mutex_t become_leader_lock;
 
 
+pthread_rwlock_t isn_lock;
+pthread_rwlock_t out_lock;
+
 
 static int sk;
 // static int guest_out_sk;
@@ -54,7 +57,11 @@ con_isn_entry *con_isn_list;
 
 int get_isn(uint32_t *isn, struct con_id_type *con){
 	con_isn_entry *entry;
+	
+	pthread_rwlock_rdlock(&isn_lock);
 	HASH_FIND(hh, con_isn_list, con, sizeof(struct con_id_type), entry);
+	pthread_rwlock_unlock(&isn_lock);
+
 	if (entry == NULL){
 		return -1;
 	}
@@ -72,8 +79,10 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 	flush_con_out_seq(con);
 
 	debugf("trying to insert into hashtable");
+	
+	pthread_rwlock_wrlock(&isn_lock);
 	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), entry, replaced);
-
+	pthread_rwlock_unlock(&isn_lock);
 
 
 
@@ -248,7 +257,11 @@ int flush_con_out_seq(struct con_id_type *server_con){
 	entry->seq = 0;
 
 	struct con_out_seq_entry *replaced;
+
+
+	pthread_rwlock_wrlock(&out_lock);
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
+	pthread_rwlock_unlock(&out_lock);
 
 	if (replaced != NULL)
 		debugf("Flushed outgoing seq, from %"PRIu32"to 0", replaced->seq);
@@ -268,7 +281,11 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 
 	// debugf("[FIND]: Trying to find src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port));
 
+	pthread_rwlock_rdlock(&out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
+	pthread_rwlock_unlock(&out_lock);
+
+
 	if (entry != NULL){
 		*seq = entry->seq;
 		return 0;
@@ -281,17 +298,25 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 
 int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	con_out_seq_entry *find_entry;
+	pthread_rwlock_rdlock(&out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), find_entry);
+	pthread_rwlock_unlock(&out_lock);
+
 	if (find_entry != NULL && find_entry->seq >= seq){
 		//No need to update, only keep max value
 		return 0;
 	}
+
 	con_out_seq_entry *entry = (con_out_seq_entry *) malloc(sizeof(con_out_seq_entry));
 	memcpy(&(entry->con_id), con, sizeof(struct con_id_type));
 	entry->seq = seq; 
 	struct con_out_seq_entry *replaced;
-	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
 	
+
+	pthread_rwlock_wrlock(&out_lock);
+	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
+	pthread_rwlock_unlock(&out_lock);
+
 	// struct in_addr src_ip, dst_ip;
 	// src_ip.s_addr = con->src_ip;
 	// dst_ip.s_addr = con->dst_ip;
@@ -393,20 +418,20 @@ void *watch_guest_out(void *useless){
 	                	payload_length = 0;
 
 
-	                printf("outgoing *****************\n");
-	                printf("len = %d\n", len);
-	                printf("eth_hdr_len = %d\n",eth_hdr_len);
-	                printf("ip_len = %d\n", ip_len);
-	                printf("ip_header_len = %d\n", ip_header_size);
-	                printf("tcp_header_len = %d\n", tcp_header_size);
-	                printf("payload_length = %d\n", payload_length);
+	                // printf("outgoing *****************\n");
+	                // printf("len = %d\n", len);
+	                // printf("eth_hdr_len = %d\n",eth_hdr_len);
+	                // printf("ip_len = %d\n", ip_len);
+	                // printf("ip_header_len = %d\n", ip_header_size);
+	                // printf("tcp_header_len = %d\n", tcp_header_size);
+	                // printf("payload_length = %d\n", payload_length);
 
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 
-	                printf("seq increased to %"PRIu32"\n", seq);
-	                //int i = 0;
-	                // for (i = 0; i<len; i++){
-	                // 	printf("%#02x  ", buf[i]&0xff);
+	                // printf("seq increased to %"PRIu32"\n", seq);
+	                // //int i = 0;
+	                // // for (i = 0; i<len; i++){
+	                // // 	printf("%#02x  ", buf[i]&0xff);
 	                // 	if ((i+1) % 8 == 0){
 	                // 		printf("     ");
 	                // 		if((i+1) %16 == 0){
@@ -418,8 +443,8 @@ void *watch_guest_out(void *useless){
 
 
 
-	                printf("**************************\n\n");
-	                fflush(stdout);
+	                // printf("**************************\n\n");
+	                // fflush(stdout);
 
 	                update_con_out_seq(seq, &con_id);
 	            }
@@ -439,6 +464,11 @@ int con_manager_init(){
 
 	pthread_cond_init(&become_leader, NULL);
     pthread_mutex_init(&become_leader_lock, NULL);
+
+
+    pthread_rwlock_init(&isn_lock, NULL);
+    pthread_rwlock_init(&out_lock, NULL);
+
 
     char *server_filename = "/tmp/socket-server";
 
