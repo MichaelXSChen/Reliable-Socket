@@ -418,7 +418,7 @@ void *watch_guest_out(void *useless){
 	                debugf("outgoing ip_dst: %"PRIu32"", con_id.src_ip);
 	                con_id.src_port = tcp_header->th_dport;
 	                con_id.dst_ip = ip_header->ip_src.s_addr;
-	                debugf("outgoing ip_dst: %"PRIu32"", con_id.dst_ip);
+	                debugf("outgoing ip_src: %"PRIu32"", con_id.dst_ip);
 	                con_id.dst_port = tcp_header->th_sport;
 
 	                //Don't forget ntohl to compare

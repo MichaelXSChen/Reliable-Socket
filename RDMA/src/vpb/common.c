@@ -185,12 +185,16 @@ int send_bytes(int sk, char* buf, int len){
 
 
 void print_con (struct con_id_type *con_id, const char* format,...){
-	struct in_addr src_addr, dst_addr;
+	struct in_addr src_addr;
+	struct in_addr dst_addr;
+	memset(&src_addr,0, sizeof(src_addr));
+	memset(&dst_addr,0, sizeof(dst_addr));
+
 	src_addr.s_addr = con_id->src_ip;
 	dst_addr.s_addr = con_id->dst_ip;
 	
 	va_list args;
-	fprintf(stderr,"[CON] %s:%d  to %s:%d  ", inet_ntoa(src_addr), ntohs(con_id->src_port), inet_ntoa(dst_addr), ntohs(con_id->dst_port));
+	fprintf(stderr,"[CON] %s:%d  to %s:%d  (%"PRIu32" to %"PRIu32")", inet_ntoa(src_addr), ntohs(con_id->src_port), inet_ntoa(dst_addr), ntohs(con_id->dst_port), con_id->src_ip, con_id->dst_ip);
 	va_start (args, format);
 	vfprintf(stderr, format, args);
 	va_end(args);
