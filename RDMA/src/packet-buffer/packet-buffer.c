@@ -184,7 +184,7 @@ int dump_tcp_buffer(){
 		size_t flag = TCP_DONE_FLAG;
 		ringbuf_memcpy_into(outgoing_buffer, &flag, sizeof(flag));
 		pthread_spin_unlock(&tcp_buffer_lock);
-		pthread_spin_lock(&outgoing_buffer_lock);
+		pthread_spin_unlock(&outgoing_buffer_lock);
 		return -99;
 	}
 
