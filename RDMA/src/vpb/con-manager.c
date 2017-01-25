@@ -299,6 +299,17 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 		*seq = 0;
 		//FIXIT: for debug usage, 1 is different from 0;
 		print_con(con, "NO MATCH found\n\n\n\n");
+		pthread_rwlock_wrlock(&out_lock);
+
+		struct con_out_seq_entry *e;
+		for (e = con_out_seq_list; e != NULL; e= e->hh.next){
+			print_con(&(e->con_id), "seq =%" PRIu32"\n", e->seq); 
+		}
+
+
+		pthread_rwlock_unlock(&out_lock);
+
+
 		return -1;
 	}
 }
