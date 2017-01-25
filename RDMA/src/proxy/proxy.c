@@ -109,7 +109,7 @@ void *handle_tcp_buffer(void *useless){
 
             pthread_mutex_lock(&tcp_outgoing_lock);
             ret = dump_tcp_buffer();
-            //debugf("[TCP] ret = %d", ret);
+            debugf("[TCP] ret = %d", ret);
             if (ret == 0){
                 pthread_mutex_unlock(&tcp_outgoing_lock);
                 // pthread_mutex_lock(&tcp_no_empty_lock);
