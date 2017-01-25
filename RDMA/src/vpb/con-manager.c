@@ -401,6 +401,9 @@ void *watch_guest_out(void *useless){
 					//TCP PACKET
 					//debugf("[OUTGOING] TCP Packet intercepted");
 
+
+
+
 					int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F); //Get the length of ip_header;
 	            	short ip_len = ntohs(ip_header->ip_len); 
 	            	struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)buf + eth_hdr_len + ip_header_size + MSG_OFF);
@@ -412,8 +415,10 @@ void *watch_guest_out(void *useless){
 	                *******************************/
 	            	struct con_id_type con_id; 
 	                con_id.src_ip = ip_header->ip_dst.s_addr;
+	                debugf("outgoing ip_dst: %"PRIu32"", con_id.src_ip);
 	                con_id.src_port = tcp_header->th_dport;
 	                con_id.dst_ip = ip_header->ip_src.s_addr;
+	                debugf("outgoing ip_dst: %"PRIu32"", con_id.dst_ip);
 	                con_id.dst_port = tcp_header->th_sport;
 
 	                //Don't forget ntohl to compare

@@ -190,7 +190,7 @@ void print_con (struct con_id_type *con_id, const char* format,...){
 	dst_addr.s_addr = con_id->dst_ip;
 	
 	va_list args;
-	fprintf(stderr,"[CON] %s:%d to %s:%d", inet_ntoa(src_addr), ntohs(con_id->src_port), inet_ntoa(dst_addr), ntohs(con_id->dst_port));
+	fprintf(stderr,"[CON] %s:%d  to %s:%d  ", inet_ntoa(src_addr), ntohs(con_id->src_port), inet_ntoa(dst_addr), ntohs(con_id->dst_port));
 	va_start (args, format);
 	vfprintf(stderr, format, args);
 	va_end(args);
