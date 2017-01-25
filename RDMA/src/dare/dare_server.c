@@ -1423,6 +1423,8 @@ poll_vote_count()
     the new leader automatically adds the subsequent transition */
     apply_committed_entries();
 
+    debugf("I am elected as leader, and I have finish commited entries");
+
     append_no_op();
 
 
