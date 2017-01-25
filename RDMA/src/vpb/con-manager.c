@@ -266,9 +266,12 @@ int flush_con_out_seq(struct con_id_type *server_con){
 	pthread_rwlock_unlock(&out_lock);
 
 	if (replaced != NULL)
-		debugf("Flushed outgoing seq, from %"PRIu32"to 0", replaced->seq);
+		//debugf("Flushed outgoing seq, from %"PRIu32"to 0", replaced->seq);
+
+		print_con(server_con, "Flush, Seq got replaced to 0 from "PRIu32"", replaced->seq);
 	else
-		debugf("new connection form port %d to port %d, seq set to 0", ntohs(server_con->dst_port), ntohs(server_con->src_port));
+		//debugf("new connection form port %d to port %d, seq set to 0", ntohs(server_con->dst_port), ntohs(server_con->src_port));
+		print_con(server_con, "New Connection, Set SEQ to 0\n\n\n\n\n");
 	return 0;
 }
 
@@ -294,6 +297,8 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 	}
 	else{
 		*seq = 0;
+		//FIXIT: for debug usage, 1 is different from 0;
+		print_con(con, "NO MATCH found\n\n\n\n");
 		return -1;
 	}
 }
