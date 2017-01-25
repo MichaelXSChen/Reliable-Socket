@@ -78,7 +78,7 @@ void *handle_tcp_buffer(void *useless){
     sleep(5);
     int ret; 
     while(1){
-        while(!is_leader() && sleep_time ==0){
+        while(!is_leader() && sleep_time == 0){
             pthread_mutex_lock(&tcp_outgoing_lock);
             ret = dump_tcp_buffer();
             //debugf("[TCP] ret = %d", ret);
@@ -95,14 +95,25 @@ void *handle_tcp_buffer(void *useless){
             else{
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
-            //if (ret != 0)
-                //debugf("[TCP] Compied bytes of length %d", ret);
         }
-        int to_sleep = reset_sleep_time();
-        
-
-        sleep((unsigned int)to_sleep);
-    
+        while(ret != -99){
+            pthread_mutex_lock(&tcp_outgoing_lock);
+            ret = dump_tcp_buffer();
+            //debugf("[TCP] ret = %d", ret);
+            if (ret == 0){
+                pthread_mutex_unlock(&tcp_outgoing_lock);
+                pthread_mutex_lock(&tcp_no_empty_lock);
+                pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
+                pthread_mutex_unlock(&tcp_no_empty_lock);
+            }else if (ret == -1){
+                pthread_cond_wait(&tcp_outgoing, &tcp_outgoing_lock);
+                pthread_mutex_unlock(&tcp_outgoing_lock);
+            }
+            //debugf("[TCP] cond wait wakeup");
+            else{
+                pthread_mutex_unlock(&tcp_outgoing_lock);
+            }
+        }
         // /debugf("[TCP] Copy thread wakeup! ");
     }
 }

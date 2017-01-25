@@ -1420,6 +1420,8 @@ poll_vote_count()
     Note: when applying an unstable CONFIG entry from the same epoch, 
     the new leader automatically adds the subsequent transition */
     apply_committed_entries();
+
+    
     
     /* Check the state of the configuration */
     if (CID_STABLE == data.config.cid.state) {

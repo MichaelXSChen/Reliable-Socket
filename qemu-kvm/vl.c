@@ -2366,6 +2366,7 @@ int qemu_init_main_loop(void)
     return main_loop_init();
 }
 
+extern int no_unread_data; 
 
 
 
@@ -2408,6 +2409,19 @@ int main(int argc, char **argv, char **envp)
     printf("unix socket for backup output connected: %d\n", fd_out_bk);
 
 
+    printf("potential seg fault\n");
+    fflush(stdout);
+    if(is_leader()){
+        no_unread_data = 1;
+        printf("I am leader\n");
+        fflush(stdout);
+    }
+    else{
+        no_unread_data = 0;
+        printf("I am backup\n");
+        fflush(stdout);
+    }
+    
 
 
     int i;

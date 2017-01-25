@@ -46,6 +46,15 @@
 
 #include "hw/vhost_net.h"
 
+
+int no_unread_data; 
+
+
+
+
+
+
+
 /* Maximum GSO packet size (64k) plus plenty of room for
  * the ethernet and virtio_net headers
  */
@@ -216,11 +225,15 @@ static void tap_send(void *opaque)
         //1. it is the leader
         //2. the tap device is not what we want to replicate
         //otherwise, read the consensused msg. 
-    	if (is_leader() ){
+    	if (is_leader() && no_unread_data == 1){
             	size = tap_read_packet(s->fd, s->buf, sizeof(s->buf));
             }
     	else{
     		size = packet_buffer_to_buffer(s->buf, sizeof(s->buf));
+            if ( size == -99){
+                no_unread_data == 1;
+                continue; 
+            }
     	}
 
 
