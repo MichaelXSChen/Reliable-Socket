@@ -197,7 +197,6 @@ int dump_tcp_buffer(){
 	// get_con_out_seq(&outgoing_seq, con_id_ptr);
 
 
-
 	int ret= check_block(*ack_ptr, con_id_ptr);
 	
 	if (ret == 1){

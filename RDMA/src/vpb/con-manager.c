@@ -249,7 +249,8 @@ int flush_con_out_seq(struct con_id_type *server_con){
 
 
 	con_out_seq_entry *entry = (con_out_seq_entry *) malloc(sizeof(con_out_seq_entry));
-	
+	memset(entry, 0, sizeof(con_out_seq_entry));
+
 	entry->con_id.src_port = server_con->dst_port;
 	entry->con_id.dst_port = server_con->src_port;
 
@@ -277,11 +278,20 @@ int flush_con_out_seq(struct con_id_type *server_con){
 
 
 
-int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
+int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 	con_out_seq_entry *entry;
 	// struct in_addr src_ip, dst_ip;
 	// src_ip.s_addr = con->src_ip;
 	// dst_ip.s_addr = con->dst_ip;
+	struct con_id_type *con = (struct con_id_type *) malloc(sizeof(struct con_id_type));
+	memset(con, 0, sizeof(struct con_id_type));
+
+	con->src_ip = con_orig->src_ip;
+	con->dst_ip = con_orig->dst_ip;
+	con->src_port = con_orig->src_port;
+	con->dst_port = con_orig->dst_port;
+
+
 
 
 	// debugf("[FIND]: Trying to find src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port));
@@ -314,7 +324,19 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con){
 	}
 }
 
-int update_con_out_seq(uint32_t seq, struct con_id_type *con){
+int update_con_out_seq(uint32_t seq, struct con_id_type *con_orig){
+	
+	struct con_id_type *con = (struct con_id_type *) malloc(sizeof(struct con_id_type));
+	memset(con, 0, sizeof(struct con_id_type));
+
+	con->src_ip = con_orig->src_ip;
+	con->dst_ip = con_orig->dst_ip;
+	con->src_port = con_orig->src_port;
+	con->dst_port = con_orig->dst_port;
+
+
+
+
 	con_out_seq_entry *find_entry;
 	pthread_rwlock_rdlock(&out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), find_entry);
@@ -326,6 +348,9 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con){
 	}
 
 	con_out_seq_entry *entry = (con_out_seq_entry *) malloc(sizeof(con_out_seq_entry));
+	memset(entry, 0, sizeof(con_out_seq_entry));
+
+
 	memcpy(&(entry->con_id), con, sizeof(struct con_id_type));
 	entry->seq = seq; 
 	struct con_out_seq_entry *replaced;
@@ -355,6 +380,7 @@ int check_block(uint32_t ack, struct con_id_type *con){
 	//Return 0 if no need to block
 	//Return 1 if need to block the incoming queue for a while
 	//		because the outgoing packet hasn't been generated
+
 
 
 	uint32_t isn; 
