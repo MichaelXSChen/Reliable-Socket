@@ -102,9 +102,9 @@ void *handle_tcp_buffer(void *useless){
             //debugf("[TCP] ret = %d", ret);
             if (ret == 0){
                 pthread_mutex_unlock(&tcp_outgoing_lock);
-                pthread_mutex_lock(&tcp_no_empty_lock);
-                pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
-                pthread_mutex_unlock(&tcp_no_empty_lock);
+                // pthread_mutex_lock(&tcp_no_empty_lock);
+                // pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
+                // pthread_mutex_unlock(&tcp_no_empty_lock);
             }else if (ret == -1){
                 pthread_cond_wait(&tcp_outgoing, &tcp_outgoing_lock);
                 pthread_mutex_unlock(&tcp_outgoing_lock);
@@ -114,6 +114,8 @@ void *handle_tcp_buffer(void *useless){
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
         }
+        debugf("Leader: watch tcp thread will exit\n\n");
+        pthread_exit(0);
         // /debugf("[TCP] Copy thread wakeup! ");
     }
 }
