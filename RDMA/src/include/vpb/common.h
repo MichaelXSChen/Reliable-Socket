@@ -62,4 +62,6 @@ struct con_info_reply{
     uint32_t isn;
 };
 
+void print_con (struct con_id_type *con_id, const char* format,...);
+
 #endif // COMMON_H

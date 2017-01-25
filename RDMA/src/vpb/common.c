@@ -182,3 +182,19 @@ int send_bytes(int sk, char* buf, int len){
 	debugf("Sent bytes with len: %d", len);
 	return 0;
 }
+
+
+void print_con (struct con_id_type *con_id, const char* format,...){
+	struct in_addr src_addr, dst_addr;
+	src_addr.s_addr = con_id->src_ip;
+	dst_addr.s_addr = con_id->dst_ip;
+	
+	va_list args;
+	fprintf(stderr,"[CON] %s:%d to %s:%d", inet_ntoa(src_addr), ntohs(con_id->src_port), inet_ntoa(dst_addr), ntohs(con_id->dst_port));
+	va_start (args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	fprintf(stderr, "\n");
+
+
+}
