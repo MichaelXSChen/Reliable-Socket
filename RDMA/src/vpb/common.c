@@ -195,7 +195,7 @@ void print_con (struct con_id_type *con_id, const char* format,...){
 
 	va_list args;
 	fprintf(stderr,"[CON] %s:%d ", inet_ntoa(src_addr), ntohs(con_id->src_port));
-	frpintf("to %s:%d ",  inet_ntoa(dst_addr), ntohs(con_id->dst_port));
+	fprintf("to %s:%d ",  inet_ntoa(dst_addr), ntohs(con_id->dst_port));
 	va_start (args, format);
 	vfprintf(stderr, format, args);
 	va_end(args);
