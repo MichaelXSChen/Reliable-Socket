@@ -27,6 +27,8 @@
 #include "../include/dare/timer.h"
 
 #include "../include/config-comp/config-dare.h"
+#include "../include/packet-buffer/packet-buffer.h"
+
 
 
 extern pthread_cond_t become_leader; 
@@ -1421,7 +1423,11 @@ poll_vote_count()
     the new leader automatically adds the subsequent transition */
     apply_committed_entries();
 
-    
+    append_no_op();
+
+
+
+
     
     /* Check the state of the configuration */
     if (CID_STABLE == data.config.cid.state) {

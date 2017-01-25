@@ -263,4 +263,5 @@ int append_no_op(){
 	pthread_spin_unlock(&outgoing_buffer_lock);
 	pthread_spin_unlock(&tcp_buffer_lock);
 
+	return 0;
 }
