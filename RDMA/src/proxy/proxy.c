@@ -79,6 +79,10 @@ void *handle_tcp_buffer(void *useless){
     int ret; 
     while(1){
         while(!is_leader() && sleep_time == 0){
+
+            debugf("in loop a");
+
+
             pthread_mutex_lock(&tcp_outgoing_lock);
             ret = dump_tcp_buffer();
             //debugf("[TCP] ret = %d", ret);
@@ -95,8 +99,14 @@ void *handle_tcp_buffer(void *useless){
             else{
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
+
+            debugf("out loop a");
         }
         while(ret != -99){
+
+
+            debugf("in loop b");
+
             pthread_mutex_lock(&tcp_outgoing_lock);
             ret = dump_tcp_buffer();
             //debugf("[TCP] ret = %d", ret);
@@ -113,6 +123,10 @@ void *handle_tcp_buffer(void *useless){
             else{
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
+
+
+            debugf("out loop b");
+
         }
         debugf("Leader: watch tcp thread will exit\n\n");
         pthread_exit(0);
