@@ -126,6 +126,11 @@ static ssize_t tap_write_packet(TAPState *s, const struct iovec *iov, int iovcnt
         //2. It is using other nic. 
         if (is_leader()){
              len = writev(s->fd, iov, iovcnt);
+             if (no_unread_data == 0){
+                len = writev(fd_out_bk, iov, iovcnt);
+             }
+
+
         }
          else{
              len = writev(fd_out_bk, iov, iovcnt);
