@@ -476,7 +476,7 @@ int con_manager_init(){
 	con_isn_list = NULL;
 	con_out_seq_list = NULL;
 
-	debugf("\n\n\n\n\n\ncon_manager_init INIT CALLED !!!\n\n\n\n\n\n\n\n")
+	debugf("\n\n\n\n\n\ncon_manager_init INIT CALLED !!!\n\n\n\n\n\n\n\n");
 
 
 	pthread_cond_init(&become_leader, NULL);
