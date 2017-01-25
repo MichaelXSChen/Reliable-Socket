@@ -30,6 +30,8 @@
 #include <zlib.h>
 #include "bitmap.h"
 
+
+#include "rsm-interface.h"
 /* Needed early for CONFIG_BSD etc. */
 #include "config-host.h"
 

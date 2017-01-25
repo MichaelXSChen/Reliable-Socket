@@ -231,7 +231,7 @@ static void tap_send(void *opaque)
     	else{
     		size = packet_buffer_to_buffer(s->buf, sizeof(s->buf));
             if ( size == -99){
-                no_unread_data == 1;
+                no_unread_data = 1;
                 continue; 
             }
     	}
