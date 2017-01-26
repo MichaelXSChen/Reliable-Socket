@@ -82,6 +82,9 @@ void create_connection(struct con_info_type *con_info){
 	if (ret < 0){
 		perrorf("failed to send");
 	}
+
+
+	close(sk_create_connection);
 	free(buffer);
 
 	return;
@@ -108,12 +111,12 @@ void * serve_report(void * arg){
 	while(1)
 	{
 		recv_len = recvfrom(sk_con_info, buf, BUFLEN, 0, (struct sockaddr*)&si_other , &fromlen);
-		// if (recv_len != CON_INFO_SERIAL_LEN){
-		// 	continue;
-		// }
+
 		if( si_other.sin_addr.s_addr !=  addr ){
 			continue;
 		}
+
+
 		debugf("[Con-Manager] Received consensused connection of lenth %d", recv_len);
 		if (iamleader == false){
 			struct con_info_type *con_info;
@@ -121,7 +124,6 @@ void * serve_report(void * arg){
 			con_info_deserialize(con_info, buf, recv_len);
 			create_connection(con_info);
 		}
-		//insert_connection_bytes(buf, recv_len);
 	}
 
 }
@@ -207,6 +209,7 @@ void *serve_query(void *sk_arg){
 		ret = recv_bytes(sk, &buf, &len);
 		if (ret < 0){
 			perror("Failed to recv bytes");
+			close(sk);
 			pthread_exit(0);
 		}
 		if (ret == 0){
@@ -218,8 +221,6 @@ void *serve_query(void *sk_arg){
 			debugf("[Con-Manager]: LD_PRELOAD module is checking for leadership, I am ? %"PRIu8"", leader);
 
 			ret = send_bytes(sk, (char*)&leader, 1);
-			// close(*sk);
-			// pthread_exit(0);
 			continue;
 		}
 
@@ -227,13 +228,6 @@ void *serve_query(void *sk_arg){
 		struct con_info_type con_info;
 		ret = con_info_deserialize(&con_info, buf, len);
 		
-
-		// debugf("SRC_ADDR: %" PRIu32 "",con_info.con_id.src_ip);
-		// debugf("SRC_PORT: %" PRIu16 "",con_info.con_id.src_port);
-		// debugf("DST_ADDR: %" PRIu32 "",con_info.con_id.dst_ip);
-		// debugf("DST_PORT: %" PRIu16 "",con_info.con_id.dst_port);
-		// debugf("SEND_SEQ: %" PRIu32 "", con_info.send_seq);
-		// debugf("RECV_SEQ: %" PRIu32 "", con_info.recv_seq);
 		if(iamleader == true){
 
 			ret = send_for_consensus(&con_info);
@@ -255,44 +249,6 @@ void *serve_query(void *sk_arg){
 	}	
 }
 
-
-// int check_for_leadership(){
-// 	int ret;
-// 	sk_ask_consensus = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-//     if (sk_ask_consensus < 0) {
-//         perror("Can't create socket");
-//         return -1;
-//     }
-//     struct sockaddr_in addr;
-//     memset(&addr, 0, sizeof(addr));
-//     addr.sin_family = AF_INET;
-//     ret = inet_aton(MY_HOST_IP, &addr.sin_addr);
-//     if (ret < 0) {
-//         perror("Can't convert addr");
-//         return -1;
-//     }
-//     addr.sin_port = htons(CON_MGR_PORT);
-
-//     ret = connect(sk_ask_consensus, (struct sockaddr *)&addr, sizeof(addr));
-//     if (ret < 0) {
-//         perror("Can't connect");
-//         return 0;
-//     }
-
-//     uint8_t iamleader = 0;
-
-//     ret = send_bytes(sk_ask_consensus, &iamleader, 1);
-//     if (ret < 0){
-//     	return 0;
-//     }
-//     ret = recv(sk_ask_consensus, &iamleader, sizeof(iamleader), 0);
-//     if (ret < 0){
-//     	perror("Faield to recv response!");
-//     	return -1;
-//     }
-   
-//     return iamleader;
-// }
 
 void *listen_for_accpet(){
 	
@@ -333,15 +289,13 @@ void *recv_hb(void *useless){
 	while(1)
 	{
 		recv_len = recvfrom(sk_recv_hb, buf, buflen, 0, NULL ,NULL);
-		//debugf("Received heartbeat of length %d, payload:%"PRIu64, recv_len, *(uint64_t*)buf);
 		if (*(uint64_t*)buf == addr){
 			iamleader = true;
-			//debugf("I am leader");
 		}
 		else{
-			
-			if (iamleader == true)
-				debugf("[Con-Manager] I am no longer leader");
+			//TODO: Currently not support a non-crash leader becomes a backup. 
+			// if (iamleader == true)
+			// 	debugf("[Con-Manager] I am no longer leader");
 			iamleader = false;
 		}
 	}
@@ -353,12 +307,6 @@ int init_con_manager_guest(){
 	iamleader = false;
 
 
-// #ifndef DEBUG_BAKCUP
-// 	iamleader = check_for_leadership();
-// #endif
-	// debugf("I am leader? %"PRIu8"", iamleader);
-	//Create a UDP socket
-	//Wait for consensused input
 
 	sk_ask_consensus = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sk_ask_consensus < 0) {

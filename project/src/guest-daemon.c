@@ -115,11 +115,13 @@ void *serve_command_connection(void* arg){
 		ret = recv_bytes(sk, &buf, &length);
 		if (ret < 0){
 			perrorf("Failed to recv");
+			close(sk);
 			pthread_exit(0);
 		}
 		if(ret == 0){
 			//The connection is closed
 			debugf("Connection for Recving commands Closed");
+			close(sk);
 			pthread_exit(0);
 		}
 		else{
@@ -140,9 +142,6 @@ void *serve_command_connection(void* arg){
 
 
 void* guard_listen(void *arg) {
-
-	//debugf("Wating for connections");
-
 
 	int ask, pid; 
 
@@ -227,8 +226,6 @@ int main(int argc, char* argv[]){
 	pthread_t listen_thread; 
 	pthread_create(&listen_thread, NULL, guard_listen, NULL);
 	debugf("Guest Daemon Initialization Completed");
-
-
 
 	monitor();
 }

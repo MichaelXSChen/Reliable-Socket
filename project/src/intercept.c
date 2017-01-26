@@ -116,9 +116,6 @@ static int get_tcp_con_id(int sk, struct con_info_type *con_info){
 
 
 int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
-    // printf("Bind Function intercepted\n\n\n");
-    // fflush(stdout);
-
     int aux = 1;
     int ret;
 
@@ -134,10 +131,8 @@ int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
         return -1;
     }
 
-
     orig_bind_func_type orig_bind_func = (orig_bind_func_type) dlsym (RTLD_NEXT, "bind");
     return orig_bind_func(sockfd, addr, socklen);
-
 }
 
 
@@ -147,8 +142,8 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     int ret, aux; 
     struct sockaddr_in localaddr, remoteaddr;
     int len=sizeof(localaddr);
-    // turn on Repair mode, get the src, dst ips and close the old tcp
-    //TODO: Find what other options are necessary for the TCP connection. 
+    
+    //Turn on Repair mode, getsockname and close the old tcp
     ret = tcp_repair_on(*sk);
     if (ret != 0){
         perrorf("1:%d", *sk);
@@ -178,7 +173,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
     ret = tcp_repair_on(*sk);
     if (ret != 0){
         perror("2");
-       return ret;
+        return ret;
     }
     ret = set_tcp_queue_seq(*sk, TCP_RECV_QUEUE, con_info->recv_seq);
     if (ret != 0) {
@@ -191,11 +186,6 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         perror("Failed to set send queue seq");
         return -1;
     }
-
-
-
-
-
 
 
 
@@ -229,7 +219,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         struct tcp_repair_opt opt;
         opt.opt_code = TCPOPT_TIMESTAMP;
         opt.opt_val = 0;
-        //ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
+        ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
         if (ret < 0){
             perrorf("Failed to repair TCP OPTIONS");
             return -1;
@@ -247,11 +237,11 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
 
     ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_mss, sizeof(struct tcp_repair_opt));
     if (ret < 0){
-        perrorf("Failed to set mss_clamp\n\n\n");
+        perrorf("Failed to set mss_clamp");
         return -1;
     }
     
-    debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+    debugf("mss_size: %"PRIu32"", con_info->mss_clamp);
 
 
 
@@ -263,10 +253,10 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         opt_for_wscale.opt_val = con_info->snd_wscale + (con_info->rcv_wscale << 16);
         ret = setsockopt(*sk, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_wscale, sizeof(struct tcp_repair_opt));
         if (ret < 0){
-            perrorf("Faield to set wscale\n\n\n");
+            perrorf("Faield to set wscale");
             return -1;
         } 
-        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"", con_info->snd_wscale, con_info->rcv_wscale);
 
     }
 
@@ -301,15 +291,12 @@ int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
     debugf("Sent for asking for consensus , waiting for result");
 
 
-    //No need after the change of code logic.  
-    //Keep it As an ack of consensus made. 
     uint8_t success; 
     ret = recv(sk_tomgr, &success, sizeof(success), 0);
     debugf("Successfully asked for consensus");
     free(buf);
     return 0;
 }
-
 
 
 
@@ -515,6 +502,8 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     }
 
     debugf("Before retrun accept");
+    close(sk_tomgr);
+
     return sk; 
 }
 
