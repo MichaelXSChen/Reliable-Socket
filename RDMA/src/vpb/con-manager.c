@@ -556,13 +556,6 @@ int con_manager_init(){
         exit(1);
     }
 
-    // ret_val = listen(guest_out_sk, 5);
-    // if (ret_val == -1){
-    //     perror("Failed to put the unix listening socket into listen state");
-    //     exit(1);
-    // }
-    // pthread_t unix_listen_thread; 
-    //pthread_create(&unix_listen_thread, NULL, unix_sock_listen, NULL);
     pthread_t watch_output_thread;
     pthread_create(&watch_output_thread, NULL, watch_guest_out, NULL);
 
@@ -616,7 +609,7 @@ int con_manager_init(){
 		return -1;
 	}
 
-	ret = listen(sk, 16);
+	ret = listen(sk, SOMAXCONN);
 	if (ret < 0){
 		perror("Failed to put sock into listen state");
 		return -1;

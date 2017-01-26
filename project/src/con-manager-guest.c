@@ -419,7 +419,7 @@ int init_con_manager_guest(){
 		return -1;
 	}
 
-	ret = listen(sk_listen, 16);
+	ret = listen(sk_listen, SOMAXCONN);
 	if (ret < 0){
 		perror("[Con-Manager] Failed to put sock into listen state");
 		return -1;

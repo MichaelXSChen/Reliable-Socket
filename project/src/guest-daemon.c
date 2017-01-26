@@ -218,7 +218,7 @@ int main(int argc, char* argv[]){
 		perror("[ERROR]: Cannot bind to socket");
 		pthread_exit(0);
 	}
-	ret = listen(sk_listen_command_con, 16);
+	ret = listen(sk_listen_command_con, SOMAXCONN);
 	if (ret < 0){
 		perror("Cannot put socket to listen state");
 		pthread_exit(0);
