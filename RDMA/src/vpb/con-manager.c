@@ -319,7 +319,7 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 		*seq = 0;
 		//FIXIT: for debug usage, 1 is different from 0;
 		print_con(con, "NO MATCH found\n\n\n\n");
-		UNLOCK(out_lock);
+		LOCK(out_lock);
 
 		struct con_out_seq_entry *e;
 		for (e = con_out_seq_list; e != NULL; e= e->hh.next){
