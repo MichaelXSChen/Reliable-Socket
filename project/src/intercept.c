@@ -299,7 +299,187 @@ int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
 }
 
 
+int handle_accepted_sk(int *sk){
+    
+    int ret; 
+    /*********
+    /Check whether it is leader
+    **************/
 
+    //Connect to manager
+    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_tomgr < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+    struct sockaddr_in srvaddr;
+    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    memset(&srvaddr, 0, sizeof(srvaddr));
+    srvaddr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
+    if (ret == 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    srvaddr.sin_port = htons(CON_MGR_PORT);
+    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+
+    //Check for leader ship
+    uint8_t iamleader = 0;
+    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
+    char *buffer;
+    int recv_len; 
+    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
+    if (recv_len != 1){
+        perrorf("Failed to check for leadership, recv with len %d", recv_len);
+        return -1;
+    }
+    iamleader = (uint8_t) buffer[0];
+    free(buffer);
+
+    debugf("[Intercept.so] I am leader? %d", iamleader);
+    
+
+
+    if(iamleader == 1){
+        // Ask for consensus
+        uint32_t send_seq, recv_seq;
+        ret = tcp_repair_on(*sk);
+        if (ret < 0){
+            perrorf("Failed turn on");
+        }
+        ret = get_tcp_queue_seq(*sk, TCP_SEND_QUEUE, &send_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+        ret = get_tcp_queue_seq(*sk, TCP_RECV_QUEUE, &recv_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+
+
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+        memset(con_info, 0, sizeof(struct con_info_type));
+
+
+        struct tcp_info tcpi;
+        memset(&tcpi, 0, sizeof(struct tcp_info));
+        int tcp_info_len = sizeof(struct tcp_info);
+
+
+
+        ret = getsockopt(*sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
+        if (ret != 0){
+            perrorf("Fail to get TCP_INFO\n\n");
+            return -1;
+        }
+
+
+        uint32_t timestamp = 0;
+        uint8_t has_timestamp = 0;
+        if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
+            has_timestamp = 1;
+            int tslen = sizeof(timestamp);
+            ret = getsockopt(*sk, SOL_TCP, TCP_TIMESTAMP, &timestamp, &tslen); 
+            if (ret != 0){
+                perrorf("Failed to get TCP_TIMESTAMP");
+                return -1;
+            }
+        }
+        con_info->has_timestamp = has_timestamp;
+        con_info->timestamp = timestamp;
+
+
+        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
+            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
+            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
+            con_info->has_rcv_wscale = 1;
+        }
+
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+
+        //Get max seg size 
+
+        int size_mss = sizeof(con_info->mss_clamp);
+
+        ret = getsockopt(*sk, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
+        if (ret < 0){
+            perrorf("Faailed to get mss_clamp\n\n");
+            return -1;
+
+        }
+
+        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+
+
+
+
+
+        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
+
+
+
+        ret = tcp_repair_off(*sk);
+        if (ret < 0){
+            perrorf("Failed turn off");
+        }
+        
+       
+        get_tcp_con_id(*sk, con_info);
+        con_info->send_seq = send_seq;
+        con_info->recv_seq = recv_seq;
+        ret = ask_for_consensus(sk_tomgr, con_info);
+        if (ret < 0){
+            perrorf("Failed to ask for consensus");
+        }
+    }
+    else{
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
+        memset(con_info, 0, sizeof(struct con_info_type));
+
+        char *in_buf;
+        int len;  
+        recv_bytes(*sk, &in_buf, &len);
+        ret = con_info_deserialize(con_info, in_buf, len);
+        if (ret < 0){
+            perrorf("Failed to deserialize");
+        }
+        ret =replace_tcp(sk, con_info);
+        if (ret < 0){
+            perrorf("Failed to replace tcp");
+        }
+
+    }
+    // int buffer_size; 
+    // int bl = sizeof(buffer_size);
+    // ret = getsockopt(sk, SOL_SOCKET, SO_RCVBUF, &buffer_size, &bl);
+    // if (ret != 0){
+    //     perrorf ("Failed to get rcv buffer_size\n");
+    // }
+    // else{
+    //     debugf("Buffer size of recv buffer: %d\n", buffer_size);
+    // }
+
+
+    // ret = getsockopt(sk, SOL_SOCKET, SO_SNDBUF, &buffer_size, &bl);
+    // if (ret != 0){
+    //     perrorf ("Failed to get snd buffer_size\n");
+    // }
+    // else{
+    //     debugf("Buffer size of snd buffer: %d\n", buffer_size);
+    // }
+
+    close(sk_tomgr);
+    return 0;
+}
 
 
 
@@ -333,177 +513,13 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
 
     //uint32_t seq=0; 
     
-    /*********
-    /Check whether it is leader
-    **************/
-    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk_tomgr < 0) {
-        perror("Can't create socket");
+    ret = handle_accepted_sk(&sk);
+    if (ret < 0){
+        perrorf("[Intercept.so] Accept function failed");
         return -1;
     }
-    struct sockaddr_in srvaddr;
-    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
-    memset(&srvaddr, 0, sizeof(srvaddr));
-    srvaddr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
-    if (ret == 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    srvaddr.sin_port = htons(CON_MGR_PORT);
-    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-    uint8_t iamleader = 0;
-    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
-    char *buffer;
-    int recv_len; 
-    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
-    if (recv_len != 1){
-        perrorf("Failed to check for leadership, recv with len %d", recv_len);
-        return -1;
-    }
-    iamleader = (uint8_t) buffer[0];
-    free(buffer);
 
-    debugf("[Intercept.so] I am leader? %d", iamleader);
-    if(iamleader == 1){
-        // Ask for consensus
-        uint32_t send_seq, recv_seq;
-        ret = tcp_repair_on(sk);
-        if (ret < 0){
-            perrorf("Failed turn on");
-        }
-        ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &send_seq);
-        if (ret < 0){
-            perrorf("Failed to get tcp_seq");
-            return -1;
-        }
-        ret = get_tcp_queue_seq(sk, TCP_RECV_QUEUE, &recv_seq);
-        if (ret < 0){
-            perrorf("Failed to get tcp_seq");
-            return -1;
-        }
-
-
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
-
-        struct tcp_info tcpi;
-        memset(&tcpi, 0, sizeof(struct tcp_info));
-        int tcp_info_len = sizeof(struct tcp_info);
-
-
-
-        ret = getsockopt(sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
-        if (ret != 0){
-            perrorf("Fail to get TCP_INFO\n\n");
-            return -1;
-        }
-
-        //Time stamp;
-
-
-
-        uint32_t timestamp = 0;
-        uint8_t has_timestamp = 0;
-        if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
-            has_timestamp = 1;
-            int tslen = sizeof(timestamp);
-            ret = getsockopt(sk, SOL_TCP, TCP_TIMESTAMP, &timestamp, &tslen); 
-            if (ret != 0){
-                perrorf("Failed to get TCP_TIMESTAMP");
-                return -1;
-            }
-        }
-        con_info->has_timestamp = has_timestamp;
-        con_info->timestamp = timestamp;
-
-
-
-        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
-            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
-            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
-            con_info->has_rcv_wscale = 1;
-        }
-
-        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
-
-        //Get max seg size 
-
-        int size_mss = sizeof(con_info->mss_clamp);
-
-        ret = getsockopt(sk, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
-        if (ret < 0){
-            perrorf("Faailed to get mss_clamp\n\n");
-            return -1;
-
-        }
-
-        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
-
-
-
-
-
-        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
-
-
-
-        ret = tcp_repair_off(sk);
-        if (ret < 0){
-            perrorf("Failed turn off");
-        }
-        
-       
-        get_tcp_con_id(sk, con_info);
-        con_info->send_seq = send_seq;
-        con_info->recv_seq = recv_seq;
-        ret = ask_for_consensus(sk_tomgr, con_info);
-        if (ret < 0){
-            perrorf("Failed to ask for consensus");
-        }
-    }
-    else{
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
-        char *in_buf;
-        int len;  
-        recv_bytes(sk, &in_buf, &len);
-        ret = con_info_deserialize(con_info, in_buf, len);
-        if (ret < 0){
-            perrorf("Failed to deserialize");
-        }
-        ret =replace_tcp(&sk, con_info);
-        if (ret < 0){
-            perrorf("Failed to replace tcp");
-        }
-
-    }
-    int buffer_size; 
-    int bl = sizeof(buffer_size);
-    ret = getsockopt(sk, SOL_SOCKET, SO_RCVBUF, &buffer_size, &bl);
-    if (ret != 0){
-        perrorf ("Failed to get rcv buffer_size\n");
-    }
-    else{
-        debugf("Buffer size of recv buffer: %d\n", buffer_size);
-    }
-
-
-    ret = getsockopt(sk, SOL_SOCKET, SO_SNDBUF, &buffer_size, &bl);
-    if (ret != 0){
-        perrorf ("Failed to get snd buffer_size\n");
-    }
-    else{
-        debugf("Buffer size of snd buffer: %d\n", buffer_size);
-    }
-
-    debugf("Before retrun accept");
-    close(sk_tomgr);
-
+    debugf("[Intercept.so] Return sk numebr sk= %d", sk);
     return sk; 
 }
 
@@ -529,182 +545,18 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags){
         return sk; 
     }
     
-    struct sockaddr_in localaddr;
-    int addr_length = sizeof(localaddr);
-    ret = getsockname(sk, (struct sockaddr*)&localaddr, &addr_length);
-
-    debugf("Accept on port %u returned sk = %d",ntohs(localaddr.sin_port), sk);
-
-    if (ntohs(localaddr.sin_port) == CON_MGR_PORT){
-        debugf("Accept called by guest daemon, no need to hook");
-        return sk; 
+    ret = handle_accepted_sk(&sk);
+    if (ret < 0){
+        perrorf("[Intercept.so] Accept function failed");
+        return -1;
     }
 
+    debugf("[Intercept.so] Return sk numebr sk= %d", sk);
+    return sk; 
 
-    //uint32_t seq=0; 
+
+
     
-    /*********
-    /Check whether it is leader
-    **************/
-    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sk_tomgr < 0) {
-        perror("Can't create socket");
-        return -1;
-    }
-    struct sockaddr_in srvaddr;
-    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
-    memset(&srvaddr, 0, sizeof(srvaddr));
-    srvaddr.sin_family = AF_INET;
-    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
-    if (ret == 0) {
-        perror("Can't convert addr");
-        return -1;
-    }
-    srvaddr.sin_port = htons(CON_MGR_PORT);
-    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
-    if (ret < 0) {
-        perror("Can't connect");
-        return -1;
-    }
-    uint8_t iamleader = 0;
-    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
-    char *buffer;
-    int recv_len; 
-    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
-    if (recv_len != 1){
-        perrorf("Failed to check for leadership, recv with len %d", recv_len);
-        return -1;
-    }
-    iamleader = (uint8_t) buffer[0];
-    free(buffer);
-
-    debugf("[Intercept.so] I am leader? %d", iamleader);
-    if(iamleader == 1){
-        // Ask for consensus
-        uint32_t send_seq, recv_seq;
-        ret = tcp_repair_on(sk);
-        if (ret < 0){
-            perrorf("Failed turn on");
-        }
-        ret = get_tcp_queue_seq(sk, TCP_SEND_QUEUE, &send_seq);
-        if (ret < 0){
-            perrorf("Failed to get tcp_seq");
-            return -1;
-        }
-        ret = get_tcp_queue_seq(sk, TCP_RECV_QUEUE, &recv_seq);
-        if (ret < 0){
-            perrorf("Failed to get tcp_seq");
-            return -1;
-        }
-
-
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
-
-        struct tcp_info tcpi;
-        memset(&tcpi, 0, sizeof(struct tcp_info));
-        int tcp_info_len = sizeof(struct tcp_info);
-
-        ret = getsockopt(sk, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
-        if (ret != 0){
-            perrorf("Fail to get TCP_INFO\n\n");
-            return -1;
-        }
-        uint32_t timestamp = 0;
-        uint8_t has_timestamp = 0;
-        if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
-            has_timestamp = 1;
-            int tslen = sizeof(timestamp);
-            ret = getsockopt(sk, SOL_TCP, TCP_TIMESTAMP, &timestamp, &tslen); 
-            if (ret != 0){
-                perrorf("Failed to get TCP_TIMESTAMP");
-                return -1;
-            }
-        }
-        con_info->has_timestamp = has_timestamp;
-        con_info->timestamp = timestamp;
-
-        
-        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
-            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
-            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
-            con_info->has_rcv_wscale = 1;
-        }
-
-
-
-        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
-
-        //Get max seg size 
-
-        int size_mss = sizeof(con_info->mss_clamp);
-
-        ret = getsockopt(sk, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
-        if (ret < 0){
-            perrorf("Faailed to get mss_clamp\n\n");
-            return -1;
-
-        }
-
-        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
-
-
-
-
-        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
-
-
-
-        ret = tcp_repair_off(sk);
-        if (ret < 0){
-            perrorf("Failed turn off");
-        }
-        
-       
-        get_tcp_con_id(sk, con_info);
-        con_info->send_seq = send_seq;
-        con_info->recv_seq = recv_seq;
-        ret = ask_for_consensus(sk_tomgr, con_info);
-        if (ret < 0){
-            perrorf("Failed to ask for consensus");
-        }
-    }
-    else{
-        struct con_info_type *con_info;
-        con_info = (struct con_info_type*)malloc(sizeof(struct con_info_type));
-        char *in_buf;
-        int len;  
-        recv_bytes(sk, &in_buf, &len);
-        ret = con_info_deserialize(con_info, in_buf, len);
-        if (ret < 0){
-            perrorf("Failed to deserialize");
-        }
-        ret =replace_tcp(&sk, con_info);
-        if (ret < 0){
-            perrorf("Failed to replace tcp");
-        }
-
-    }
-    int buffer_size; 
-    int bl = sizeof(buffer_size);
-    ret = getsockopt(sk, SOL_SOCKET, SO_RCVBUF, &buffer_size, &bl);
-    if (ret != 0){
-        perrorf ("Failed to get rcv buffer_size\n");
-    }
-    else{
-        debugf("Buffer size of recv buffer: %d\n", buffer_size);
-    }
-
-
-    ret = getsockopt(sk, SOL_SOCKET, SO_SNDBUF, &buffer_size, &bl);
-    if (ret != 0){
-        perrorf ("Failed to get snd buffer_size\n");
-    }
-    else{
-        debugf("Buffer size of snd buffer: %d\n", buffer_size);
-    }
-
-    debugf("Before retrun accept");
     return sk; 
 }
 
