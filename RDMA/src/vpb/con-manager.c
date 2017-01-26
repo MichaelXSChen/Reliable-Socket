@@ -29,14 +29,23 @@
 
 #define MY_IP "10.22.1.2"
 
+#define LOCK(x) pthread_spin_lock(&x);
+#define UNLOCK(x) pthread_spin_unlock(&x);
+#define LOCK_INIT(x) pthread_spin_init(&x, 0);
+#define DECLARE_LOCK(x) pthread_spinlock_t x;  
+
+
 
 pthread_cond_t become_leader; 
 pthread_mutex_t become_leader_lock;
 
 
-pthread_rwlock_t isn_lock;
-pthread_rwlock_t out_lock;
+// pthread_rwlock_t isn_lock;
+// pthread_rwlock_t out_lock;
 
+
+DECLARE_LOCK(isn_lock);
+DECLARE_LOCK(out_lock);
 
 static int sk;
 // static int guest_out_sk;
@@ -59,9 +68,10 @@ con_isn_entry *con_isn_list;
 int get_isn(uint32_t *isn, struct con_id_type *con){
 	con_isn_entry *entry;
 	
-	pthread_rwlock_rdlock(&isn_lock);
+	LOCK(isn_lock);
 	HASH_FIND(hh, con_isn_list, con, sizeof(struct con_id_type), entry);
-	pthread_rwlock_unlock(&isn_lock);
+	UNLOCK(isn_lock);
+	
 
 	if (entry == NULL){
 		return -1;
@@ -81,9 +91,9 @@ int save_isn(uint32_t isn, struct con_id_type *con){
 
 	debugf("trying to insert into hashtable");
 	
-	pthread_rwlock_wrlock(&isn_lock);
+	LOCK(isn_lock);
 	HASH_REPLACE(hh, con_isn_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	pthread_rwlock_unlock(&isn_lock);
+	UNLOCK(isn_lock);
 
 
 
@@ -262,9 +272,9 @@ int flush_con_out_seq(struct con_id_type *server_con){
 	struct con_out_seq_entry *replaced;
 
 
-	pthread_rwlock_wrlock(&out_lock);
+	LOCK(out_lock);
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	pthread_rwlock_unlock(&out_lock);
+	UNLOCK(out_lock);
 
 	if (replaced != NULL)
 		//debugf("Flushed outgoing seq, from %"PRIu32"to 0", replaced->seq);
@@ -296,9 +306,9 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 
 	// debugf("[FIND]: Trying to find src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port));
 
-	pthread_rwlock_rdlock(&out_lock);
+	LOCK(out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
-	pthread_rwlock_unlock(&out_lock);
+	UNLOCK(out_lock);
 
 
 	if (entry != NULL){
@@ -309,7 +319,7 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 		*seq = 0;
 		//FIXIT: for debug usage, 1 is different from 0;
 		print_con(con, "NO MATCH found\n\n\n\n");
-		pthread_rwlock_wrlock(&out_lock);
+		UNLOCK(out_lock);
 
 		struct con_out_seq_entry *e;
 		for (e = con_out_seq_list; e != NULL; e= e->hh.next){
@@ -317,7 +327,7 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 		}
 
 
-		pthread_rwlock_unlock(&out_lock);
+		UNLOCK(out_lock);
 
 
 		return -1;
@@ -338,9 +348,9 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con_orig){
 
 
 	con_out_seq_entry *find_entry;
-	pthread_rwlock_rdlock(&out_lock);
+	LOCK(out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), find_entry);
-	pthread_rwlock_unlock(&out_lock);
+	UNLOCK(out_lock);
 
 	if (find_entry != NULL && find_entry->seq >= seq){
 		//No need to update, only keep max value
@@ -359,9 +369,9 @@ int update_con_out_seq(uint32_t seq, struct con_id_type *con_orig){
 
 	pthread_mutex_lock(&tcp_outgoing_lock);
 
-	pthread_rwlock_wrlock(&out_lock);
+	LOCK(out_lock);
 	HASH_REPLACE(hh, con_out_seq_list, con_id, sizeof(struct con_id_type), entry, replaced);
-	pthread_rwlock_unlock(&out_lock);
+	UNLOCK(out_lock);
 
 	// struct in_addr src_ip, dst_ip;
 	// src_ip.s_addr = con->src_ip;
@@ -520,9 +530,8 @@ int con_manager_init(){
     pthread_mutex_init(&become_leader_lock, NULL);
 
 
-    pthread_rwlock_init(&isn_lock, NULL);
-    pthread_rwlock_init(&out_lock, NULL);
-
+    LOCK_INIT(isn_lock);
+    LOCK_INIT(out_lock);
 
     char *server_filename = "/tmp/socket-server";
 
