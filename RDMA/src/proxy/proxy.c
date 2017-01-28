@@ -66,7 +66,12 @@ void *handle_tcp_buffer(void *useless){
 
             ret = dump_tcp_buffer();
             //NO_BLOCKING, spin check.
-            debugf("in side loop");
+            //debugf("in side loop");
+            if (ret == 0){
+                pthread_mutex_lock(&tcp_no_empty_lock);
+                pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
+                pthread_mutex_unlock(&tcp_no_empty_lock);
+            }else if (ret == -1){
 
         #elif defined(MUTEX_LOCK)
             LOCK(out_lock);
