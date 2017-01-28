@@ -44,9 +44,6 @@ proxy_node* proxy;
 
 
 
-pthread_spinlock_t sleep_time_lock;
-int sleep_time; 
-
 pthread_cond_t tcp_no_empty;
 pthread_mutex_t tcp_no_empty_lock;
 
@@ -54,21 +51,6 @@ pthread_cond_t tcp_outgoing;
 pthread_mutex_t tcp_outgoing_lock;
 
 
-int increase_sleep_time(int additon){
-    pthread_spin_lock(&sleep_time_lock);
-    sleep_time = sleep_time + additon; 
-    int ret = sleep_time;
-    pthread_spin_unlock(&sleep_time_lock);
-    return ret;
-}
-
-int reset_sleep_time(){
-    pthread_spin_lock(&sleep_time_lock);
-    int ret = sleep_time; 
-    sleep_time = 0;
-    pthread_spin_unlock(&sleep_time_lock);
-    return ret; 
-}
 
 
 
@@ -78,7 +60,7 @@ void *handle_tcp_buffer(void *useless){
     sleep(5);
     int ret; 
     while(1){
-        while(!is_leader() && sleep_time == 0){
+        while(!is_leader()){
 
 
             pthread_mutex_lock(&tcp_outgoing_lock);
@@ -93,15 +75,12 @@ void *handle_tcp_buffer(void *useless){
                 pthread_cond_wait(&tcp_outgoing, &tcp_outgoing_lock);
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
-            //debugf("[TCP] cond wait wakeup");
             else{
                 pthread_mutex_unlock(&tcp_outgoing_lock);
             }
 
         }
         while(ret != -99){
-
-
 
             pthread_mutex_lock(&tcp_outgoing_lock);
             ret = dump_tcp_buffer();
@@ -123,7 +102,6 @@ void *handle_tcp_buffer(void *useless){
 
         }
         pthread_exit(0);
-        // /debugf("[TCP] Copy thread wakeup! ");
     }
 }
 
@@ -141,7 +119,6 @@ int dare_main(proxy_node* proxy, const char* config_path)
     inet_aton(GUEST_IP, &guest_vm_ip);
 
 
-    pthread_spin_init(&sleep_time_lock, 0);
     
     pthread_cond_init(&tcp_no_empty, NULL);
     pthread_mutex_init(&tcp_no_empty_lock, NULL);
@@ -214,7 +191,6 @@ int dare_main(proxy_node* proxy, const char* config_path)
     init_packet_buffer();
 
 
-    reset_sleep_time();
 
     pthread_t thread;
     pthread_create(&thread, NULL, handle_tcp_buffer, NULL); 
@@ -656,38 +632,6 @@ static void do_action_tcpnewcon(void *data, size_t size){
 #define MSG_OFF 10 //From ning: "the whole message offset, TODO:need to determine the source"
 
 
-// #define DEBUG_TCP
-// void *wait_insert(void* arg){
-//     struct consensused_data *c = (struct consensused_data*)arg;
-//     sleep(1);
-//     #ifdef DEBUG_TCP 
-//     uint8_t *data= c->data; 
-//     int eth_hdr_len = sizeof(struct ether_header);
-//     struct ip* ip_header = (struct ip*)(data + MSG_OFF + eth_hdr_len);
-//     int  ip_header_size = 4 * (ip_header->ip_hl & 0x0F);
-//     struct tcphdr* tcp_header = (struct tcphdr*)((uint8_t*)data + MSG_OFF + eth_hdr_len + ip_header_size);
-//     int tcp_header_size = 4 * (tcp_header->th_off &0x0F);
-//     int i;
-
-//     int total_header_len = MSG_OFF + eth_hdr_len + ip_header_size + tcp_header_size; 
-//     debugf("TCP Packet, TCP header len: %d,port %d->port%d",tcp_header_size, ntohs(tcp_header->th_sport), ntohs(tcp_header->th_dport));
-//     fprintf(stderr, "Payload: ");
-//     for (i= total_header_len; i<c->size; i++){
-//         fprintf(stderr, "%02x  ", data+i);
-//     }
-//     fprintf(stderr, "\n");
-
-//     #endif
-
-
-
-
-
-//     write_to_packet_buffer((uint8_t*)c->data, c->size);
-//     pthread_exit(0);
-// }
-
-
 
 
 static void do_action_raw(void *data, size_t size){
@@ -717,8 +661,6 @@ static void do_action_raw(void *data, size_t size){
                 isn = ntohl(tcp_header->th_seq)+1;
                 save_isn(isn, &con_id);
 
-
-                //increase_sleep_time(4);
                 return;
             }
             else{
