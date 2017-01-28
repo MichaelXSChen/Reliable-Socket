@@ -66,6 +66,7 @@ void *handle_tcp_buffer(void *useless){
 
             ret = dump_tcp_buffer();
             //NO_BLOCKING, spin check.
+            debugf("in side loop");
 
         #elif defined(MUTEX_LOCK)
             LOCK(out_lock);
