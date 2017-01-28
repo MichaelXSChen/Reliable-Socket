@@ -64,4 +64,20 @@ struct con_info_reply{
 
 void print_con (struct con_id_type *con_id, const char* format,...);
 
+#define SPIN_LOCK
+
+
+#if defined(SPIN_LOCK)
+#define LOCK(x) pthread_spin_lock(&x)
+#define UNLOCK(x) pthread_spin_unlock(&x);
+#define LOCK_INIT(x) pthread_spin_init(&x, 0)
+#define DECLARE_LOCK(x) pthread_spinlock_t x  
+#elif defined(MUTEX_LOCK)
+#define LOCK(x) pthread_mutex_lock(&x)
+#define UNLOCK(x) pthread_mutex_unlock(&x)
+#define LOCK_INIT(x) pthread_mutex_init(&x, NULL)
+#define DECLARE_LOCK(x) pthread_mutex_t x
+#endif
+
+
 #endif // COMMON_H

@@ -29,10 +29,7 @@
 
 #define MY_IP "10.22.1.2"
 
-#define LOCK(x) pthread_spin_lock(&x);
-#define UNLOCK(x) pthread_spin_unlock(&x);
-#define LOCK_INIT(x) pthread_spin_init(&x, 0);
-#define DECLARE_LOCK(x) pthread_spinlock_t x;  
+
 
 
 
@@ -306,10 +303,13 @@ int get_con_out_seq(uint32_t *seq, struct con_id_type *con_orig){
 
 	// debugf("[FIND]: Trying to find src_ip %s, src_port%"PRIu16" to dst_ip %s dst_port%"PRIu16"", inet_ntoa(src_ip), ntohs(con->src_port), inet_ntoa(dst_ip), ntohs(con->dst_port));
 
+#ifndef MUTEX_LOCK
 	LOCK(out_lock);
 	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
 	UNLOCK(out_lock);
-
+#else
+	HASH_FIND(hh, con_out_seq_list, con, sizeof(struct con_id_type), entry);
+#endif
 
 	if (entry != NULL){
 		*seq = entry->seq;
