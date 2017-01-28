@@ -62,19 +62,20 @@ void *handle_tcp_buffer(void *useless){
     while(1){
         while(!is_leader()){
             
-        #if defined(SPIN_LOCK)
+        // #if defined(SPIN_LOCK)
 
-            ret = dump_tcp_buffer();
-            //NO_BLOCKING, spin check.
-            //debugf("in side loop");
-            if (ret == 0){
-                pthread_mutex_lock(&tcp_no_empty_lock);
-                pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
-                pthread_mutex_unlock(&tcp_no_empty_lock);
-            }
-            
-        #elif defined(MUTEX_LOCK)
+        //     ret = dump_tcp_buffer();
+        //     //NO_BLOCKING, spin check.
+        //     //debugf("in side loop");
+        //     if (ret == 0){
+        //         pthread_mutex_lock(&tcp_no_empty_lock);
+        //         pthread_cond_wait(&tcp_no_empty, &tcp_no_empty_lock);
+        //         pthread_mutex_unlock(&tcp_no_empty_lock);
+        //     }
+
+        // #elif defined(MUTEX_LOCK)
             LOCK(out_lock);
+            ret = dump_tcp_buffer();
             if (ret == 0){
                 UNLOCK(out_lock);
                 pthread_mutex_lock(&tcp_no_empty_lock);
@@ -88,7 +89,7 @@ void *handle_tcp_buffer(void *useless){
                 UNLOCK(out_lock);
             }
 
-        #endif
+        // #endif
 
 
         }
