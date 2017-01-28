@@ -64,7 +64,7 @@ struct con_info_reply{
 
 void print_con (struct con_id_type *con_id, const char* format,...);
 
-#define SPIN_LOCK
+#define MUTEX_LOCK
 
 
 #if defined(SPIN_LOCK)
