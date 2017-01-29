@@ -84,7 +84,7 @@ void create_connection(struct con_info_type *con_info){
 	}
 
 
-	close(sk_create_connection);
+	//close(sk_create_connection);
 	free(buffer);
 
 	return;
