@@ -18,19 +18,28 @@
 
 
 int guard_client(char* ip, int port){
-	int sk, ret;
-	struct sockaddr_in addr;
+	
 
-	sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sk < 0) {
+}
+
+
+int main(int argc, char *argv[]){
+	char *ip = "10.22.1.100";
+    int port = 3120;
+
+
+
+
+    int sk, ret;
+    struct sockaddr_in addr;
+
+    sk = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk < 0) {
         perror("Can't create socket");
         return -1;
     }
 
     debugf("Connecting to %s:%d\n", ip, port);
-
-
-
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     ret = inet_aton(ip, &addr.sin_addr);
@@ -45,41 +54,34 @@ int guard_client(char* ip, int port){
         perror("Can't connect");
         return -1;
     }
-	int value=1111;
     debugf("connected");
-    while(1){
-
-        struct command_t cmd; 
-        char buffer[4];
-        sprintf(buffer, "%d", value);
-        value++;
-    	char* argv_[]={"/home/michael/VPB-bk/project/src/test/tcp-how/tcp-howto", "127.0.0.1", buffer};	
-    	cmd.argv = argv_;
-        cmd.argc = 3;
-
-        char *buf; 
-        int len; 
-        command_t_serialize(&buf, &len, &cmd);
-
-    	ret = send_bytes(sk, buf, len);
-    	if (ret < 0){
-    		perrorf("Failed to send");
- 			return -1;
-    	}
-    	sleep(5);
+    
 
 
+    struct command_t cmd; 
 
+
+    char** command = (char**) malloc((argc-1)*sizeof(char*));
+
+    int i;
+    for(i = 0; i< argc-1; i ++){
+        command[i]=argv[i+1];
+    } 
+
+
+    cmd.argv = command;
+    cmd.argc = argc-1;
+
+    char *buf; 
+    int len; 
+    command_t_serialize(&buf, &len, &cmd);
+
+    ret = send_bytes(sk, buf, len);
+    if (ret < 0){
+        perrorf("Failed to send");
+        return -1;
     }
 
-}
 
-
-int main(int argc, char *argv){
-	int ret = guard_client("10.22.1.100", 3120);
-	if (ret < 0){
-		perror("Failed run client");
-		return -1;
-	}
-	return 0;
+    close(sk);
 }
