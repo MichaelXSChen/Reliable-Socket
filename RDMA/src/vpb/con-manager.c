@@ -488,7 +488,7 @@ void *watch_guest_out(void *useless){
 
 	                uint32_t seq = ntohl(tcp_header->th_seq) + payload_length;
 
-	                print_con(&con_id, "pakcet len: %d, seq = %"PRIu32" + %d = %"PRIu32"", len,ntohl(tcp_header->th_seq), payload_length, seq);
+	                //print_con(&con_id, "pakcet len: %d, seq = %"PRIu32" + %d = %"PRIu32"", len,ntohl(tcp_header->th_seq), payload_length, seq);
 
 
 	                // printf("seq increased to %"PRIu32"\n", seq);
