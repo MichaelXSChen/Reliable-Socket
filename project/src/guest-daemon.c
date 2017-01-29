@@ -1,7 +1,8 @@
+#define _GNU_SOURCE
+#include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
@@ -60,8 +61,10 @@ int exec_task(pid_t *pid, struct command_t *cmd){
 
     sem_post(&have_child);
 
+    char *envp[]={"LD_PRELOAD=/home/vpb/Reliable-Socket/project/src/intercept.so", NULL};
+
     if (child_pid == 0) {
-    	ret = execv(cmd->argv[0], cmd->argv);
+    	ret = execvpe(cmd->argv[0], cmd->argv, envp);
 		if (ret != 0){
 			fprintf(stderr, "Failed to run execv %s\n", strerror(errno));
 			exit(0);
