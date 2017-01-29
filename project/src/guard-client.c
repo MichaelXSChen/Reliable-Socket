@@ -81,7 +81,7 @@ int main(int argc, char *argv[]){
         perrorf("Failed to send");
         return -1;
     }
-
+    sleep(5);
 
     close(sk);
 }
