@@ -33,6 +33,10 @@ struct con_id_type{
     uint16_t dst_port;
 };
 
+#define CONNECT_CON 1
+#define ACCEPT_CON 2
+#define CONNECT_QUERY 3
+
 struct con_info_type{
     struct con_id_type con_id;
     uint32_t send_seq; 
@@ -44,6 +48,8 @@ struct con_info_type{
     uint32_t snd_wscale;
     uint32_t rcv_wscale;
     uint16_t has_rcv_wscale;
+
+    uint16_t con_type;
 
 };
 

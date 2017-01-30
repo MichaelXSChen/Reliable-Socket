@@ -368,6 +368,9 @@ int handle_accepted_sk(int *sk){
         con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
         memset(con_info, 0, sizeof(struct con_info_type));
 
+        con_info->con_type = ACCEPT_CON;
+
+
 
         struct tcp_info tcpi;
         memset(&tcpi, 0, sizeof(struct tcp_info));
@@ -554,10 +557,6 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags){
     debugf("[Intercept.so] Return sk numebr sk= %d", sk);
     return sk; 
 
-
-
-    
-    return sk; 
 }
 
 
@@ -694,3 +693,321 @@ int socket(int domain, int type, int protocol){
 
 }
 
+int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+    //Create a connection to manager to check whether it is leader
+    int ret; 
+
+    int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sk_tomgr < 0) {
+        perror("Can't create socket");
+        return -1;
+    }
+    struct sockaddr_in srvaddr;
+    debugf("Connecting to %s:%d\n", CON_MGR_IP, CON_MGR_PORT);
+    memset(&srvaddr, 0, sizeof(srvaddr));
+    srvaddr.sin_family = AF_INET;
+    ret = inet_aton(CON_MGR_IP, &srvaddr.sin_addr);
+    if (ret == 0) {
+        perror("Can't convert addr");
+        return -1;
+    }
+    srvaddr.sin_port = htons(CON_MGR_PORT);
+    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    if (ret < 0) {
+        perror("Can't connect");
+        return -1;
+    }
+
+    uint8_t iamleader = 0;
+    ret = send_bytes(sk_tomgr, (char*)&iamleader, 1);
+    char *buffer;
+    int recv_len; 
+    ret = recv_bytes(sk_tomgr, &buffer, &recv_len);
+    if (recv_len != 1){
+        perrorf("Failed to check for leadership, recv with len %d", recv_len);
+        return -1;
+    }
+    iamleader = (uint8_t) buffer[0];
+    free(buffer);
+
+    debugf("[Intercept.so] [Connect] I am leader? %d", iamleader);
+
+
+    
+    if (iamleader == 1){
+        //Connect, make consensus, return
+        orig_connect_func_type orig_connect_func; 
+        orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
+        int ret = connect(sockfd, addr, addrlen);
+        if (ret < 0){
+            perror("System connect function failed with : ");
+            return ret;
+        }
+
+
+        //Get information out
+
+        uint32_t send_seq, recv_seq;
+
+        ret = tcp_repair_on(sockfd);
+        if (ret < 0){
+            perrorf("Failed turn on");
+        }
+        ret = get_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, &send_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+        ret = get_tcp_queue_seq(sockfd, TCP_RECV_QUEUE, &recv_seq);
+        if (ret < 0){
+            perrorf("Failed to get tcp_seq");
+            return -1;
+        }
+
+
+        struct con_info_type *con_info;
+        con_info = (struct con_info_type*) malloc(sizeof(struct con_info_type));
+        memset(con_info, 0, sizeof(struct con_info_type));
+
+        con_info->con_type = CONNECT_CON;
+
+        struct tcp_info tcpi;
+        memset(&tcpi, 0, sizeof(struct tcp_info));
+        int tcp_info_len = sizeof(struct tcp_info);
+
+
+
+        ret = getsockopt(sockfd, SOL_TCP, TCP_INFO, &tcpi, &tcp_info_len);
+        if (ret != 0){
+            perrorf("Fail to get TCP_INFO\n\n");
+            return -1;
+        }
+
+        uint32_t timestamp = 0;
+        uint8_t has_timestamp = 0;
+        if (tcpi.tcpi_options & TCPI_OPT_TIMESTAMPS){
+            has_timestamp = 1;
+            int tslen = sizeof(timestamp);
+            ret = getsockopt(sockfd, SOL_TCP, TCP_TIMESTAMP, &timestamp, &tslen); 
+            if (ret != 0){
+                perrorf("Failed to get TCP_TIMESTAMP");
+                return -1;
+            }
+        }
+        con_info->has_timestamp = has_timestamp;
+        con_info->timestamp = timestamp;
+
+
+        if (tcpi.tcpi_options & TCPI_OPT_WSCALE){
+            con_info->snd_wscale = tcpi.tcpi_snd_wscale; 
+            con_info->rcv_wscale = tcpi.tcpi_rcv_wscale;
+            con_info->has_rcv_wscale = 1;
+        }
+
+        debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"\n\n", con_info->snd_wscale, con_info->rcv_wscale);
+
+        //Get max seg size 
+
+        int size_mss = sizeof(con_info->mss_clamp);
+
+        ret = getsockopt(sockfd, SOL_TCP, TCP_MAXSEG, &(con_info->mss_clamp), &size_mss);
+        if (ret < 0){
+            perrorf("Faailed to get mss_clamp\n\n");
+            return -1;
+
+        }
+
+        debugf("mss_size: %"PRIu32"\n\n", con_info->mss_clamp);
+
+
+
+
+
+        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", send_seq, recv_seq);
+
+
+
+        ret = tcp_repair_off(sockfd);
+        if (ret < 0){
+            perrorf("Failed turn off");
+        }
+
+
+        get_tcp_con_id(sockfd, con_info);
+        con_info->send_seq = send_seq;
+        con_info->recv_seq = recv_seq;
+
+        ret = ask_for_consensus(sk_tomgr, con_info);
+        if (ret < 0){
+            perrorf("Failed to ask for consensus");
+        }
+
+    }
+    else{
+        //Ask con-manager for the informations. 
+        struct con_info_type *con_info = (struct con_info_type *) malloc(sizeof(struct con_info_type));
+        memset(con_info, 0, sizeof(struct con_info_type));
+
+
+        con_info->con_type = CONNECT_QUERY;
+
+
+        char *buf;
+        int len;
+        ret = con_info_serialize(&buf, &len, con_info);
+        if (ret < 0){
+            perror("Failed to serialize connection info");
+            return -1;
+        }
+        
+        uint8_t success = 0;
+
+        while (success == 0){
+            sleep(1);
+            ret = send_bytes(sk_tomgr, buf, len);
+            if (ret < 0){
+                perror("Failed to send con_info");
+                return -1;
+            }
+            debugf("Sent for asking for connect info , waiting for result");
+            ret = recv(sk_tomgr, &success, sizeof(success), 0);
+            if (success == 0)
+                debugf("Not ready, will check for informations one second later");
+        }
+
+        
+        free(buf);
+        free(con_info);
+
+        char *in_buf;
+        int inlen; 
+
+
+        ret = recv_bytes(sk_tomgr, &in_buf, &inlen);
+        con_info = (struct con_info_type *) malloc(sizeof(struct con_info_type));
+
+
+        ret = con_info_deserialize(con_info, in_buf, inlen);
+        // create a socket according to the inforamtion. 
+
+        ret = tcp_repair_on(sockfd);
+
+        if (ret != 0){
+            perrorf("Failed to turn on TCP Repair for :%d", sockfd);
+            return ret;
+        }
+        ret = set_tcp_queue_seq(sockfd, TCP_RECV_QUEUE, con_info->recv_seq);
+        if (ret != 0) {
+            perror("Failed to set recv queue seq");
+            return -1;
+        }
+        ret = set_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, con_info->send_seq-1);
+        if (ret != 0) {
+            perror("Failed to set send queue seq");
+            return -1;
+        }
+
+        int aux = 1;
+        ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &aux, sizeof(aux));
+        if (ret < 0){
+            perror("failed to setup reuse");
+            return -1;
+        }
+        ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &aux, sizeof(aux));
+        if (ret < 0){
+            perror("failed to setup reuse");
+            return -1;
+        }
+
+
+        struct sockaddr_in localaddr, remoteaddr;
+
+
+        memset(&localaddr, 0, sizeof(localaddr));
+        localaddr.sin_family = AF_INET;
+        localaddr.sin_port = con_info->con_id.src_port;
+        localaddr.sin_addr.s_addr = con_info->con_id.src_ip; 
+
+
+
+        memset(&remoteaddr, 0, sizeof(remoteaddr));
+        remoteaddr.sin_family = AF_INET;
+        remoteaddr.sin_port = con_info->con_id.dst_port;
+        remoteaddr.sin_addr.s_addr = con_info->con_id.dst_ip; 
+
+
+
+
+
+        if (bind(sockfd, (struct sockaddr *)&localaddr, sizeof(localaddr)) != 0){
+            perror("Cannot bind socket here");
+            return -1;
+        }
+
+        if (connect(sockfd, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
+            perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
+            return -1;
+        }
+
+        debugf("[LD_PRELOAD] send_seq: %"PRIu32"recv_seq: %"PRIu32"", con_info->send_seq, con_info->recv_seq);
+
+        if (con_info->has_timestamp){
+            debugf("[LD_PRELOAD] Will turn TCP TIMESTAMP on, timestamp = %"PRIu32"", con_info->timestamp);
+            struct tcp_repair_opt opt;
+            opt.opt_code = TCPOPT_TIMESTAMP;
+            opt.opt_val = 0;
+            ret = setsockopt(sockfd, SOL_TCP, TCP_REPAIR_OPTIONS, &opt, sizeof(struct tcp_repair_opt));
+            if (ret < 0){
+                perrorf("Failed to repair TCP OPTIONS");
+                return -1;
+            }
+            ret = setsockopt(sockfd, SOL_TCP, TCP_TIMESTAMP, &(con_info->timestamp), sizeof(con_info->timestamp));
+            if (ret < 0){
+                perrorf("Failed to set tcp timestamp");
+                return -1;
+            }
+        }
+
+        struct tcp_repair_opt opt_for_mss;  
+        opt_for_mss.opt_code = TCPOPT_MAXSEG;
+        opt_for_mss.opt_val = con_info->mss_clamp;
+
+        ret = setsockopt(sockfd, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_mss, sizeof(struct tcp_repair_opt));
+        if (ret < 0){
+            perrorf("Failed to set mss_clamp");
+            return -1;
+        }
+        
+        debugf("mss_size: %"PRIu32"", con_info->mss_clamp);
+
+
+
+
+        if (con_info->has_rcv_wscale){
+            struct tcp_repair_opt opt_for_wscale;
+            opt_for_wscale.opt_code = TCPOPT_WINDOW;
+
+            opt_for_wscale.opt_val = con_info->snd_wscale + (con_info->rcv_wscale << 16);
+            ret = setsockopt(sockfd, SOL_TCP, TCP_REPAIR_OPTIONS, &opt_for_wscale, sizeof(struct tcp_repair_opt));
+            if (ret < 0){
+                perrorf("Faield to set wscale");
+                return -1;
+            } 
+            debugf("snd_wscale: %"PRIu32", recv_wscale: %"PRIu32"", con_info->snd_wscale, con_info->rcv_wscale);
+
+        }
+
+
+        debugf("(Backup) created socket to %s:%"PRIu16"", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
+        
+        uint8_t triger = 1;
+        ret = send(sockfd, &triger, 1, 0);
+        debugf("[Intercept.so]  Sent out 1 bytes for trigering");
+
+        tcp_repair_off(sockfd);
+
+    }
+    close(sk_tomgr);
+
+
+}
