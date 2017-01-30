@@ -371,15 +371,23 @@ void *serve_query(void *sk_arg){
 				uint8_t has_info = 0;
 				ret = send(sk, &has_info, sizeof(has_info), 0);
 				if (ret <= 0){
-					perrorf("Failed to send message back to LD_PRELOAD module");
+					perrorf("Failed to send success message back to LD_PRELOAD module");
 				}
 			}
 			else{
 				//Found info 
+
+				uint8_t has_info = 0;
+				ret = send(sk, &has_info, sizeof(has_info), 0);
+				if (ret <= 0){
+					perrorf("Failed to send success message back to LD_PRELOAD module");
+				}
+
+
 				char *out_buf; 
 				int out_len;
 				ret = con_info_serialize(&out_buf, &out_len, &con_info);	
-				ret = send(sk, out_buf, out_len, 0);
+				ret = send_bytes(sk, out_buf, out_len);
 
 				if (ret <= 0){
 					perrorf("Failed to send connection info back to LD_PRELOAD module");

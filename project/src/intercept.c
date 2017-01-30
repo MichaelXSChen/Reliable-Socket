@@ -598,7 +598,7 @@ int socket(int domain, int type, int protocol){
 int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     //Create a connection to manager to check whether it is leader
     
-        orig_connect_func_type orig_connect_func; 
+    orig_connect_func_type orig_connect_func; 
     orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
 
 
