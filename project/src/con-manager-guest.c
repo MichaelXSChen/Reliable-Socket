@@ -377,16 +377,19 @@ void *serve_query(void *sk_arg){
 			else{
 				//Found info 
 
-				uint8_t has_info = 0;
+				uint8_t has_info = 1;
 				ret = send(sk, &has_info, sizeof(has_info), 0);
 				if (ret <= 0){
 					perrorf("Failed to send success message back to LD_PRELOAD module");
 				}
-
+				int tmp = sk;
 
 				char *out_buf; 
 				int out_len;
-				ret = con_info_serialize(&out_buf, &out_len, &con_info);	
+				ret = con_info_serialize(&out_buf, &out_len, &con_info);	// This lib seems to have memory leak. 
+				
+				sk = tmp;
+
 				ret = send_bytes(sk, out_buf, out_len);
 
 				if (ret <= 0){
