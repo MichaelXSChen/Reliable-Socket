@@ -140,6 +140,10 @@ int bind (int sockfd, const struct sockaddr *addr, socklen_t socklen){
 
 
 int replace_tcp (int *sk, struct con_info_type *con_info){
+    orig_connect_func_type orig_connect_func; 
+    orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");    
+
+
     int ret, aux; 
     struct sockaddr_in localaddr, remoteaddr;
     int len=sizeof(localaddr);
@@ -208,7 +212,7 @@ int replace_tcp (int *sk, struct con_info_type *con_info){
         return -1;
     }
 
-    if (connect(*sk, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
+    if (orig_connect_func(*sk, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
         perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
         return -1;
     }
@@ -302,6 +306,11 @@ int ask_for_consensus(int sk_tomgr, struct con_info_type *con_info){
 
 int handle_accepted_sk(int *sk){
     
+    
+    orig_connect_func_type orig_connect_func; 
+    orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
+
+
     int ret; 
     /*********
     /Check whether it is leader
@@ -323,7 +332,7 @@ int handle_accepted_sk(int *sk){
         return -1;
     }
     srvaddr.sin_port = htons(CON_MGR_PORT);
-    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    ret = orig_connect_func(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
     if (ret < 0) {
         perror("Can't connect");
         return -1;
@@ -588,6 +597,12 @@ int socket(int domain, int type, int protocol){
 
 int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     //Create a connection to manager to check whether it is leader
+    
+        orig_connect_func_type orig_connect_func; 
+    orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
+
+
+
     int ret; 
 
     struct sockaddr_in *sin = (struct sockaddr_in *) addr; 
@@ -602,8 +617,6 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
 
     if (ntohs(sin->sin_port) == QEMU_PORT || ntohs(sin->sin_port) == CON_MGR_PORT || sin->sin_addr.s_addr == sin_addr.s_addr || sin->sin_addr.s_addr == my_addr.s_addr){
         debugf("Local pair, no need to hook");
-        orig_connect_func_type orig_connect_func; 
-        orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
         int ret = orig_connect_func(sockfd, addr, addrlen);
         if (ret < 0){
             perror("System connect function failed with : ");
@@ -632,7 +645,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
         return -1;
     }
     srvaddr.sin_port = htons(CON_MGR_PORT);
-    ret = connect(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
+    ret = orig_connect_func(sk_tomgr, (struct sockaddr *)&srvaddr, sizeof(srvaddr));
     if (ret < 0) {
         perror("Can't connect");
         return -1;
@@ -656,8 +669,6 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     
     if (iamleader == 1){
         //Connect, make consensus, return
-        orig_connect_func_type orig_connect_func; 
-        orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
         int ret = orig_connect_func(sockfd, addr, addrlen);
         if (ret < 0){
             perror("System connect function failed with : ");
@@ -869,7 +880,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
             return -1;
         }
 
-        if (connect(sockfd, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
+        if (orig_connect_func(sockfd, (struct sockaddr *)&remoteaddr, sizeof(remoteaddr)) != 0){
             perrorf("Cannot connect the socket to %s:%d", inet_ntoa(remoteaddr.sin_addr), ntohs(remoteaddr.sin_port));
             return -1;
         }
