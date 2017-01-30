@@ -16,6 +16,7 @@
  
 #define CON_MGR_PORT 7777 
 #define CON_MGR_IP "127.0.0.1"
+#define MY_IP "10.22.1.100"
 
 
 
@@ -562,114 +563,6 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags){
 
 
 
-// int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
-    
-//     int ret; 
-//     printf("Coonect Function intercepted!!\n\n\n");
-//     orig_connect_func_type orig_connect;
-//     orig_connect = (orig_connect_func_type) dlsym(RTLD_NEXT,"connect");
-    
-//     tcp_repair_on(sockfd);
-//     set_tcp_queue_seq(sockfd, TCP_SEND_QUEUE, 931209);
-//     tcp_repair_off(sockfd);
-    
-//     ret = orig_connect(sockfd, addr, addrlen);
-//     // printf("sk after connect : %d\n", sk);
-//     // fflush(stdout);
-
-
-//     // struct sockaddr_in cliaddr, srvaddr;
-//     // memset(&cliaddr, 0, sizeof(struct sockaddr_in));
-//     // cliaddr.sin_family = AF_INET;
-//     // cliaddr.sin_port = htons(10060);
-//     // ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
-//     // if (ret < 0) {
-//     //     perror("Can't convert addr");
-//     //     return -1;
-//     // }
-
-//     // int port = 9999; 
-//     // memset(&srvaddr, 0, sizeof(srvaddr));
-//     // srvaddr.sin_family = AF_INET;
-//     // srvaddr.sin_port = htons(port);
-//     // ret = inet_aton("127.0.0.1", &srvaddr.sin_addr);
-//     // if (ret < 0) {
-//     //     perror("Can't convert addr");
-//     //     return -1;
-//     // }
-
-
-//     // ret = replace_tcp(&sk, cliaddr, srvaddr);
-//     // if (ret != 0) {
-//     //     return ret;
-//     // }
-//     return ret;
-// }
-
-
-// int accept_bk(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
-// 	int ret, port;
-// 	printf("accept func intercepted \n\n");
-//     fflush(stdout);
-//     int aux; 
-//     socklen_t len;
-
-//     // ret = getsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &aux, &len);
-//     // if (ret < 0){
-//     //     perror("failed to setup reuse");
-//     //     return -1;
-//     // }
-//     // printf("SO_REUSEADDR of listen socket: %d\n\n", aux);
-//     // fflush(stdout);
-
-
-// 	orig_accept_func_type orig_accept_func; 
-// 	orig_accept_func = (orig_accept_func_type) dlsym(RTLD_NEXT, "accept");
-// 	int sk; 
-// 	sk = orig_accept_func(sockfd, addr, addrlen);
-// 	//printf("sk: %d\n", sk);
-// 	//sleep(100);
-
-// 	struct sockaddr_in cliaddr, srvaddr;
-// 	memset(&cliaddr, 0, sizeof(struct sockaddr_in));
-//     cliaddr.sin_family = AF_INET;
-//     cliaddr.sin_port = htons(10060);
-//     ret = inet_aton("127.0.0.1", &cliaddr.sin_addr);
-//     if (ret < 0) {
-//         perror("Can't convert addr");
-//         return -1;
-//     }
-//     //FIXME: This is incorrect !!
-//     port = 9997; 
-//     memset(&srvaddr, 0, sizeof(srvaddr));
-//     srvaddr.sin_family = AF_INET;
-//     srvaddr.sin_port = htons(port);
-//     srvaddr.sin_addr.s_addr = INADDR_ANY;
-//     if (ret < 0) {
-//         perror("Can't convert addr :");
-//         return -1;
-//     }
-    
-
-//     //tcp_repair_on(sockfd);
-
-//     ret = replace_tcp(&sk, srvaddr, cliaddr);
-
-//     if (ret < 0){
-//     	printf("Failed to replcae tcp\n" );
-//     	return ret; 
-//     }
-
-//     //tcp_repair_off(sockfd);
-
-
-
-
-
-// 	return sk; 
-// }
-
-
 int socket(int domain, int type, int protocol){
     // printf("socket func called:");
     orig_socket_func_type orig_socket;
@@ -696,6 +589,33 @@ int socket(int domain, int type, int protocol){
 int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     //Create a connection to manager to check whether it is leader
     int ret; 
+
+    struct sockaddr_in *sin = (struct sockaddr_in *) addr; 
+
+    struct in_addr sin_addr; 
+    inet_aton(CON_MGR_IP, &sin_addr);
+
+
+
+    struct in_addr my_addr; 
+    inet_aton(MY_IP, &my_addr);
+
+    if (ntohs(sin->sin_port) == CON_MGR_PORT || sin->sin_addr.s_addr == sin_addr.s_addr || sin->sin_addr.s_addr == my_addr.s_addr){
+        debugf("Local pair, no need to hook");
+        orig_connect_func_type orig_connect_func; 
+        orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
+        int ret = connect(sockfd, addr, addrlen);
+        if (ret < 0){
+            perror("System connect function failed with : ");
+        }
+        return ret; 
+    }
+
+
+
+
+
+
 
     int sk_tomgr = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sk_tomgr < 0) {
