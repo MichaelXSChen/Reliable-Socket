@@ -23,7 +23,7 @@ int main( int argc, char *argv[])
     loop = 10;
     for (k = 0; k < loop; k++){
 	if (myid == 0) {
-	n=2000000000;
+	n=2000;
         printf("%d\n", k);
     }
     MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
