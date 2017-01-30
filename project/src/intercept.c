@@ -17,7 +17,7 @@
 #define CON_MGR_PORT 7777 
 #define CON_MGR_IP "127.0.0.1"
 #define MY_IP "10.22.1.100"
-
+#define QEMU_PORT 4321
 
 
 
@@ -600,7 +600,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     struct in_addr my_addr; 
     inet_aton(MY_IP, &my_addr);
 
-    if (ntohs(sin->sin_port) == CON_MGR_PORT || sin->sin_addr.s_addr == sin_addr.s_addr || sin->sin_addr.s_addr == my_addr.s_addr){
+    if (ntohs(sin->sin_port) == QEMU_PORT || ntohs(sin->sin_port) == CON_MGR_PORT || sin->sin_addr.s_addr == sin_addr.s_addr || sin->sin_addr.s_addr == my_addr.s_addr){
         debugf("Local pair, no need to hook");
         orig_connect_func_type orig_connect_func; 
         orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
