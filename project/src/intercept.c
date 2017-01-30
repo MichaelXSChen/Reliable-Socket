@@ -604,7 +604,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
         debugf("Local pair, no need to hook");
         orig_connect_func_type orig_connect_func; 
         orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
-        int ret = connect(sockfd, addr, addrlen);
+        int ret = orig_connect_func(sockfd, addr, addrlen);
         if (ret < 0){
             perror("System connect function failed with : ");
         }
@@ -658,7 +658,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
         //Connect, make consensus, return
         orig_connect_func_type orig_connect_func; 
         orig_connect_func = (orig_connect_func_type) dlsym(RTLD_NEXT, "connect");
-        int ret = connect(sockfd, addr, addrlen);
+        int ret = orig_connect_func(sockfd, addr, addrlen);
         if (ret < 0){
             perror("System connect function failed with : ");
             return ret;
