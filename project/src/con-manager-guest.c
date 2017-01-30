@@ -73,6 +73,9 @@ pthread_spinlock_t hash_lock;
 
 static int hash_insert(struct con_info_type *con_info){
 	con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
+	
+	print_con(&(con_info->con_id), "Insert into db");
+
 	memset(entry, 0, sizeof(con_list_entry));
 	
 
@@ -111,6 +114,9 @@ static int hash_insert(struct con_info_type *con_info){
 
 static int hash_find (struct con_info_type *con_info){
 	
+	print_con(&(con_info->con_id), "Searching");
+
+
 	struct con_list_key *key = (struct con_list_key*)malloc(sizeof(struct con_list_key));
 	memset(key, 0, sizeof(struct con_list_key));
 
@@ -128,6 +134,7 @@ static int hash_find (struct con_info_type *con_info){
 
 
 	if (entry == NULL){
+		debugf("Search Failed");
 		return -1;
 	}
 	else{

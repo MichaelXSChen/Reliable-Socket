@@ -67,4 +67,7 @@ int send_bytes(int sk, char* buf, int len);
 
 int show_socket_info(int sk);
 
+
+void print_con (struct con_id_type *con_id, const char* format,...);
+
 #endif // COMMON_H

@@ -768,6 +768,11 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
         struct con_info_type *con_info = (struct con_info_type *) malloc(sizeof(struct con_info_type));
         memset(con_info, 0, sizeof(struct con_info_type));
 
+        struct sockaddr_in *sin = (struct sockaddr_in *) addr; 
+
+        con_info->con_id.dst_ip = sin->sin_addr.s_addr;
+        con_info->con_id.dst_port = sin->sin_port;
+
 
         con_info->con_type = CONNECT_QUERY;
 
@@ -789,7 +794,7 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
                 perror("Failed to send con_info");
                 return -1;
             }
-            debugf("Sent for asking for connect info , waiting for result");
+            debugf("[Connect] Sent for asking for connect info , waiting for result");
             ret = recv(sk_tomgr, &success, sizeof(success), 0);
             if (success == 0)
                 debugf("Not ready, will check for informations one second later");
