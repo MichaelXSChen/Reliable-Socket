@@ -1,9 +1,6 @@
 CC=gcc
 all: guard-client intercept.so guest-daemon tcp cli-test
 
-#con-manager:con-manager.c common.o 
-#	gcc -c con-manager.c -I.
-#	gcc -o con-manager con-manager.o common.o tpl.o -lpthread
 
 intercept.so: intercept.c common.c
 	gcc -fPIC -c common.c -o common_pic.o -I.
@@ -25,15 +22,13 @@ common.o: common.c
 tpl.o: tpl.c
 	gcc -c tpl.c -I.
 
-con-hashmap.o: con-hashmap.c
-	gcc -c con-hashmap.c -I.
 
 con-manager-guest.o: con-manager-guest.c
 	gcc -c con-manager-guest.c -I.
 
-guest-daemon: guest-daemon.c con-manager-guest.o con-hashmap.o tpl.o common.o
+guest-daemon: guest-daemon.c con-manager-guest.o tpl.o common.o
 	gcc -c guest-daemon.c -I.
-	gcc -o guest-daemon common.o guest-daemon.o tpl.o con-hashmap.o con-manager-guest.o -lpthread
+	gcc -o guest-daemon common.o guest-daemon.o tpl.o con-manager-guest.o -lpthread
 
 tcp: tcp.c tpl.o common.o
 	gcc -c tcp.c

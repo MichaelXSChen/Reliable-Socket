@@ -9,8 +9,9 @@
 #include <string.h>
 
 #include "include/common.h"
-#include "include/con-hashmap.h"
-#include "unistd.h"
+#include "include/uthash.h"
+
+#include <unistd.h>
 
 #define REPORT_PORT 6666
 #define QUERY_PORT 7777
@@ -35,21 +36,125 @@ static int sk_listen;
 static int sk_recv_hb;
 
 
+
+struct con_list_key {
+	uint32_t dst_ip;
+	uint16_t dst_port; 
+};
+
+
+
+struct con_list_entry{
+	struct con_list_key key;
+	uint32_t src_ip;
+	uint16_t src_port;
+
+    uint32_t send_seq; 
+    uint32_t recv_seq;
+    uint16_t has_timestamp;
+    uint32_t timestamp;
+
+    uint32_t mss_clamp;
+    uint32_t snd_wscale;
+    uint32_t rcv_wscale;
+    uint16_t has_rcv_wscale;
+    
+    UT_hash_handle hh;
+};
+
+typedef struct con_list_entry con_list_entry;
+
+
+con_list_entry *connect_con_list; 
+
+pthread_spinlock_t hash_lock;
+
+
+
+static int hash_insert(struct con_info_type *con_info){
+	con_list_entry *entry = (con_list_entry *)malloc(sizeof(con_list_entry));
+	memset(entry, 0, sizeof(con_list_entry));
+	
+
+	entry->key.dst_ip = con_info->con_id.dst_ip;
+	entry->key.dst_port = con_info->con_id.dst_port;
+
+
+	entry->src_ip = con_info->con_id.src_ip;
+	entry->src_port = con_info->con_id.src_port;
+
+
+	entry->send_seq = con_info->send_seq;
+	entry->recv_seq = con_info->recv_seq;
+	entry->has_timestamp = con_info->has_timestamp;
+	entry->timestamp = con_info->timestamp;
+	entry->mss_clamp = con_info->mss_clamp;
+	entry->snd_wscale = con_info->snd_wscale;
+	entry->rcv_wscale = con_info->rcv_wscale;
+	entry->has_rcv_wscale = con_info->has_rcv_wscale;
+
+	struct con_list_entry *replaced;
+
+
+
+
+	pthread_spin_lock(&hash_lock);
+	HASH_REPLACE(hh, connect_con_list, key, sizeof(struct con_list_key), entry, replaced);
+	pthread_spin_unlock(&hash_lock);
+
+
+
+
+	return 0;
+}
+
+
+static int hash_find (struct con_info_type *con_info){
+	
+	struct con_list_key *key = (struct con_list_key*)malloc(sizeof(struct con_list_key));
+	memset(key, 0, sizeof(struct con_list_key));
+
+	key->dst_port = con_info->con_id.dst_port;
+	key->dst_ip = con_info->con_id.dst_ip;
+
+
+	con_list_entry *entry;
+
+
+	pthread_spin_lock(&hash_lock);
+
+	HASH_FIND(hh, connect_con_list, key, sizeof(struct con_list_key), entry);
+	pthread_spin_unlock(&hash_lock);
+
+
+	if (entry == NULL){
+		return -1;
+	}
+	else{
+		con_info->con_id.src_ip = entry->src_ip;
+		con_info->con_id.src_port = entry->src_port;
+
+
+		con_info->send_seq = entry->send_seq;
+		con_info->recv_seq = entry->recv_seq;
+		con_info->has_timestamp = entry->has_timestamp;
+		con_info->timestamp = entry->timestamp;
+		con_info->mss_clamp = entry->mss_clamp;
+		con_info->snd_wscale = entry->snd_wscale;
+		con_info->rcv_wscale = entry->rcv_wscale;
+		con_info->has_rcv_wscale = entry->has_rcv_wscale;
+
+		return 0;
+	}
+}
+
+
+
+
+
 void create_connection(struct con_info_type *con_info){
 	int ret;
 
-	//insert into hashmap first 
-	con_list_entry entry;
-	entry.con_id = con_info->con_id;
-	entry.recv_seq = con_info->recv_seq;
-	entry.send_seq = con_info->send_seq;
-	
-
-	// ret = insert_connection(&entry);
-	// if (ret <0){
-	// 	perrorf("Failed to insert into hashmap");
-	// 	pthread_exit(0);
-	// }
 
 	
 	//create connection;
@@ -122,7 +227,16 @@ void * serve_report(void * arg){
 			struct con_info_type *con_info;
 			con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
 			con_info_deserialize(con_info, buf, recv_len);
-			create_connection(con_info);
+			
+
+			if(con_info->con_type == ACCEPT_CON){
+				create_connection(con_info);
+			}
+			else if(con_info->con_type == CONNECT_CON){
+				debugf("Received Info for connection create by connect, will save it into the hashmap");
+				hash_insert(con_info);
+			}
+
 		}
 	}
 
@@ -243,6 +357,30 @@ void *serve_query(void *sk_arg){
 			continue;
 
 		}
+		else if (con_info.con_type == CONNECT_QUERY) {//
+			ret = hash_find(&con_info);
+			if (ret == -1){
+				//NO Info for now, return 0;
+				uint8_t has_info = 0;
+				ret = send(sk, &has_info, sizeof(has_info), 0);
+				if (ret <= 0){
+					perrorf("Failed to send message back to LD_PRELOAD module");
+				}
+			}
+			else{
+				//Found info 
+				char *out_buf; 
+				int out_len;
+				ret = con_info_serialize(&out_buf, &out_len, &con_info);	
+				ret = send(sk, out_buf, out_len, 0);
+
+				if (ret <= 0){
+					perrorf("Failed to send connection info back to LD_PRELOAD module");
+				}
+
+			}
+			//continue;
+		}
 		else{
 			continue;
 		}
@@ -303,7 +441,10 @@ void *recv_hb(void *useless){
 
 
 int init_con_manager_guest(){
-	init_con_hashmap();
+	connect_con_list = NULL;
+	pthread_spin_init(&hash_lock, 0);
+
+
 	iamleader = false;
 
 
