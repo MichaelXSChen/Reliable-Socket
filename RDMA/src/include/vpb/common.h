@@ -51,6 +51,8 @@ struct con_info_type{
     uint32_t rcv_wscale;
     uint16_t has_rcv_wscale;
 
+    uint16_t con_type;
+
 };
 
 
