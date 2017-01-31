@@ -671,8 +671,13 @@ int connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen){
         //Connect, make consensus, return
         int ret = orig_connect_func(sockfd, addr, addrlen);
         if (ret < 0){
-            perror("System connect function failed with : ");
-            return ret;
+            if (errno == EINPROGRESS){
+                sleep(1);
+            }
+            else{
+                perror("System connect function failed with : ");
+                return ret;
+            }
         }
 
 
