@@ -1,0 +1,1 @@
+LD_PRELOAD=/home/vpb/Reliable-Socket/project/src/intercept.so ./singa -singa_conf /home/vpb/incubator-singa/conf/singa.conf -singa_job 10 -conf /home/vpb/incubator-singa/examples/cifar10/job.conf  -host  10.22.1.100 &

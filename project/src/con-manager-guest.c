@@ -235,7 +235,7 @@ void * serve_report(void * arg){
 			con_info = (struct con_info_type *)malloc(sizeof(struct con_info_type));
 			con_info_deserialize(con_info, buf, recv_len);
 			
-
+			debugf("\n\n Type : %"PRIu16 "\n\n", con_info->con_type);
 			if(con_info->con_type == ACCEPT_CON){
 				create_connection(con_info);
 			}
