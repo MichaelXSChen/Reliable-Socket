@@ -179,13 +179,34 @@ void create_connection(struct con_info_type *con_info){
 	addr.sin_addr.s_addr = con_info->con_id.src_ip;
 	addr.sin_port = con_info->con_id.src_port;
 
-	debugf("Creating connection to address %s:%d", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-	ret = connect(sk_create_connection, (struct sockaddr *)&addr, sizeof(addr));
-	if (ret <0){
-		perror("Can not connect");
+
+	int count = 1;
+	ret = -1;
+
+	
+	
+	while (ret < 0 && count < 11){
+
+
+		debugf("[%d-th Try]: Creating connection to address %s:%d", count, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+		ret = connect(sk_create_connection, (struct sockaddr *)&addr, sizeof(addr));
+		
+		if (ret <0){
+			perror("Can not connect");
+			//close(sk_create_connection);
+			//pthread_exit(0);
+		}
+		count++;
+		sleep(1);
+	}
+
+	if (ret < 0){
+		perror("Cannnot connect after 10 tries");
 		close(sk_create_connection);
 		pthread_exit(0);
 	}
+
+	
 	int len;
 	char* buffer;
 	con_info_serialize(&buffer, &len, con_info);
@@ -392,7 +413,7 @@ void *serve_query(void *sk_arg){
 
 				ret = send_bytes(sk, out_buf, out_len);
 
-				if (ret <= 0){
+				if (ret < 0){
 					perrorf("Failed to send connection info back to LD_PRELOAD module");
 				}
 
