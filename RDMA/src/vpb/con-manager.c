@@ -414,7 +414,14 @@ int check_block(uint32_t ack, struct con_id_type *con){
 		struct in_addr src_addr, dst_addr;
 		src_addr.s_addr = con->src_ip;
 		dst_addr.s_addr = con->dst_ip;
-		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from %s:%d to %s:%d)", out_seq, ack, inet_ntoa(src_addr), ntohs(con->src_port), inet_ntoa(dst_addr), ntohs(con->dst_port));
+		char *src_ip = (char*)malloc(20);
+		char *dst_ip = (char*)malloc(20);
+
+
+		src_ip = inet_ntoa(src_addr);
+		dst_ip = inet_ntoa(dst_addr);
+
+		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from %s:%d to %s:%d)", out_seq, ack, src_ip, ntohs(con->src_port), dst_ip, ntohs(con->dst_port));
 		return 1;
 	}
 	else{
