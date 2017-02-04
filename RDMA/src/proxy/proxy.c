@@ -628,6 +628,8 @@ int msg_handle(uint8_t *buf, int size){
 
 int tcpnewcon_handle(uint8_t *buf,int size){
     if(is_leader()){
+
+        debugf("Submit consensus on new connection");
         leader_handle_submit_req(TCPNEWCON, size, buf, 0, proxy);
     }
     return 0;

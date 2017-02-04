@@ -634,6 +634,7 @@ int handle_consensused_con(char* buf, int len){
 	struct con_info_type con_info; 
 	memset(&con_info, 0, sizeof(con_info));
 
+	debugf("consensused CON called");
 
 
 
