@@ -25,7 +25,8 @@ static ringbuf_t tcp_buffer;
 static pthread_spinlock_t outgoing_buffer_lock;
 static pthread_spinlock_t tcp_buffer_lock;
 
-
+int tcp_count;
+long tcp_size_count; 
 
 
 
@@ -49,6 +50,11 @@ void init_packet_buffer(){
 
 	udp_done = 0;
 	tcp_done = 0;
+
+
+
+	 tcp_count = 0;
+	 tcp_size_count = 0; 
 
 }
 
@@ -152,7 +158,9 @@ int write_to_tcp_buffer(struct con_id_type *con_id, uint32_t ack,  const uint8_t
 
 	ringbuf_memcpy_into(tcp_buffer, con_id, sizeof(struct con_id_type));
 	
-
+	tcp_count++;
+	tcp_size_count += len;
+	debugf("tcp Count: %d, tcp_size_count: %ld", tcp_count, tcp_size_count);
 
 	ringbuf_memcpy_into(tcp_buffer, &ack, sizeof(ack));	
 
