@@ -225,7 +225,7 @@ void *hb_to_guest(void *arg){
 	while(1){
 		if(is_leader()){
 			 sendto(hb_sk, &addr, sizeof(addr), 0, (struct sockaddr*)&si, sizeof(si));
-			 usleep(100);
+			 usleep(100000);
 		}	
 		else{
 			pthread_mutex_lock(&become_leader_lock);
