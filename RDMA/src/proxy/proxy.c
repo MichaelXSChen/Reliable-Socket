@@ -51,8 +51,8 @@ pthread_cond_t tcp_outgoing;
 // pthread_mutex_t tcp_outgoing_lock;
 
 
-long tcp_size_count ; 
-int   tcp_count;
+// long tcp_size_count ; 
+// int   tcp_count;
 
 
 extern DECLARE_LOCK(out_lock);
@@ -131,8 +131,8 @@ int dare_main(proxy_node* proxy, const char* config_path)
 {
     
     inet_aton(GUEST_IP, &guest_vm_ip);
-    tcp_size_count =0 ; 
-     tcp_count =0;
+    // tcp_size_count =0 ; 
+    //  tcp_count =0;
 
     
     pthread_cond_init(&tcp_no_empty, NULL);
@@ -701,9 +701,9 @@ static void do_action_raw(void *data, size_t size){
                 if (payload_length < 0)
                     payload_length = 0;
 
-                tcp_size_count += payload_length; 
-                tcp_count += 1;
-                debugf("TCP count :%d, tcp_size_count:%ld", tcp_count, tcp_size_count);
+                // tcp_size_count += payload_length; 
+                // tcp_count += 1;
+                // debugf("TCP count :%d, tcp_size_count:%ld", tcp_count, tcp_size_count);
 
                 int len = write_to_tcp_buffer(&con_id, ntohl(tcp_header->th_ack), (uint8_t*)data, size);
                 //debugf("[TCP] Written to TCP buffer with len %d", len);
