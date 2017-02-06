@@ -421,7 +421,14 @@ int check_block(uint32_t ack, struct con_id_type *con){
 		src_ip = inet_ntoa(src_addr);
 		dst_ip = inet_ntoa(dst_addr);
 
-		debugf("out_seq: %"PRIu32" ack: %"PRIu32" block, (from %s:%d to %s:%d)", out_seq, ack, src_ip, ntohs(con->src_port), dst_ip, ntohs(con->dst_port));
+
+
+		
+		struct timeval tm;
+		gettimeofday(&tm, NULL);
+
+
+		debugf("[time=%ld] out_seq: %"PRIu32" ack: %"PRIu32" block, (from %s:%d to %s:%d)", tm.tv_sec, out_seq, ack, src_ip, ntohs(con->src_port), dst_ip, ntohs(con->dst_port));
 		return 1;
 	}
 	else{

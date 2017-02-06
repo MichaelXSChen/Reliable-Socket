@@ -249,17 +249,17 @@ static void tap_send(void *opaque)
 
         // Only make consensus on the Replicate NIC
         if(is_leader()){
-            gettimeofday(&time_s, 0);
+            //gettimeofday(&time_s, 0);
             msg_handle(buf, size);
-            gettimeofday(&time_e, 0);
-            printf("spend %ld us in handling\n", 
-                (time_e.tv_sec - time_s.tv_sec) * 1000000 + (time_e.tv_usec - time_s.tv_usec));
+           // gettimeofday(&time_e, 0);
+            //printf("spend %ld us in handling\n", 
+               // (time_e.tv_sec - time_s.tv_sec) * 1000000 + (time_e.tv_usec - time_s.tv_usec));
         }
-        gettimeofday(&time_s, 0);
-        is_leader();
-        gettimeofday(&time_e, 0);
-        printf("spend %ld us in get leader's status\n", 
-                (time_e.tv_sec - time_s.tv_sec) * 1000000 + (time_e.tv_usec - time_s.tv_usec));
+        //gettimeofday(&time_s, 0);
+        //is_leader();
+        //gettimeofday(&time_e, 0);
+        //printf("spend %ld us in get leader's status\n", 
+        //        (time_e.tv_sec - time_s.tv_sec) * 1000000 + (time_e.tv_usec - time_s.tv_usec));
 
         //else{
         //    size = read_from_packet_buffer(&buffer);
